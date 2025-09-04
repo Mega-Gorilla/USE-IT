@@ -10,7 +10,6 @@ from urllib.parse import urlparse
 from pydantic import AfterValidator, AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from browser_use.config import CONFIG
-from browser_use.observability import observe_debug
 from browser_use.utils import _log_pretty_path, logger
 
 CHROME_DEBUG_PORT = 9242  # use a non-default port to avoid conflicts with other tools / devs using 9222
@@ -194,7 +193,9 @@ def get_display_size() -> ViewportSize | None:
 		from AppKit import NSScreen  # type: ignore[import]
 
 		screen = NSScreen.mainScreen().frame()
-		return ViewportSize(width=int(screen.size.width), height=int(screen.size.height))
+		size = ViewportSize(width=int(screen.size.width), height=int(screen.size.height))
+		logger.debug(f'Display size: {size}')
+		return size
 	except Exception:
 		pass
 
@@ -204,10 +205,13 @@ def get_display_size() -> ViewportSize | None:
 
 		monitors = get_monitors()
 		monitor = monitors[0]
-		return ViewportSize(width=int(monitor.width), height=int(monitor.height))
+		size = ViewportSize(width=int(monitor.width), height=int(monitor.height))
+		logger.debug(f'Display size: {size}')
+		return size
 	except Exception:
 		pass
 
+	logger.debug('No display size found')
 	return None
 
 
@@ -632,11 +636,11 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		"""Copy old config window_width & window_height to window_size."""
 		if self.window_width or self.window_height:
 			logger.warning(
-				f'⚠️ BrowserProfile(window_width=..., window_height=...) are deprecated, use BrowserProfile(window_size={"width": 1280, "height": 1100}) instead.'
+				f'⚠️ BrowserProfile(window_width=..., window_height=...) are deprecated, use BrowserProfile(window_size={"width": 1920, "height": 1080}) instead.'
 			)
 			window_size = self.window_size or ViewportSize(width=0, height=0)
-			window_size['width'] = window_size['width'] or self.window_width or 1280
-			window_size['height'] = window_size['height'] or self.window_height or 1100
+			window_size['width'] = window_size['width'] or self.window_width or 1920
+			window_size['height'] = window_size['height'] or self.window_height or 1080
 			self.window_size = window_size
 
 		return self
@@ -693,6 +697,10 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		if self.proxy and (self.proxy.bypass and not self.proxy.server):
 			logger.warning('BrowserProfile.proxy.bypass provided but proxy has no server; bypass will be ignored.')
 		return self
+
+	def model_post_init(self, __context: Any) -> None:
+		"""Called after model initialization to set up display configuration."""
+		self.detect_display_configuration()
 
 	def get_args(self) -> list[str]:
 		"""Get the list of all Chrome CLI launch args for this profile (compiled from defaults, user-provided, and system-specific)."""
@@ -980,7 +988,6 @@ async function initialize(checkInitialized, magic) {{
 
 				os.unlink(temp_zip.name)
 
-	@observe_debug(ignore_input=True, ignore_output=True, name='detect_display_configuration')
 	def detect_display_configuration(self) -> None:
 		"""
 		Detect the system display size and initialize the display-related config defaults:
@@ -989,7 +996,7 @@ async function initialize(checkInitialized, magic) {{
 
 		display_size = get_display_size()
 		has_screen_available = bool(display_size)
-		self.screen = self.screen or display_size or ViewportSize(width=1280, height=1100)
+		self.screen = self.screen or display_size or ViewportSize(width=1920, height=1080)
 
 		# if no headless preference specified, prefer headful if there is a display available
 		if self.headless is None:
