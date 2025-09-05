@@ -863,7 +863,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			msg += '\nIf the task could not be completed due to the failures, set success in "done" to false!'
 			msg += '\nInclude everything you found out for the task in the done text.'
 
-			self.logger.debug('Force done action, becasue we reached max_failures.')
+			self.logger.debug('Force done action, because we reached max_failures.')
 			self._message_manager._add_context_message(UserMessage(content=msg))
 			self.AgentOutput = self.DoneAgentOutput
 
