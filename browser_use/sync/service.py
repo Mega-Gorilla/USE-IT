@@ -25,6 +25,7 @@ class CloudSync:
 		self.auth_task = None
 		self.session_id: str | None = None
 		self.allow_session_events_for_auth = allow_session_events_for_auth
+		self.auth_flow_active = False  # Flag to indicate auth flow is running
 
 	async def handle_event(self, event: BaseEvent) -> None:
 		"""Handle an event by sending it to the cloud"""
@@ -45,9 +46,12 @@ class CloudSync:
 			if self.auth_client.is_authenticated:
 				# User is authenticated - send all events
 				await self._send_event(event)
-			elif event.event_type == 'CreateAgentSessionEvent' and self.allow_session_events_for_auth:
-				# Special case: allow session events for auth flow only
+			elif self.allow_session_events_for_auth:
+				# Special case: allow ALL events during auth flow
 				await self._send_event(event)
+				# Mark auth flow as active when we see a session event
+				if event.event_type == 'CreateAgentSessionEvent':
+					self.auth_flow_active = True
 			else:
 				# User is not authenticated - don't send anything
 				logger.debug(f'Skipping event {event.event_type} - user not authenticated')
@@ -104,24 +108,24 @@ class CloudSync:
 		assert self.auth_client, 'auth_client must exist before calling CloudSync._background_auth()'
 		assert self.session_id, 'session_id must be set before calling CloudSync._background_auth() can fire'
 		try:
-			# If already authenticated, just show the cloud URL
+			# Always show the cloud URL (auth happens immediately when session starts now)
+			frontend_url = CONFIG.BROWSER_USE_CLOUD_UI_URL or self.base_url.replace('//api.', '//cloud.')
+			session_url = f'{frontend_url.rstrip("/")}/agent/{agent_session_id}'
+			terminal_width, _terminal_height = shutil.get_terminal_size((80, 20))
+
 			if self.auth_client.is_authenticated:
-				# Use frontend URL for user-facing links
-				frontend_url = CONFIG.BROWSER_USE_CLOUD_UI_URL or self.base_url.replace('//api.', '//cloud.')
-				session_url = f'{frontend_url.rstrip("/")}/agent/{agent_session_id}'
-				terminal_width, _terminal_height = shutil.get_terminal_size((80, 20))
-				logger.info('─' * max(terminal_width - 40, 20) + '\n')
+				# User is authenticated - show direct link
+				logger.info('─' * max(terminal_width - 40, 20))
 				logger.info('🌐  View the details of this run in Browser Use Cloud:')
 				logger.info(f'    👉  {session_url}')
-				logger.info('─' * max(terminal_width - 40, 20) + '\n\n')
-				return
-
-			# Otherwise show simple auth prompt
-			terminal_width, _terminal_height = shutil.get_terminal_size((80, 20))
-			logger.info('─' * max(terminal_width - 40, 20))
-			logger.info('🔐 To view this run in Browser Use Cloud, authenticate with:')
-			logger.info('    👉  browser-use auth')
-			logger.info('─' * max(terminal_width - 40, 20) + '\n')
+				logger.info('─' * max(terminal_width - 40, 20) + '\n')
+			else:
+				# User not authenticated - show auth prompt
+				logger.info('─' * max(terminal_width - 40, 20))
+				logger.info('🔐 To view this run in Browser Use Cloud, authenticate with:')
+				logger.info('    👉  browser-use auth')
+				logger.info('    or: python -m browser_use.cli auth')
+				logger.info('─' * max(terminal_width - 40, 20) + '\n')
 
 		except Exception as e:
 			logger.debug(f'Cloud sync authentication failed: {e}')
@@ -165,6 +169,20 @@ class CloudSync:
 		if self.auth_task and not self.auth_task.done():
 			await self.auth_task
 
+	def set_auth_flow_active(self) -> None:
+		"""Mark auth flow as active to allow all events"""
+		self.auth_flow_active = True
+
 	async def authenticate(self, show_instructions: bool = True) -> bool:
 		"""Authenticate with the cloud service"""
+		# Check if already authenticated first
+		if self.auth_client.is_authenticated:
+			import logging
+
+			logger = logging.getLogger(__name__)
+			if show_instructions:
+				logger.info('✅ Already authenticated! Skipping OAuth flow.')
+			return True
+
+		# Not authenticated - run OAuth flow
 		return await self.auth_client.authenticate(agent_session_id=self.session_id, show_instructions=show_instructions)
