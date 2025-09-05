@@ -16,32 +16,16 @@ from browser_use.dom.views import DOMRect, EnhancedSnapshotNode
 
 # Only the ESSENTIAL computed styles for interactivity and visibility detection
 REQUIRED_COMPUTED_STYLES = [
-	# Essential for visibility
-	'display',
-	'visibility',
-	'opacity',
-	'position',
-	'z-index',
-	'pointer-events',
-	'cursor',
-	'overflow',
-	'overflow-x',
-	'overflow-y',
-	'width',
-	'height',
-	'top',
-	'left',
-	'right',
-	'bottom',
-	'transform',
-	'clip',
-	'clip-path',
-	'user-select',
-	'background-color',
-	'color',
-	'border',
-	'margin',
-	'padding',
+	# Only styles actually accessed in the codebase (prevents Chrome crashes on heavy sites)
+	'display',  # Used in service.py visibility detection
+	'visibility',  # Used in service.py visibility detection
+	'opacity',  # Used in service.py visibility detection
+	'overflow',  # Used in views.py scrollability detection
+	'overflow-x',  # Used in views.py scrollability detection
+	'overflow-y',  # Used in views.py scrollability detection
+	'cursor',  # Used in enhanced_snapshot.py cursor extraction
+	'pointer-events',  # Used for clickability logic
+	'position',  # Used for visibility logic
 ]
 
 
