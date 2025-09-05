@@ -82,10 +82,12 @@ def build_snapshot_lookup(
 				backend_node_to_snapshot_index[backend_node_id] = i
 
 		# PERFORMANCE: Pre-build layout index map to eliminate O(n²) double lookups
+		# Preserve original behavior: use FIRST occurrence for duplicates
 		layout_index_map = {}
 		if layout and 'nodeIndex' in layout:
 			for layout_idx, node_index in enumerate(layout['nodeIndex']):
-				layout_index_map[node_index] = layout_idx
+				if node_index not in layout_index_map:  # Only store first occurrence
+					layout_index_map[node_index] = layout_idx
 
 		# Build snapshot lookup for each backend node id
 		for backend_node_id, snapshot_index in backend_node_to_snapshot_index.items():
