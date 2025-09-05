@@ -94,7 +94,6 @@ def _parse_computed_styles(strings: list[str], style_indices: list[int]) -> dict
 def build_snapshot_lookup(
 	snapshot: CaptureSnapshotReturns,
 	device_pixel_ratio: float = 1.0,
-	viewport_bounds: dict | None = None,  # Your ±2000px viewport filtering
 ) -> dict[int, EnhancedSnapshotNode]:
 	"""Build a lookup table of backend node ID to enhanced snapshot data with everything calculated upfront."""
 	import logging
@@ -106,13 +105,6 @@ def build_snapshot_lookup(
 	if not snapshot['documents']:
 		logger.debug('🔍 SNAPSHOT: No documents in snapshot')
 		return snapshot_lookup
-
-	if viewport_bounds:
-		logger.debug(
-			f'🔍 SNAPSHOT: Using viewport bounds: top={viewport_bounds["top"]}, bottom={viewport_bounds["bottom"]}, height={viewport_bounds["total_height"]}'
-		)
-	else:
-		logger.debug('🔍 SNAPSHOT: No viewport bounds - processing all elements')
 
 	strings = snapshot['strings']
 
@@ -129,9 +121,8 @@ def build_snapshot_lookup(
 		# Build snapshot lookup for each backend node id
 		total_nodes = len(backend_node_to_snapshot_index)
 		processed_nodes = 0
-		filtered_out_nodes = 0
 
-		logger.debug(f'🔍 SNAPSHOT: Starting early filtering on {total_nodes} nodes...')
+		logger.debug(f'🔍 SNAPSHOT: Starting processing {total_nodes} nodes...')
 		import time
 
 		processing_start = time.time()
@@ -146,28 +137,6 @@ def build_snapshot_lookup(
 		logger.debug(f'🔍 SNAPSHOT: Built layout index map with {len(layout_index_map)} entries in {layout_map_time:.3f}s')
 
 		for backend_node_id, snapshot_index in backend_node_to_snapshot_index.items():
-			# PERFORMANCE OPTIMIZATION: Quick bounds check FIRST using cached layout map (O(1) lookup)
-			should_skip = False
-			if viewport_bounds and snapshot_index in layout_index_map:
-				layout_idx = layout_index_map[snapshot_index]
-				if layout_idx < len(layout.get('bounds', [])):
-					bounds = layout['bounds'][layout_idx]
-					if len(bounds) >= 4:
-						# Quick viewport check using raw coordinates (device pixels)
-						raw_x, raw_y, raw_width, raw_height = bounds[0], bounds[1], bounds[2], bounds[3]
-						# Convert to CSS pixels for viewport comparison
-						element_top = raw_y / device_pixel_ratio
-						element_bottom = element_top + (raw_height / device_pixel_ratio)
-
-						# Skip elements that don't intersect with viewport bounds
-						if element_bottom < viewport_bounds['top'] or element_top > viewport_bounds['bottom']:
-							filtered_out_nodes += 1
-							should_skip = True
-
-			if should_skip:
-				continue  # Skip expensive processing entirely
-
-			# Now do the expensive processing only for elements in viewport
 			is_clickable = None
 			if 'isClickable' in nodes:
 				is_clickable = _parse_rare_boolean_data(nodes['isClickable'], snapshot_index)
@@ -251,27 +220,10 @@ def build_snapshot_lookup(
 			)
 			processed_nodes += 1
 
-	# Log filtering results with timing
+	# Log results with timing
 	processing_end = time.time()
 	processing_time = processing_end - processing_start
 
-	logger.debug(
-		f'🔍 SNAPSHOT: Processed {processed_nodes} nodes, skipped {filtered_out_nodes} nodes early (total: {total_nodes}) in {processing_time:.2f}s'
-	)
-	if viewport_bounds and total_nodes > 0:
-		filter_percentage = (filtered_out_nodes / total_nodes) * 100
-		process_percentage = (processed_nodes / total_nodes) * 100
-		logger.debug(
-			f'⚡ SNAPSHOT: Early viewport filtering skipped {filter_percentage:.1f}% of elements, processed only {process_percentage:.1f}%'
-		)
-
-		# Show performance improvement estimate
-		if processed_nodes > 0:
-			time_per_processed_node = processing_time / processed_nodes
-			estimated_full_time = time_per_processed_node * total_nodes
-			time_saved = estimated_full_time - processing_time
-			logger.debug(
-				f'⚡ SNAPSHOT: Estimated time saved: {time_saved:.2f}s (would have taken {estimated_full_time:.2f}s for all nodes)'
-			)
+	logger.debug(f'🔍 SNAPSHOT: Processed {processed_nodes} nodes (total: {total_nodes}) in {processing_time:.2f}s')
 
 	return snapshot_lookup

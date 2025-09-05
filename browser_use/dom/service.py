@@ -151,46 +151,6 @@ class DomService:
 			# Fallback to default viewport size
 			return 1.0
 
-	async def _get_viewport_bounds_with_buffer(self, target_id: TargetID, buffer: int = 2000) -> dict:
-		"""Get viewport bounds + buffer for performance optimization (your ±2000px approach)."""
-		cdp_session = await self.browser_session.get_or_create_cdp_session(target_id=target_id, focus=True)
-
-		try:
-			# Get layout metrics to determine viewport and scroll position
-			metrics = await cdp_session.cdp_client.send.Page.getLayoutMetrics(session_id=cdp_session.session_id)
-
-			css_visual_viewport = metrics.get('cssVisualViewport', {})
-			css_layout_viewport = metrics.get('cssLayoutViewport', {})
-			content_size = metrics.get('contentSize', {})
-
-			# Get scroll position and viewport dimensions in CSS pixels
-			scroll_y = int(css_visual_viewport.get('pageY', 0))
-			viewport_height = int(css_visual_viewport.get('clientHeight', 857))
-			page_height = int(content_size.get('height', viewport_height))
-
-			# Calculate bounds with buffer (your approach: viewport ±2000px)
-			top_bound = max(0, scroll_y - buffer)
-			bottom_bound = min(page_height, scroll_y + viewport_height + buffer)
-
-			bounds = {
-				'top': top_bound,
-				'bottom': bottom_bound,
-				'scroll_y': scroll_y,
-				'viewport_height': viewport_height,
-				'buffer': buffer,
-				'total_height': bottom_bound - top_bound,
-			}
-
-			self.logger.debug(
-				f'⚡ Viewport bounds: scroll={scroll_y}px, buffer={buffer}px, processing_height={bounds["total_height"]}px (vs {page_height}px total)'
-			)
-			return bounds
-
-		except Exception as e:
-			self.logger.debug(f'Failed to get viewport bounds: {e}')
-			# Return full page bounds as fallback
-			return {'top': 0, 'bottom': 100000, 'scroll_y': 0, 'viewport_height': 857, 'buffer': 0, 'total_height': 100000}
-
 	@classmethod
 	def is_element_visible_according_to_all_parents(
 		cls, node: EnhancedDOMTreeNode, html_frames: list[EnhancedDOMTreeNode]
@@ -370,15 +330,12 @@ class DomService:
 		except Exception as e:
 			self.logger.debug(f'Failed to get iframe scroll positions: {e}')
 
-		# Get viewport bounds for optimization (your ±2000px buffer approach)
-		viewport_bounds = await self._get_viewport_bounds_with_buffer(target_id, buffer=2000)
-
 		# Define CDP request factories to avoid duplication
 		def create_snapshot_request():
 			return cdp_session.cdp_client.send.DOMSnapshot.captureSnapshot(
 				params={
-					'computedStyles': REQUIRED_COMPUTED_STYLES,  # Now only 8 styles vs 19!
-					'includePaintOrder': False,
+					'computedStyles': REQUIRED_COMPUTED_STYLES,
+					'includePaintOrder': True,
 					'includeDOMRects': True,
 					'includeBlendedBackgroundColors': False,
 					'includeTextColorOpacities': False,
@@ -394,7 +351,7 @@ class DomService:
 		start = time.time()
 		self.logger.debug('🔍 CDP: Starting all CDP tasks...')
 
-		# Create initial tasks (now viewport-aware!)
+		# Create initial tasks
 		snapshot_start = time.time()
 		dom_tree_start = time.time()
 		ax_tree_start = time.time()
@@ -434,7 +391,7 @@ class DomService:
 			for task in pending:
 				task.cancel()
 
-			# Retry mapping for pending tasks (viewport-aware!)
+			# Retry mapping for pending tasks
 			retry_map = {
 				tasks['snapshot']: lambda: asyncio.create_task(create_snapshot_request()),
 				tasks['dom_tree']: lambda: asyncio.create_task(create_dom_tree_request()),
@@ -557,18 +514,17 @@ class DomService:
 		enhanced_dom_tree_node_lookup: dict[int, EnhancedDOMTreeNode] = {}
 		""" NodeId (NOT backend node id) -> enhanced dom tree node"""  # way to get the parent/content node
 
-		# Parse snapshot data with everything calculated upfront (viewport optimized!)
+		# Parse snapshot data with everything calculated upfront (O(1) hash map optimized!)
 		snapshot_processing_start = time.time()
 		self.logger.debug('🔍 DOM: Starting snapshot lookup processing...')
 
-		viewport_bounds = await self._get_viewport_bounds_with_buffer(target_id, buffer=2000) if target_id else None
-		snapshot_lookup = build_snapshot_lookup(snapshot, device_pixel_ratio, viewport_bounds)
+		snapshot_lookup = build_snapshot_lookup(snapshot, device_pixel_ratio)
 
 		snapshot_processing_end = time.time()
 		self.logger.debug(
 			f'🔍 DOM: Snapshot lookup processing completed in {snapshot_processing_end - snapshot_processing_start:.2f}s'
 		)
-		self.logger.debug(f'🔍 DOM: Snapshot lookup contains {len(snapshot_lookup)} elements (after viewport filtering)')
+		self.logger.debug(f'🔍 DOM: Snapshot lookup contains {len(snapshot_lookup)} elements')
 
 		async def _construct_enhanced_node(
 			node: Node, html_frames: list[EnhancedDOMTreeNode] | None, total_frame_offset: DOMRect | None
