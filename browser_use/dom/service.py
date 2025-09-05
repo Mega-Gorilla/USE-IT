@@ -278,11 +278,8 @@ class DomService:
 		# If we reach here, element is visible in main viewport and all containing iframes
 		return True
 
-	async def _get_ax_tree_for_all_frames(self, target_id: TargetID, viewport_bounds: dict | None = None) -> GetFullAXTreeReturns:
-		"""Recursively collect all frames and merge their accessibility trees into a single array.
-
-		PERFORMANCE: Skip accessibility trees for out-of-viewport frames to reduce processing time.
-		"""
+	async def _get_ax_tree_for_all_frames(self, target_id: TargetID) -> GetFullAXTreeReturns:
+		"""Recursively collect all frames and merge their accessibility trees into a single array."""
 
 		cdp_session = await self.browser_session.get_or_create_cdp_session(target_id=target_id, focus=False)
 		frame_tree = await cdp_session.cdp_client.send.Page.getFrameTree(session_id=cdp_session.session_id)
@@ -300,15 +297,9 @@ class DomService:
 		# Collect all frame IDs recursively
 		all_frame_ids = collect_all_frame_ids(frame_tree['frameTree'])
 
-		# PERFORMANCE: Process only main frame if viewport bounds available (skip iframe AX trees)
-		# This reduces AX tree processing significantly for pages with many iframes
-		if viewport_bounds and len(all_frame_ids) > 1:
-			# Only process main frame (first frame) for performance
-			frame_ids_to_process = all_frame_ids[:1]  # Main frame only
-			self.logger.debug(f'⚡ AX tree optimization: processing 1 main frame (skipped {len(all_frame_ids) - 1} iframes)')
-		else:
-			frame_ids_to_process = all_frame_ids
-			self.logger.debug(f'🔍 AX tree: processing all {len(all_frame_ids)} frames')
+		# Process all frames for full quality (layout index map gives us the performance we need)
+		frame_ids_to_process = all_frame_ids
+		self.logger.debug(f'🔍 AX tree: processing all {len(all_frame_ids)} frames')
 
 		# Get accessibility tree for selected frames
 		ax_tree_requests = []
@@ -412,7 +403,7 @@ class DomService:
 		tasks = {
 			'snapshot': asyncio.create_task(create_snapshot_request()),
 			'dom_tree': asyncio.create_task(create_dom_tree_request()),
-			'ax_tree': asyncio.create_task(self._get_ax_tree_for_all_frames(target_id, viewport_bounds)),
+			'ax_tree': asyncio.create_task(self._get_ax_tree_for_all_frames(target_id)),
 			'device_pixel_ratio': asyncio.create_task(self._get_viewport_ratio(target_id)),
 		}
 
@@ -447,7 +438,7 @@ class DomService:
 			retry_map = {
 				tasks['snapshot']: lambda: asyncio.create_task(create_snapshot_request()),
 				tasks['dom_tree']: lambda: asyncio.create_task(create_dom_tree_request()),
-				tasks['ax_tree']: lambda: asyncio.create_task(self._get_ax_tree_for_all_frames(target_id, viewport_bounds)),
+				tasks['ax_tree']: lambda: asyncio.create_task(self._get_ax_tree_for_all_frames(target_id)),
 				tasks['device_pixel_ratio']: lambda: asyncio.create_task(self._get_viewport_ratio(target_id)),
 			}
 

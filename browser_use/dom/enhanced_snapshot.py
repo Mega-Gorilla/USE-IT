@@ -25,12 +25,27 @@ REQUIRED_COMPUTED_STYLES = [
 	'pointer-events',
 	'cursor',
 	'overflow',
+	'overflow-x',
+	'overflow-y',
+	'width',
+	'height',
+	'top',
+	'left',
+	'right',
+	'bottom',
+	'transform',
+	'clip',
+	'clip-path',
+	'user-select',
+	'background-color',
+	'color',
+	'border',
+	'margin',
+	'padding',
 ]
 
-# PERFORMANCE: Reduced from 19 to 8 styles (58% reduction)
-# Removed non-essential styles: width, height, top, left, right, bottom, transform,
-# clip, clip-path, user-select, background-color, color, border, margin, padding
-# These can be computed from bounds/rects when actually needed
+# PERFORMANCE NOTE: The layout index map O(1) optimization was the real fix, not style reduction
+# Keeping full computed styles for quality - the O(n²) → O(1) gives us all the performance we need
 
 # Full style set for fallback scenarios
 FULL_COMPUTED_STYLES = [
