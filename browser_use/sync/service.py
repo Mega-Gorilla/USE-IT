@@ -18,12 +18,13 @@ logger = logging.getLogger(__name__)
 class CloudSync:
 	"""Service for syncing events to the Browser Use cloud"""
 
-	def __init__(self, base_url: str | None = None):
+	def __init__(self, base_url: str | None = None, allow_session_events_for_auth: bool = False):
 		# Backend API URL for all API requests - can be passed directly or defaults to env var
 		self.base_url = base_url or CONFIG.BROWSER_USE_CLOUD_API_URL
 		self.auth_client = DeviceAuthClient(base_url=self.base_url)
 		self.auth_task = None
 		self.session_id: str | None = None
+		self.allow_session_events_for_auth = allow_session_events_for_auth
 
 	async def handle_event(self, event: BaseEvent) -> None:
 		"""Handle an event by sending it to the cloud"""
@@ -40,8 +41,12 @@ class CloudSync:
 					else:
 						logger.warning('Cannot start auth - session_id not set yet')
 
-			# Only send event if user is authenticated
+			# Send events based on authentication status and context
 			if self.auth_client.is_authenticated:
+				# User is authenticated - send all events
+				await self._send_event(event)
+			elif event.event_type == 'CreateAgentSessionEvent' and self.allow_session_events_for_auth:
+				# Special case: allow session events for auth flow only
 				await self._send_event(event)
 			else:
 				# User is not authenticated - don't send anything

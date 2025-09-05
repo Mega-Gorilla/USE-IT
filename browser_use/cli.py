@@ -1600,9 +1600,31 @@ async def run_auth_command():
 	print()
 
 	try:
-		# For standalone auth, use a special session ID that indicates it's for auth only
-		standalone_auth_session_id = '00000000-0000-0000-0000-000000000001'  # Special ID for standalone auth
-		success = await auth_client.authenticate(agent_session_id=standalone_auth_session_id, show_instructions=True)
+		# Create a minimal sync service to establish session context like main branch does
+		from uuid_extensions import uuid7str
+
+		from browser_use.agent.cloud_events import CreateAgentSessionEvent
+		from browser_use.sync.service import CloudSync
+
+		# Create session ID and sync service with auth context flag
+		session_id = uuid7str()
+		sync_service = CloudSync(allow_session_events_for_auth=True)
+
+		# Create a minimal session event to establish context (like main branch)
+		session_event = CreateAgentSessionEvent(
+			user_id=auth_client.temp_user_id,
+			browser_session_id=uuid7str(),
+			browser_session_live_url='',
+			browser_session_cdp_url='',
+			device_id=auth_client.device_id,
+		)
+		session_event.id = session_id  # Set the session ID
+
+		# Handle the session event to set up the sync context
+		await sync_service.handle_event(session_event)
+
+		# Now authenticate using the established session context
+		success = await sync_service.authenticate(show_instructions=True)
 		if success:
 			print('🎉 Authentication successful!')
 			print('   Future browser-use runs will now sync to the cloud.')

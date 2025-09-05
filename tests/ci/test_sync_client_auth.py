@@ -381,7 +381,7 @@ class TestCloudSync:
 		assert event['task'] == 'Test task'
 
 	async def test_send_event_pre_auth(self, httpserver: HTTPServer, temp_config_dir):
-		"""Test that events are not sent before authentication."""
+		"""Test that non-session events are not sent before authentication."""
 		requests = []
 
 		def capture_request(request):
@@ -395,8 +395,7 @@ class TestCloudSync:
 
 			return Response('{"processed": 1, "failed": 0}', status=200, mimetype='application/json')
 
-		# Don't expect any requests since events should not be sent
-		# httpserver.expect_request('/api/v1/events', method='POST').respond_with_handler(capture_request)
+		httpserver.expect_request('/api/v1/events', method='POST').respond_with_handler(capture_request)
 
 		# Create unauthenticated service
 		auth = DeviceAuthClient(base_url=httpserver.url_for(''))
@@ -406,7 +405,18 @@ class TestCloudSync:
 		service.auth_client = auth
 		service.session_id = 'test-session-id'
 
-		# Send event
+		# Send session event first (should be sent)
+		await service.handle_event(
+			CreateAgentSessionEvent(
+				user_id=TEMP_USER_ID,
+				browser_session_id='test-browser-session',
+				browser_session_live_url='http://example.com',
+				browser_session_cdp_url='ws://example.com',
+				device_id='test-device-id',
+			)
+		)
+
+		# Send task event (should be skipped - not authenticated)
 		await service.handle_event(
 			CreateAgentTaskEvent(
 				agent_session_id='test-session',
@@ -421,8 +431,9 @@ class TestCloudSync:
 			)
 		)
 
-		# Check that NO request was made (event should be skipped)
-		assert len(requests) == 0
+		# Check that only the session event was sent (1 request)
+		assert len(requests) == 1
+		assert requests[0]['json']['events'][0]['event_type'] == 'CreateAgentSessionEvent'
 
 	async def test_authenticate_then_send(self, httpserver: HTTPServer, temp_config_dir):
 		"""Test that events are only sent after authentication."""
