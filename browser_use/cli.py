@@ -1574,6 +1574,46 @@ async def textual_interface(config: dict[str, Any]):
 		raise
 
 
+async def run_auth_command():
+	"""Run the authentication command."""
+
+	from browser_use.sync.auth import DeviceAuthClient
+
+	print('🔐 Browser Use Cloud Authentication')
+	print('=' * 40)
+
+	auth_client = DeviceAuthClient()
+
+	# Check if already authenticated
+	if auth_client.is_authenticated:
+		print('✅ Already authenticated!')
+		print(f'   User ID: {auth_client.user_id}')
+		print(f'   Authenticated at: {auth_client.auth_config.authorized_at}')
+
+		# Show cloud URL if possible
+		frontend_url = CONFIG.BROWSER_USE_CLOUD_UI_URL or auth_client.base_url.replace('//api.', '//cloud.')
+		print(f'\n🌐 View your runs at: {frontend_url}')
+		return
+
+	print('🚀 Starting authentication flow...')
+	print('   This will open a browser window for you to sign in.')
+	print()
+
+	try:
+		# For standalone auth, use a special session ID that indicates it's for auth only
+		standalone_auth_session_id = '00000000-0000-0000-0000-000000000001'  # Special ID for standalone auth
+		success = await auth_client.authenticate(agent_session_id=standalone_auth_session_id, show_instructions=True)
+		if success:
+			print('🎉 Authentication successful!')
+			print('   Future browser-use runs will now sync to the cloud.')
+		else:
+			print('❌ Authentication failed.')
+			print('   Please try again or check your internet connection.')
+	except Exception as e:
+		print(f'❌ Authentication error: {e}')
+		sys.exit(1)
+
+
 @click.command()
 @click.option('--version', is_flag=True, help='Print version and exit')
 @click.option('--model', type=str, help='Model to use (e.g., gpt-5-mini, claude-4-sonnet, gemini-2.5-flash)')
@@ -1592,9 +1632,10 @@ async def textual_interface(config: dict[str, Any]):
 @click.option('--proxy-password', type=str, help='Proxy auth password')
 @click.option('-p', '--prompt', type=str, help='Run a single task without the TUI (headless mode)')
 @click.option('--mcp', is_flag=True, help='Run as MCP server (exposes JSON RPC via stdin/stdout)')
+@click.option('--auth', is_flag=True, help='Authenticate with Browser Use Cloud')
 @click.pass_context
 def main(ctx: click.Context, debug: bool = False, **kwargs):
-	"""Browser-Use Interactive TUI or Command Line Executor
+	"""Run Browser-Use Interactive TUI or Command Line Executor
 
 	Use --user-data-dir to specify a local Chrome profile directory.
 	Common Chrome profile locations:
@@ -1611,6 +1652,11 @@ def main(ctx: click.Context, debug: bool = False, **kwargs):
 
 		print(version('browser-use'))
 		sys.exit(0)
+
+	# Check if auth mode is activated
+	if kwargs.get('auth'):
+		asyncio.run(run_auth_command())
+		return
 
 	# Check if MCP server mode is activated
 	if kwargs.get('mcp'):

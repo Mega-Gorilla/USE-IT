@@ -318,16 +318,11 @@ class TestCloudSync:
 
 	async def test_init(self, temp_config_dir, httpserver):
 		"""Test CloudSync initialization."""
-		service = CloudSync(
-			base_url=httpserver.url_for(''),
-			enable_auth=True,
-		)
+		service = CloudSync(base_url=httpserver.url_for(''))
 
 		assert service.base_url == httpserver.url_for('')
-		assert service.enable_auth is True
 		assert service.auth_client is not None
 		assert isinstance(service.auth_client, DeviceAuthClient)
-		assert service.pending_events == []
 
 	async def test_send_event_authenticated(self, httpserver: HTTPServer, temp_config_dir):
 		"""Test sending event when authenticated."""
@@ -351,7 +346,7 @@ class TestCloudSync:
 		auth.auth_config.api_token = 'test-api-key'
 		auth.auth_config.user_id = 'test-user-123'
 
-		service = CloudSync(base_url=httpserver.url_for(''), enable_auth=True)
+		service = CloudSync(base_url=httpserver.url_for(''))
 		service.auth_client = auth
 		service.session_id = 'test-session-id'
 
@@ -386,7 +381,7 @@ class TestCloudSync:
 		assert event['task'] == 'Test task'
 
 	async def test_send_event_pre_auth(self, httpserver: HTTPServer, temp_config_dir):
-		"""Test sending event before authentication."""
+		"""Test that events are not sent before authentication."""
 		requests = []
 
 		def capture_request(request):
@@ -400,13 +395,14 @@ class TestCloudSync:
 
 			return Response('{"processed": 1, "failed": 0}', status=200, mimetype='application/json')
 
-		httpserver.expect_request('/api/v1/events', method='POST').respond_with_handler(capture_request)
+		# Don't expect any requests since events should not be sent
+		# httpserver.expect_request('/api/v1/events', method='POST').respond_with_handler(capture_request)
 
 		# Create unauthenticated service
 		auth = DeviceAuthClient(base_url=httpserver.url_for(''))
 		# Don't set api_token - leave it unauthenticated
 
-		service = CloudSync(base_url=httpserver.url_for(''), enable_auth=True)
+		service = CloudSync(base_url=httpserver.url_for(''))
 		service.auth_client = auth
 		service.session_id = 'test-session-id'
 
@@ -425,54 +421,35 @@ class TestCloudSync:
 			)
 		)
 
-		# Check request was made without auth header
-		assert len(requests) == 1
-		request_data = requests[0]
-		assert 'Authorization' not in request_data['headers']
+		# Check that NO request was made (event should be skipped)
+		assert len(requests) == 0
 
-		# Check event was sent with temp user ID
-		json_data = request_data['json']
-		assert len(json_data['events']) == 1
-		event = json_data['events'][0]
-		assert event['event_type'] == 'CreateAgentTaskEvent'
-		assert event['user_id'] == TEMP_USER_ID
-		assert event['task'] == 'Test task'
-
-	async def test_authenticate_and_resend(self, httpserver: HTTPServer, temp_config_dir):
-		"""Test authentication flow with pre-auth event resending."""
+	async def test_authenticate_then_send(self, httpserver: HTTPServer, temp_config_dir):
+		"""Test that events are only sent after authentication."""
 		requests = []
-		request_count = 0
 
-		def handle_events_request(request):
-			nonlocal request_count
-			request_count += 1
+		def capture_request(request):
 			requests.append(
 				{
 					'headers': dict(request.headers),
 					'json': request.get_json(),
 				}
 			)
-
 			from werkzeug.wrappers import Response
 
-			if request_count == 1:
-				# First request: unauthenticated, return 401
-				return Response('{"error": "unauthorized"}', status=401, mimetype='application/json')
-			else:
-				# Subsequent requests: success
-				return Response('{"processed": 1, "failed": 0}', status=200, mimetype='application/json')
+			return Response('{"processed": 1, "failed": 0}', status=200, mimetype='application/json')
 
-		httpserver.expect_request('/api/v1/events', method='POST').respond_with_handler(handle_events_request)
+		httpserver.expect_request('/api/v1/events', method='POST').respond_with_handler(capture_request)
 
 		# Create service with unauthenticated auth client
 		auth = DeviceAuthClient(base_url=httpserver.url_for(''))
 		# Start unauthenticated
 
-		service = CloudSync(base_url=httpserver.url_for(''), enable_auth=True)
+		service = CloudSync(base_url=httpserver.url_for(''))
 		service.auth_client = auth
 		service.session_id = 'test-session-id'
 
-		# Send pre-auth event (should get 401 and be queued)
+		# Send pre-auth event (should be skipped)
 		await service.handle_event(
 			CreateAgentTaskEvent(
 				agent_session_id='test-session',
@@ -487,31 +464,33 @@ class TestCloudSync:
 			)
 		)
 
-		# Event should be in pending_events since we got 401
-		assert len(service.pending_events) == 1
-		assert hasattr(service.pending_events[0], 'task') and service.pending_events[0].task == 'Pre-auth task'  # type: ignore
-		assert hasattr(service.pending_events[0], 'user_id') and service.pending_events[0].user_id == TEMP_USER_ID  # type: ignore
+		# No requests should have been made yet
+		assert len(requests) == 0
 
 		# Now authenticate the auth client
 		auth.auth_config.api_token = 'test-api-key'
 		auth.auth_config.user_id = 'test-user-123'
 
-		# Manually trigger resend of pending events
-		await service._resend_pending_events()
+		# Send post-auth event (should be sent)
+		await service.handle_event(
+			CreateAgentTaskEvent(
+				agent_session_id='test-session',
+				llm_model='test-model',
+				task='Post-auth task',
+				user_id='test-user-123',
+				done_output=None,
+				user_feedback_type=None,
+				user_comment=None,
+				gif_url=None,
+				device_id='test-device-id',
+			)
+		)
 
-		# Pre-auth events should be cleared after successful resend
-		assert len(service.pending_events) == 0
-
-		# Check that events were sent (1 original attempt + 1 resend)
-		assert len(requests) == 2
-
-		# Check first request was unauthenticated
-		assert 'Authorization' not in requests[0]['headers']
-		assert requests[0]['json']['events'][0]['user_id'] == TEMP_USER_ID
-
-		# Check second request was authenticated with updated user_id
-		assert requests[1]['headers']['Authorization'] == 'Bearer test-api-key'
-		assert requests[1]['json']['events'][0]['user_id'] == 'test-user-123'
+		# Now exactly one request should have been made (the post-auth event)
+		assert len(requests) == 1
+		assert requests[0]['headers']['Authorization'] == 'Bearer test-api-key'
+		assert requests[0]['json']['events'][0]['user_id'] == 'test-user-123'
+		assert requests[0]['json']['events'][0]['task'] == 'Post-auth task'
 
 	async def test_error_handling(self, httpserver: HTTPServer, temp_config_dir):
 		"""Test error handling during event sending."""
@@ -523,7 +502,7 @@ class TestCloudSync:
 		auth.auth_config.api_token = 'test-api-key'
 		auth.auth_config.user_id = 'test-user-123'
 
-		service = CloudSync(base_url=httpserver.url_for(''), enable_auth=True)
+		service = CloudSync(base_url=httpserver.url_for(''))
 		service.auth_client = auth
 		service.session_id = 'test-session-id'
 
@@ -552,8 +531,7 @@ class TestCloudSync:
 	# 	auth.auth_config.user_id = 'test-user-123'
 
 	# 	service = CloudSync(
-	# 		base_url='http://localhost:8000',
-	# 		enable_auth=True,
+	# 		base_url='http://localhost:8000'
 	# 	)
 	# 	service.auth_client = auth
 	# 	service.session_id = 'test-session-id'
@@ -673,7 +651,7 @@ class TestIntegration:
 		).respond_with_json({'processed': 1, 'failed': 0})
 
 		# Create service
-		service = CloudSync(base_url=httpserver.url_for(''), enable_auth=True)
+		service = CloudSync(base_url=httpserver.url_for(''))
 		service.session_id = 'test-session-id'
 
 		# Send pre-auth event
@@ -766,7 +744,7 @@ class TestAuthResilience:
 		# Create cloud sync service
 		from browser_use.sync.service import CloudSync
 
-		service = CloudSync(base_url=httpserver.url_for(''), enable_auth=True)
+		service = CloudSync(base_url=httpserver.url_for(''))
 		service.auth_client = auth
 
 		# Send event - should not raise exception even though token is expired
@@ -804,7 +782,7 @@ class TestAuthResilience:
 		# Should still be able to create sync service
 		from browser_use.sync.service import CloudSync
 
-		service = CloudSync(base_url=httpserver.url_for(''), enable_auth=True)
+		service = CloudSync(base_url=httpserver.url_for(''))
 		service.auth_client = auth
 
 		# Set up events endpoint to handle unauthenticated requests
@@ -840,7 +818,7 @@ class TestAuthResilience:
 
 		from browser_use.sync.service import CloudSync
 
-		service = CloudSync(base_url=httpserver.url_for(''), enable_auth=True)
+		service = CloudSync(base_url=httpserver.url_for(''))
 		service.auth_client = auth
 
 		# Should be able to send events even when server is down
@@ -865,7 +843,7 @@ class TestAuthResilience:
 
 		from browser_use.sync.service import CloudSync
 
-		service = CloudSync(base_url=httpserver.url_for(''), enable_auth=True)
+		service = CloudSync(base_url=httpserver.url_for(''))
 		service.auth_client = auth
 
 		# Send many events while server is down (no responses configured)
@@ -911,7 +889,7 @@ class TestAuthResilience:
 
 		from browser_use.sync.service import CloudSync
 
-		service = CloudSync(base_url=httpserver.url_for(''), enable_auth=True)
+		service = CloudSync(base_url=httpserver.url_for(''))
 		service.auth_client = auth
 
 		# Should handle malformed event response gracefully

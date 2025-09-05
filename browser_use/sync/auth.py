@@ -134,7 +134,7 @@ class DeviceAuthClient:
 				data={
 					'client_id': self.client_id,
 					'scope': self.scope,
-					'agent_session_id': agent_session_id,
+					'agent_session_id': agent_session_id or '',
 					'device_id': self.device_id,
 				},
 			)
@@ -147,7 +147,7 @@ class DeviceAuthClient:
 					data={
 						'client_id': self.client_id,
 						'scope': self.scope,
-						'agent_session_id': agent_session_id,
+						'agent_session_id': agent_session_id or '',
 						'device_id': self.device_id,
 					},
 				)
