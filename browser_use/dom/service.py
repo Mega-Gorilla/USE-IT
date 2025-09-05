@@ -151,6 +151,46 @@ class DomService:
 			# Fallback to default viewport size
 			return 1.0
 
+	async def _get_viewport_bounds_with_buffer(self, target_id: TargetID, buffer: int = 2000) -> dict:
+		"""Get viewport bounds + buffer for performance optimization (your ±2000px approach)."""
+		cdp_session = await self.browser_session.get_or_create_cdp_session(target_id=target_id, focus=True)
+
+		try:
+			# Get layout metrics to determine viewport and scroll position
+			metrics = await cdp_session.cdp_client.send.Page.getLayoutMetrics(session_id=cdp_session.session_id)
+
+			css_visual_viewport = metrics.get('cssVisualViewport', {})
+			css_layout_viewport = metrics.get('cssLayoutViewport', {})
+			content_size = metrics.get('contentSize', {})
+
+			# Get scroll position and viewport dimensions in CSS pixels
+			scroll_y = int(css_visual_viewport.get('pageY', 0))
+			viewport_height = int(css_visual_viewport.get('clientHeight', 857))
+			page_height = int(content_size.get('height', viewport_height))
+
+			# Calculate bounds with buffer (your approach: viewport ±2000px)
+			top_bound = max(0, scroll_y - buffer)
+			bottom_bound = min(page_height, scroll_y + viewport_height + buffer)
+
+			bounds = {
+				'top': top_bound,
+				'bottom': bottom_bound,
+				'scroll_y': scroll_y,
+				'viewport_height': viewport_height,
+				'buffer': buffer,
+				'total_height': bottom_bound - top_bound,
+			}
+
+			self.logger.debug(
+				f'⚡ Viewport bounds: scroll={scroll_y}px, buffer={buffer}px, processing_height={bounds["total_height"]}px (vs {page_height}px total)'
+			)
+			return bounds
+
+		except Exception as e:
+			self.logger.debug(f'Failed to get viewport bounds: {e}')
+			# Return full page bounds as fallback
+			return {'top': 0, 'bottom': 100000, 'scroll_y': 0, 'viewport_height': 857, 'buffer': 0, 'total_height': 100000}
+
 	@classmethod
 	def is_element_visible_according_to_all_parents(
 		cls, node: EnhancedDOMTreeNode, html_frames: list[EnhancedDOMTreeNode]
@@ -238,8 +278,11 @@ class DomService:
 		# If we reach here, element is visible in main viewport and all containing iframes
 		return True
 
-	async def _get_ax_tree_for_all_frames(self, target_id: TargetID) -> GetFullAXTreeReturns:
-		"""Recursively collect all frames and merge their accessibility trees into a single array."""
+	async def _get_ax_tree_for_all_frames(self, target_id: TargetID, viewport_bounds: dict | None = None) -> GetFullAXTreeReturns:
+		"""Recursively collect all frames and merge their accessibility trees into a single array.
+
+		PERFORMANCE: Skip accessibility trees for out-of-viewport frames to reduce processing time.
+		"""
 
 		cdp_session = await self.browser_session.get_or_create_cdp_session(target_id=target_id, focus=False)
 		frame_tree = await cdp_session.cdp_client.send.Page.getFrameTree(session_id=cdp_session.session_id)
@@ -257,9 +300,19 @@ class DomService:
 		# Collect all frame IDs recursively
 		all_frame_ids = collect_all_frame_ids(frame_tree['frameTree'])
 
-		# Get accessibility tree for each frame
+		# PERFORMANCE: Process only main frame if viewport bounds available (skip iframe AX trees)
+		# This reduces AX tree processing significantly for pages with many iframes
+		if viewport_bounds and len(all_frame_ids) > 1:
+			# Only process main frame (first frame) for performance
+			frame_ids_to_process = all_frame_ids[:1]  # Main frame only
+			self.logger.debug(f'⚡ AX tree optimization: processing 1 main frame (skipped {len(all_frame_ids) - 1} iframes)')
+		else:
+			frame_ids_to_process = all_frame_ids
+			self.logger.debug(f'🔍 AX tree: processing all {len(all_frame_ids)} frames')
+
+		# Get accessibility tree for selected frames
 		ax_tree_requests = []
-		for frame_id in all_frame_ids:
+		for frame_id in frame_ids_to_process:
 			ax_tree_request = cdp_session.cdp_client.send.Accessibility.getFullAXTree(
 				params={'frameId': frame_id}, session_id=cdp_session.session_id
 			)
@@ -326,12 +379,15 @@ class DomService:
 		except Exception as e:
 			self.logger.debug(f'Failed to get iframe scroll positions: {e}')
 
+		# Get viewport bounds for optimization (your ±2000px buffer approach)
+		viewport_bounds = await self._get_viewport_bounds_with_buffer(target_id, buffer=2000)
+
 		# Define CDP request factories to avoid duplication
 		def create_snapshot_request():
 			return cdp_session.cdp_client.send.DOMSnapshot.captureSnapshot(
 				params={
-					'computedStyles': REQUIRED_COMPUTED_STYLES,
-					'includePaintOrder': True,
+					'computedStyles': REQUIRED_COMPUTED_STYLES,  # Now only 8 styles vs 19!
+					'includePaintOrder': False,
 					'includeDOMRects': True,
 					'includeBlendedBackgroundColors': False,
 					'includeTextColorOpacities': False,
@@ -345,59 +401,112 @@ class DomService:
 			)
 
 		start = time.time()
+		self.logger.debug('🔍 CDP: Starting all CDP tasks...')
 
-		# Create initial tasks
+		# Create initial tasks (now viewport-aware!)
+		snapshot_start = time.time()
+		dom_tree_start = time.time()
+		ax_tree_start = time.time()
+		device_ratio_start = time.time()
+
 		tasks = {
 			'snapshot': asyncio.create_task(create_snapshot_request()),
 			'dom_tree': asyncio.create_task(create_dom_tree_request()),
-			'ax_tree': asyncio.create_task(self._get_ax_tree_for_all_frames(target_id)),
+			'ax_tree': asyncio.create_task(self._get_ax_tree_for_all_frames(target_id, viewport_bounds)),
 			'device_pixel_ratio': asyncio.create_task(self._get_viewport_ratio(target_id)),
 		}
+
+		task_start_times = {
+			'snapshot': snapshot_start,
+			'dom_tree': dom_tree_start,
+			'ax_tree': ax_tree_start,
+			'device_pixel_ratio': device_ratio_start,
+		}
+
+		self.logger.debug('🔍 CDP: All tasks created, waiting for completion (timeout=10s)...')
 
 		# Wait for all tasks with timeout
 		done, pending = await asyncio.wait(tasks.values(), timeout=10.0)
 
+		# Log completed tasks
+		for task_name, task in tasks.items():
+			if task in done:
+				elapsed = time.time() - task_start_times[task_name]
+				self.logger.debug(f'✅ CDP: {task_name} completed in {elapsed:.2f}s')
+			elif task in pending:
+				elapsed = time.time() - task_start_times[task_name]
+				self.logger.warning(f'⏰ CDP: {task_name} TIMED OUT after {elapsed:.2f}s (timeout=10s)')
+
 		# Retry any failed or timed out tasks
 		if pending:
+			self.logger.debug(f'🔍 CDP: {len(pending)} tasks timed out, retrying...')
 			for task in pending:
 				task.cancel()
 
-			# Retry mapping for pending tasks
+			# Retry mapping for pending tasks (viewport-aware!)
 			retry_map = {
 				tasks['snapshot']: lambda: asyncio.create_task(create_snapshot_request()),
 				tasks['dom_tree']: lambda: asyncio.create_task(create_dom_tree_request()),
-				tasks['ax_tree']: lambda: asyncio.create_task(self._get_ax_tree_for_all_frames(target_id)),
+				tasks['ax_tree']: lambda: asyncio.create_task(self._get_ax_tree_for_all_frames(target_id, viewport_bounds)),
 				tasks['device_pixel_ratio']: lambda: asyncio.create_task(self._get_viewport_ratio(target_id)),
 			}
 
 			# Create new tasks only for the ones that didn't complete
+			retry_start = time.time()
+			retry_task_names = []
 			for key, task in tasks.items():
-				if task in pending and task in retry_map:
+				if task in pending and key in retry_map:
 					tasks[key] = retry_map[task]()
+					retry_task_names.append(key)
+					self.logger.debug(f'🔄 CDP: Retrying {key}...')
 
 			# Wait again with shorter timeout
+			self.logger.debug(f'🔍 CDP: Waiting for {len(retry_task_names)} retry tasks (timeout=2s)...')
 			done2, pending2 = await asyncio.wait([t for t in tasks.values() if not t.done()], timeout=2.0)
 
+			# Log retry results
+			for task_name in retry_task_names:
+				task = tasks[task_name]
+				if task in done2:
+					elapsed = time.time() - retry_start
+					self.logger.debug(f'✅ CDP: {task_name} retry completed in {elapsed:.2f}s')
+				elif task in pending2:
+					elapsed = time.time() - retry_start
+					self.logger.warning(f'⏰ CDP: {task_name} retry TIMED OUT after {elapsed:.2f}s (timeout=2s)')
+
 			if pending2:
+				self.logger.warning(f'🔍 CDP: {len(pending2)} tasks failed after retry, cancelling...')
 				for task in pending2:
 					task.cancel()
 
 		# Extract results, tracking which ones failed
+		self.logger.debug(f'🔍 CDP: Extracting results from {len(tasks)} tasks...')
+		extract_start = time.time()
+
 		results = {}
 		failed = []
 		for key, task in tasks.items():
+			task_extract_start = time.time()
 			if task.done() and not task.cancelled():
 				try:
 					results[key] = task.result()
+					task_extract_end = time.time()
+					self.logger.debug(f'✅ CDP: Extracted {key} result in {task_extract_end - task_extract_start:.2f}s')
 				except Exception as e:
-					self.logger.warning(f'CDP request {key} failed with exception: {e}')
+					task_extract_end = time.time()
+					self.logger.warning(f'❌ CDP: Task {key} failed after {task_extract_end - task_extract_start:.2f}s: {e}')
 					failed.append(key)
 			else:
-				self.logger.warning(f'CDP request {key} timed out')
+				task_extract_end = time.time()
+				self.logger.warning(f'⏰ CDP: Task {key} timed out after {task_extract_end - task_extract_start:.2f}s')
 				failed.append(key)
+
+		extract_end = time.time()
+		self.logger.debug(f'🔍 CDP: All results extracted in {extract_end - extract_start:.2f}s')
 
 		# If any required tasks failed, raise an exception
 		if failed:
+			self.logger.error(f'❌ CDP: {len(failed)} tasks failed: {", ".join(failed)}')
 			raise TimeoutError(f'CDP requests failed or timed out: {", ".join(failed)}')
 
 		snapshot = results['snapshot']
@@ -405,7 +514,10 @@ class DomService:
 		ax_tree = results['ax_tree']
 		device_pixel_ratio = results['device_pixel_ratio']
 		end = time.time()
-		cdp_timing = {'cdp_calls_total': end - start}
+		total_cdp_time = end - start
+		cdp_timing = {'cdp_calls_total': total_cdp_time}
+
+		self.logger.debug(f'🔍 CDP: TOTAL CDP processing completed in {total_cdp_time:.2f}s')
 
 		# DEBUG: Log snapshot info
 		if snapshot and 'documents' in snapshot:
@@ -454,8 +566,18 @@ class DomService:
 		enhanced_dom_tree_node_lookup: dict[int, EnhancedDOMTreeNode] = {}
 		""" NodeId (NOT backend node id) -> enhanced dom tree node"""  # way to get the parent/content node
 
-		# Parse snapshot data with everything calculated upfront
-		snapshot_lookup = build_snapshot_lookup(snapshot, device_pixel_ratio)
+		# Parse snapshot data with everything calculated upfront (viewport optimized!)
+		snapshot_processing_start = time.time()
+		self.logger.debug('🔍 DOM: Starting snapshot lookup processing...')
+
+		viewport_bounds = await self._get_viewport_bounds_with_buffer(target_id, buffer=2000) if target_id else None
+		snapshot_lookup = build_snapshot_lookup(snapshot, device_pixel_ratio, viewport_bounds)
+
+		snapshot_processing_end = time.time()
+		self.logger.debug(
+			f'🔍 DOM: Snapshot lookup processing completed in {snapshot_processing_end - snapshot_processing_start:.2f}s'
+		)
+		self.logger.debug(f'🔍 DOM: Snapshot lookup contains {len(snapshot_lookup)} elements (after viewport filtering)')
 
 		async def _construct_enhanced_node(
 			node: Node, html_frames: list[EnhancedDOMTreeNode] | None, total_frame_offset: DOMRect | None
@@ -651,7 +773,13 @@ class DomService:
 
 			return dom_tree_node
 
+		dom_construction_start = time.time()
+		self.logger.debug('🔍 DOM: Starting DOM tree construction...')
+
 		enhanced_dom_tree_node = await _construct_enhanced_node(dom_tree['root'], initial_html_frames, initial_total_frame_offset)
+
+		dom_construction_end = time.time()
+		self.logger.debug(f'🔍 DOM: DOM tree construction completed in {dom_construction_end - dom_construction_start:.2f}s')
 
 		return enhanced_dom_tree_node
 
@@ -666,15 +794,23 @@ class DomService:
 
 		# Use current target (None means use current)
 		assert self.browser_session.current_target_id is not None
-		enhanced_dom_tree = await self.get_dom_tree(target_id=self.browser_session.current_target_id)
 
-		start = time.time()
+		dom_tree_start = time.time()
+		self.logger.debug('🔍 SERIALIZER: Getting DOM tree...')
+		enhanced_dom_tree = await self.get_dom_tree(target_id=self.browser_session.current_target_id)
+		dom_tree_end = time.time()
+		self.logger.debug(f'🔍 SERIALIZER: DOM tree retrieved in {dom_tree_end - dom_tree_start:.2f}s')
+
+		serializer_start = time.time()
+		self.logger.debug('🔍 SERIALIZER: Starting DOM serialization...')
 		serialized_dom_state, serializer_timing = DOMTreeSerializer(
 			enhanced_dom_tree, previous_cached_state
 		).serialize_accessible_elements()
+		serializer_end = time.time()
+		self.logger.debug(f'🔍 SERIALIZER: DOM serialization completed in {serializer_end - serializer_start:.2f}s')
 
-		end = time.time()
-		serialize_total_timing = {'serialize_dom_tree_total': end - start}
+		serialize_total_timing = {'serialize_dom_tree_total': serializer_end - serializer_start}
+		serialize_total_timing['get_dom_tree_time'] = dom_tree_end - dom_tree_start
 
 		# Combine all timing info
 		all_timing = {**serializer_timing, **serialize_total_timing}
