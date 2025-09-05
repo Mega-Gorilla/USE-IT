@@ -44,38 +44,6 @@ REQUIRED_COMPUTED_STYLES = [
 	'padding',
 ]
 
-# PERFORMANCE NOTE: The layout index map O(1) optimization was the real fix, not style reduction
-# Keeping full computed styles for quality - the O(n²) → O(1) gives us all the performance we need
-
-# Full style set for fallback scenarios
-FULL_COMPUTED_STYLES = [
-	'display',
-	'visibility',
-	'opacity',
-	'position',
-	'z-index',
-	'pointer-events',
-	'cursor',
-	'overflow',
-	'overflow-x',
-	'overflow-y',
-	'width',
-	'height',
-	'top',
-	'left',
-	'right',
-	'bottom',
-	'transform',
-	'clip',
-	'clip-path',
-	'user-select',
-	'background-color',
-	'color',
-	'border',
-	'margin',
-	'padding',
-]
-
 
 def _parse_rare_boolean_data(rare_data: RareBooleanData, index: int) -> bool | None:
 	"""Parse rare boolean data from snapshot - returns True if index is in the rare data."""
@@ -96,14 +64,9 @@ def build_snapshot_lookup(
 	device_pixel_ratio: float = 1.0,
 ) -> dict[int, EnhancedSnapshotNode]:
 	"""Build a lookup table of backend node ID to enhanced snapshot data with everything calculated upfront."""
-	import logging
-
-	logger = logging.getLogger(__name__)
-
 	snapshot_lookup: dict[int, EnhancedSnapshotNode] = {}
 
 	if not snapshot['documents']:
-		logger.debug('🔍 SNAPSHOT: No documents in snapshot')
 		return snapshot_lookup
 
 	strings = snapshot['strings']
@@ -118,24 +81,13 @@ def build_snapshot_lookup(
 			for i, backend_node_id in enumerate(nodes['backendNodeId']):
 				backend_node_to_snapshot_index[backend_node_id] = i
 
-		# Build snapshot lookup for each backend node id
-		total_nodes = len(backend_node_to_snapshot_index)
-		processed_nodes = 0
-
-		logger.debug(f'🔍 SNAPSHOT: Starting processing {total_nodes} nodes...')
-		import time
-
-		processing_start = time.time()
-
 		# PERFORMANCE: Pre-build layout index map to eliminate O(n²) double lookups
 		layout_index_map = {}
 		if layout and 'nodeIndex' in layout:
 			for layout_idx, node_index in enumerate(layout['nodeIndex']):
 				layout_index_map[node_index] = layout_idx
 
-		layout_map_time = time.time() - processing_start
-		logger.debug(f'🔍 SNAPSHOT: Built layout index map with {len(layout_index_map)} entries in {layout_map_time:.3f}s')
-
+		# Build snapshot lookup for each backend node id
 		for backend_node_id, snapshot_index in backend_node_to_snapshot_index.items():
 			is_clickable = None
 			if 'isClickable' in nodes:
@@ -147,7 +99,7 @@ def build_snapshot_lookup(
 			bounding_box = None
 			computed_styles = {}
 
-			# PERFORMANCE: Use cached layout map instead of expensive enumerate loop
+			# Look for layout tree node that corresponds to this snapshot node
 			paint_order = None
 			client_rects = None
 			scroll_rects = None
@@ -155,7 +107,7 @@ def build_snapshot_lookup(
 			if snapshot_index in layout_index_map:
 				layout_idx = layout_index_map[snapshot_index]
 				if layout_idx < len(layout.get('bounds', [])):
-					# Parse bounding box (we already did bounds check above for viewport filtering)
+					# Parse bounding box
 					bounds = layout['bounds'][layout_idx]
 					if len(bounds) >= 4:
 						# IMPORTANT: CDP coordinates are in device pixels, convert to CSS pixels
@@ -218,12 +170,5 @@ def build_snapshot_lookup(
 				paint_order=paint_order,
 				stacking_contexts=stacking_contexts,
 			)
-			processed_nodes += 1
-
-	# Log results with timing
-	processing_end = time.time()
-	processing_time = processing_end - processing_start
-
-	logger.debug(f'🔍 SNAPSHOT: Processed {processed_nodes} nodes (total: {total_nodes}) in {processing_time:.2f}s')
 
 	return snapshot_lookup
