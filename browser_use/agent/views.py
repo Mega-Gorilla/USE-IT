@@ -49,6 +49,7 @@ class AgentSettings(BaseModel):
 	include_tool_call_examples: bool = False
 	llm_timeout: int = 60  # Timeout in seconds for LLM calls
 	step_timeout: int = 180  # Timeout in seconds for each step
+	final_response_after_failure: bool = True  # If True, attempt one final recovery call after max_failures
 
 
 class AgentState(BaseModel):
@@ -64,6 +65,7 @@ class AgentState(BaseModel):
 	stopped: bool = False
 	session_initialized: bool = False  # Track if session events have been dispatched
 	follow_up_task: bool = False  # Track if the agent is a follow-up task
+	recovery_attempted: bool = False  # Track if final recovery has been attempted
 
 	message_manager_state: MessageManagerState = Field(default_factory=MessageManagerState)
 	file_system_state: FileSystemState | None = None

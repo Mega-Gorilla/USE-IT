@@ -179,6 +179,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		directly_open_url: bool = True,
 		include_recent_events: bool = False,
 		sample_images: list[ContentPartTextParam | ContentPartImageParam] | None = None,
+		final_response_after_failure: bool = True,
 		**kwargs,
 	):
 		if llm is None:
@@ -262,6 +263,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			include_tool_call_examples=include_tool_call_examples,
 			llm_timeout=llm_timeout,
 			step_timeout=step_timeout,
+			final_response_after_failure=final_response_after_failure,
 		)
 
 		# Token cost service
@@ -687,7 +689,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			available_file_paths=self.available_file_paths,  # Always pass current available_file_paths
 		)
 
-		await self._handle_final_step(step_info)
+		await self._force_done_after_last_step(step_info)
+		await self._force_done_after_failure()
 		return browser_state_summary
 
 	@observe_debug(ignore_input=True, name='get_next_action')
@@ -838,7 +841,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# Increment step counter after step is fully completed
 		self.state.n_steps += 1
 
-	async def _handle_final_step(self, step_info: AgentStepInfo | None = None) -> None:
+	async def _force_done_after_last_step(self, step_info: AgentStepInfo | None = None) -> None:
 		"""Handle special processing for the last step"""
 		if step_info and step_info.is_last_step():
 			# Add last step warning if needed
@@ -847,6 +850,19 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			msg += '\nIf the task is fully finished, set success in "done" to true.'
 			msg += '\nInclude everything you found out for the ultimate task in the done text.'
 			self.logger.debug('Last step finishing up')
+			self._message_manager._add_context_message(UserMessage(content=msg))
+			self.AgentOutput = self.DoneAgentOutput
+
+	async def _force_done_after_failure(self) -> None:
+		"""Force done after failure"""
+		# Create recovery message
+		if self.state.consecutive_failures >= self.settings.max_failures and self.settings.final_response_after_failure:
+			msg = f'You have failed {self.settings.max_failures} consecutive times. This is your final step to complete the task or provide what you found. '
+			msg += 'Use only the "done" action now. No other actions - so here your action sequence must have length 1.'
+			msg += '\nIf the task could not be completed due to the failures, set success in "done" to false!'
+			msg += '\nInclude everything you found out for the task in the done text.'
+
+			self.logger.debug('Final recovery step setup')
 			self._message_manager._add_context_message(UserMessage(content=msg))
 			self.AgentOutput = self.DoneAgentOutput
 
@@ -1277,7 +1293,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 					signal_handler.reset()
 
 				# Check if we should stop due to too many failures
-				if self.state.consecutive_failures >= self.settings.max_failures:
+				if (
+					self.state.consecutive_failures + int(self.settings.final_response_after_failure)
+				) >= self.settings.max_failures:
 					self.logger.error(f'❌ Stopping due to {self.settings.max_failures} consecutive failures')
 					agent_run_error = f'Stopped due to {self.settings.max_failures} consecutive failures'
 					break
