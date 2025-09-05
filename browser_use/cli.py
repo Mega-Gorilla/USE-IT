@@ -1623,20 +1623,83 @@ async def run_auth_command():
 		# Handle the session event to set up the sync context
 		await sync_service.handle_event(session_event)
 
-		# Now authenticate using the established session context
-		success = await sync_service.authenticate(show_instructions=True)
-		if success:
-			print('🎉 Authentication successful!')
-			print('   Future browser-use runs will now sync to the cloud.')
+		# Check if already authenticated
+		if auth_client.is_authenticated:
+			# Already authenticated - send completion immediately
+			from browser_use.agent.cloud_events import CreateAgentTaskEvent, UpdateAgentTaskEvent
+
+			task_event = CreateAgentTaskEvent(
+				agent_session_id=session_id,
+				llm_model='auth-flow',
+				task='🔐 Authentication status check - your future tasks will appear here',
+				user_id=auth_client.user_id,  # Use real user_id since already authenticated
+				done_output=None,
+				user_feedback_type=None,
+				user_comment=None,
+				gif_url=None,
+				device_id=auth_client.device_id,
+			)
+			await sync_service.handle_event(task_event)
+
+			# Immediately send completion
+			completion_event = UpdateAgentTaskEvent(
+				id=session_id,
+				agent_session_id=session_id,
+				user_id=auth_client.user_id,
+				done_output='✅ Already authenticated! Cloud sync is enabled for your browser-use runs.',
+				user_feedback_type=None,
+				user_comment=None,
+				gif_url=None,
+				device_id=auth_client.device_id,
+			)
+			await sync_service.handle_event(completion_event)
 		else:
-			print('❌ Authentication failed.')
-			print('   Please try again or check your internet connection.')
+			# Not authenticated - run auth flow
+			from browser_use.agent.cloud_events import CreateAgentTaskEvent
+
+			task_event = CreateAgentTaskEvent(
+				agent_session_id=session_id,
+				llm_model='auth-flow',
+				task='🔐 Authentication in progress - your future tasks will appear here',
+				user_id=auth_client.temp_user_id,
+				done_output=None,
+				user_feedback_type=None,
+				user_comment=None,
+				gif_url=None,
+				device_id=auth_client.device_id,
+			)
+			await sync_service.handle_event(task_event)
+
+			# Now authenticate using the established session context
+			success = await sync_service.authenticate(show_instructions=True)
+
+			if success:
+				# Send completion event to finish the auth task in UI
+				from browser_use.agent.cloud_events import UpdateAgentTaskEvent
+
+				completion_event = UpdateAgentTaskEvent(
+					id=session_id,  # Required field
+					agent_session_id=session_id,
+					user_id=auth_client.user_id,  # Required field - now we have the real user_id after auth
+					done_output='✅ Authentication successful! Future browser-use runs will now sync to the cloud.',
+					user_feedback_type=None,
+					user_comment=None,
+					gif_url=None,
+					device_id=auth_client.device_id,
+				)
+				await sync_service.handle_event(completion_event)
+
+				print('🎉 Authentication successful!')
+				print('   Future browser-use runs will now sync to the cloud.')
+			else:
+				print('❌ Authentication failed.')
+				print('   Please try again or check your internet connection.')
 	except Exception as e:
 		print(f'❌ Authentication error: {e}')
 		sys.exit(1)
 
 
-@click.command()
+@click.group(invoke_without_command=True)
 @click.option('--version', is_flag=True, help='Print version and exit')
 @click.option('--model', type=str, help='Model to use (e.g., gpt-5-mini, claude-4-sonnet, gemini-2.5-flash)')
 @click.option('--debug', is_flag=True, help='Enable verbose startup logging')
@@ -1654,31 +1717,26 @@ async def run_auth_command():
 @click.option('--proxy-password', type=str, help='Proxy auth password')
 @click.option('-p', '--prompt', type=str, help='Run a single task without the TUI (headless mode)')
 @click.option('--mcp', is_flag=True, help='Run as MCP server (exposes JSON RPC via stdin/stdout)')
-@click.option('--auth', is_flag=True, help='Authenticate with Browser Use Cloud')
 @click.pass_context
 def main(ctx: click.Context, debug: bool = False, **kwargs):
-	"""Run Browser-Use Interactive TUI or Command Line Executor
+	"""Browser Use - AI Agent for Web Automation
 
-	Use --user-data-dir to specify a local Chrome profile directory.
-	Common Chrome profile locations:
-	  macOS: ~/Library/Application Support/Google/Chrome
-	  Linux: ~/.config/google-chrome
-	  Windows: %LOCALAPPDATA%\\Google\\Chrome\\User Data
-
-	Use --profile-directory to specify which profile within the user data directory.
-	Examples: "Default", "Profile 1", "Profile 2", etc.
+	Run without arguments to start the interactive TUI.
 	"""
+
+	if ctx.invoked_subcommand is None:
+		# No subcommand, run the main interface
+		run_main_interface(ctx, debug, **kwargs)
+
+
+def run_main_interface(ctx: click.Context, debug: bool = False, **kwargs):
+	"""Run the main browser-use interface"""
 
 	if kwargs['version']:
 		from importlib.metadata import version
 
 		print(version('browser-use'))
 		sys.exit(0)
-
-	# Check if auth mode is activated
-	if kwargs.get('auth'):
-		asyncio.run(run_auth_command())
-		return
 
 	# Check if MCP server mode is activated
 	if kwargs.get('mcp'):
@@ -1782,6 +1840,12 @@ def main(ctx: click.Context, debug: bool = False, **kwargs):
 
 			traceback.print_exc()
 		sys.exit(1)
+
+
+@main.command()
+def auth():
+	"""Authenticate with Browser Use Cloud to sync your runs"""
+	asyncio.run(run_auth_command())
 
 
 if __name__ == '__main__':
