@@ -622,6 +622,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 	async def step(self, step_info: AgentStepInfo | None = None) -> None:
 		"""Execute one step of the task"""
 		# Initialize timing first, before any exceptions can occur
+
 		self.step_start_time = time.time()
 
 		browser_state_summary = None
@@ -776,7 +777,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# Handle all other exceptions
 		include_trace = self.logger.isEnabledFor(logging.DEBUG)
 		error_msg = AgentError.format_error(error, include_trace=include_trace)
-		prefix = f'❌ Result failed {self.state.consecutive_failures + 1}/{self.settings.max_failures} times:\n '
+		prefix = f'❌ Result failed {self.state.consecutive_failures + 1}/{self.settings.max_failures + int(self.settings.final_response_after_failure)} times:\n '
 		self.state.consecutive_failures += 1
 
 		# Handle InterruptedError specially
@@ -862,7 +863,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			msg += '\nIf the task could not be completed due to the failures, set success in "done" to false!'
 			msg += '\nInclude everything you found out for the task in the done text.'
 
-			self.logger.debug('Final recovery step setup')
+			self.logger.debug('Force done action, becasue we reached max_failures.')
 			self._message_manager._add_context_message(UserMessage(content=msg))
 			self.AgentOutput = self.DoneAgentOutput
 
@@ -1292,10 +1293,10 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 					await self.wait_until_resumed()
 					signal_handler.reset()
 
-				# Check if we should stop due to too many failures
-				if (
-					self.state.consecutive_failures + int(self.settings.final_response_after_failure)
-				) >= self.settings.max_failures:
+				# Check if we should stop due to too many failures, if final_response_after_failure is True, we try one last time
+				if (self.state.consecutive_failures) >= self.settings.max_failures + int(
+					self.settings.final_response_after_failure
+				):
 					self.logger.error(f'❌ Stopping due to {self.settings.max_failures} consecutive failures')
 					agent_run_error = f'Stopped due to {self.settings.max_failures} consecutive failures'
 					break
