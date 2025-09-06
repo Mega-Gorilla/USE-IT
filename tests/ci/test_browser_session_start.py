@@ -14,315 +14,421 @@ import logging
 
 import pytest
 
-from browser_use.browser.profile import BrowserProfile
+from browser_use.browser.profile import (
+	BROWSERUSE_DEFAULT_CHANNEL,
+	BrowserChannel,
+	BrowserProfile,
+)
 from browser_use.browser.session import BrowserSession
+from browser_use.config import CONFIG
 
 # Set up test logging
 logger = logging.getLogger('browser_session_start_tests')
 # logger.setLevel(logging.DEBUG)
 
 
+# run with pytest -k test_user_data_dir_not_allowed_to_corrupt_default_profile
+
+
 class TestBrowserSessionStart:
 	"""Tests for BrowserSession.start() method initialization and concurrency."""
 
-	@pytest.fixture
+	@pytest.fixture(scope='module')
 	async def browser_profile(self):
 		"""Create and provide a BrowserProfile with headless mode."""
-		profile = BrowserProfile(headless=True, user_data_dir=None)
+		profile = BrowserProfile(headless=True, user_data_dir=None, keep_alive=False)
 		yield profile
 
-	@pytest.fixture
+	@pytest.fixture(scope='function')
 	async def browser_session(self, browser_profile):
 		"""Create a BrowserSession instance without starting it."""
 		session = BrowserSession(browser_profile=browser_profile)
 		yield session
-		# Cleanup: ensure session is stopped
-		try:
-			await session.stop()
-		except Exception:
-			pass
+		await session.kill()
 
 	async def test_start_already_started_session(self, browser_session):
 		"""Test calling .start() on a session that's already started."""
 		# logger.info('Testing start on already started session')
 
 		# Start the session for the first time
-		result1 = await browser_session.start()
-		assert browser_session.initialized is True
-		assert browser_session.browser_context is not None
-		assert result1 is browser_session
+		await browser_session.start()
+		assert browser_session._cdp_client_root is not None
 
 		# Start the session again - should return immediately without re-initialization
-		result2 = await browser_session.start()
-		assert result2 is browser_session
-		assert browser_session.initialized is True
-		assert browser_session.browser_context is not None
-
-		# Both results should be the same instance
-		assert result1 is result2
-
-	async def test_concurrent_start_calls(self, browser_session):
-		"""Test simultaneously calling .start() from two parallel coroutines."""
-		# logger.info('Testing concurrent start calls')
-
-		# Track how many times the lock is actually acquired for initialization
-		original_start_lock = browser_session._start_lock
-		lock_acquire_count = 0
-
-		class CountingLock:
-			def __init__(self, original_lock):
-				self.original_lock = original_lock
-
-			async def __aenter__(self):
-				nonlocal lock_acquire_count
-				lock_acquire_count += 1
-				return await self.original_lock.__aenter__()
-
-			async def __aexit__(self, exc_type, exc_val, exc_tb):
-				return await self.original_lock.__aexit__(exc_type, exc_val, exc_tb)
-
-		browser_session._start_lock = CountingLock(original_start_lock)
-
-		# Start two concurrent calls to start()
-		results = await asyncio.gather(browser_session.start(), browser_session.start(), return_exceptions=True)
-
-		# Both should succeed and return the same session instance
-		assert all(result is browser_session for result in results)
-		assert browser_session.initialized is True
-		assert browser_session.browser_context is not None
-
-		# The lock should have been acquired twice (once per coroutine)
-		# but only one should have done the actual initialization
-		assert lock_acquire_count == 2
-
-	async def test_start_with_closed_browser_connection(self, browser_session):
-		"""Test calling .start() on a session that's started but has a closed browser connection."""
-		# logger.info('Testing start with closed browser connection')
-
-		# Start the session normally
 		await browser_session.start()
-		assert browser_session.initialized is True
-		assert browser_session.browser_context is not None
+		assert browser_session._cdp_client_root is not None
 
-		# Simulate a closed browser connection by closing the browser
-		if browser_session.browser:
-			await browser_session.browser.close()
+	# @pytest.mark.skip(reason="Race condition - DOMWatchdog tries to inject scripts into tab that's being closed")
+	# async def test_page_lifecycle_management(self, browser_session: BrowserSession):
+	# 	"""Test session handles page lifecycle correctly."""
+	# 	# logger.info('Testing page lifecycle management')
 
-		# The session should detect the closed connection and reinitialize
-		result = await browser_session.start()
-		assert result is browser_session
-		assert browser_session.initialized is True
-		assert browser_session.browser_context is not None
+	# 	# Start the session and get initial state
+	# 	await browser_session.start()
+	# 	initial_tabs = await browser_session.get_tabs()
+	# 	initial_count = len(initial_tabs)
 
-	async def test_start_with_missing_browser_context(self, browser_session):
-		"""Test calling .start() when browser_context is None but initialized is True."""
-		# logger.info('Testing start with missing browser context')
+	# 	# Get current tab info
+	# 	current_url = await browser_session.get_current_page_url()
+	# 	assert current_url is not None
 
-		# Manually set initialized to True but leave browser_context as None
-		browser_session.initialized = True
-		browser_session.browser_context = None
+	# 	# Get current tab ID
+	# 	current_tab_id = browser_session.agent_focus.target_id if browser_session.agent_focus else None
+	# 	assert current_tab_id is not None
 
-		# Start should detect this inconsistent state and reinitialize
-		result = await browser_session.start()
-		assert result is browser_session
-		assert browser_session.initialized is True
-		assert browser_session.browser_context is not None
+	# 	# Close the current tab using the event system
+	# 	from browser_use.browser.events import CloseTabEvent
 
-	async def test_start_initialization_failure(self, browser_session):
-		"""Test that initialization failure properly resets the initialized flag."""
-		# logger.info('Testing start initialization failure')
+	# 	close_event = browser_session.event_bus.dispatch(CloseTabEvent(target_id=current_tab_id))
+	# 	await close_event
 
-		# Mock setup_playwright to raise an exception
-		original_setup_playwright = browser_session.setup_playwright
+	# 	# Operations should still work - may create new page or use existing
+	# 	tabs_after_close = await browser_session.get_tabs()
+	# 	assert isinstance(tabs_after_close, list)
 
-		async def failing_setup_playwright():
-			raise RuntimeError('Simulated initialization failure')
+	# 	# Create a new tab explicitly
+	# 	event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url='about:blank', new_tab=True))
+	# 	await event
+	# 	await event.event_result(raise_if_any=True, raise_if_none=False)
 
-		browser_session.setup_playwright = failing_setup_playwright
+	# 	# Should have at least one tab now
+	# 	final_tabs = await browser_session.get_tabs()
+	# 	assert len(final_tabs) >= 1
 
-		# Start should fail and reset initialized flag
-		with pytest.raises(RuntimeError, match='Simulated initialization failure'):
-			await browser_session.start()
-
-		assert browser_session.initialized is False
-
-		# Restore the original method and try again - should work
-		browser_session.setup_playwright = original_setup_playwright
-		result = await browser_session.start()
-		assert result is browser_session
-		assert browser_session.initialized is True
-
-	async def test_close_unstarted_session(self, browser_session):
-		"""Test calling .close() on a session that hasn't been started yet."""
-		# logger.info('Testing close on unstarted session')
-
-		# Ensure session is not started
-		assert browser_session.initialized is False
-		assert browser_session.browser_context is None
-
-		# Close should not raise an exception
-		await browser_session.stop()
-
-		# State should remain unchanged
-		assert browser_session.initialized is False
-		assert browser_session.browser_context is None
-
-	async def test_close_alias_method(self, browser_session):
-		"""Test the deprecated .close() alias method."""
-		# logger.info('Testing deprecated close alias method')
-
-		# Start the session
-		await browser_session.start()
-		assert browser_session.initialized is True
-
-		# Use the deprecated close method
-		await browser_session.close()
-
-		# Session should be stopped
-		assert browser_session.initialized is False
-
-	async def test_context_manager_usage(self, browser_session):
-		"""Test using BrowserSession as an async context manager."""
-		# logger.info('Testing context manager usage')
-
-		# Use as context manager
-		async with browser_session as session:
-			assert session is browser_session
-			assert session.initialized is True
-			assert session.browser_context is not None
-
-		# Should be stopped after exiting context
-		assert browser_session.initialized is False
-
-	async def test_multiple_concurrent_operations_after_start(self, browser_session):
-		"""Test that multiple operations can run concurrently after start() completes."""
-		# logger.info('Testing multiple concurrent operations after start')
-
-		# Start the session
-		await browser_session.start()
-
-		# Run multiple operations concurrently that require initialization
-		async def get_tabs():
-			return await browser_session.get_tabs_info()
-
-		async def get_current_page():
-			return await browser_session.get_current_page()
-
-		async def take_screenshot():
-			return await browser_session.take_screenshot()
-
-		# All operations should succeed concurrently
-		results = await asyncio.gather(get_tabs(), get_current_page(), take_screenshot(), return_exceptions=True)
-
-		# Check that all operations completed successfully
-		assert len(results) == 3
-		assert all(not isinstance(r, Exception) for r in results)
-
-	async def test_start_with_keep_alive_profile(self):
-		"""Test start/stop behavior with keep_alive=True profile."""
-		# logger.info('Testing start with keep_alive profile')
-
-		profile = BrowserProfile(headless=True, user_data_dir=None, keep_alive=True)
-		session = BrowserSession(browser_profile=profile)
+	async def test_user_data_dir_not_allowed_to_corrupt_default_profile(self):
+		"""Test user_data_dir handling for different browser channels and version mismatches."""
+		# Test 1: Chromium with default user_data_dir and default channel should work fine
+		session = BrowserSession(
+			browser_profile=BrowserProfile(
+				headless=True,
+				user_data_dir=CONFIG.BROWSER_USE_DEFAULT_USER_DATA_DIR,
+				channel=BROWSERUSE_DEFAULT_CHANNEL,  # chromium
+				keep_alive=False,
+			),
+		)
 
 		try:
 			await session.start()
-			assert session.initialized is True
+			assert session._cdp_client_root is not None
+			# Verify the user_data_dir wasn't changed
+			assert session.browser_profile.user_data_dir == CONFIG.BROWSER_USE_DEFAULT_USER_DATA_DIR
+		finally:
+			await session.kill()
 
-			# Stop should not actually close the browser with keep_alive=True
-			await session.stop()
-			# initialized flag should still be False after stop()
-			assert session.initialized is False
+		# Test 2: Chrome with default user_data_dir should automatically change dir
+		profile2 = BrowserProfile(
+			headless=True,
+			user_data_dir=CONFIG.BROWSER_USE_DEFAULT_USER_DATA_DIR,
+			channel=BrowserChannel.CHROME,
+			keep_alive=False,
+		)
+
+		# The validator should have changed the user_data_dir to avoid corruption
+		assert profile2.user_data_dir != CONFIG.BROWSER_USE_DEFAULT_USER_DATA_DIR
+		assert profile2.user_data_dir == CONFIG.BROWSER_USE_DEFAULT_USER_DATA_DIR.parent / 'default-chrome'
+
+		# Test 3: Edge with default user_data_dir should also change
+		profile3 = BrowserProfile(
+			headless=True,
+			user_data_dir=CONFIG.BROWSER_USE_DEFAULT_USER_DATA_DIR,
+			channel=BrowserChannel.MSEDGE,
+			keep_alive=False,
+		)
+
+		assert profile3.user_data_dir != CONFIG.BROWSER_USE_DEFAULT_USER_DATA_DIR
+		assert profile3.user_data_dir == CONFIG.BROWSER_USE_DEFAULT_USER_DATA_DIR.parent / 'default-msedge'
+
+
+class TestBrowserSessionReusePatterns:
+	"""Tests for all browser re-use patterns documented in docs/customize/real-browser.mdx"""
+
+	async def test_sequential_agents_same_profile_different_browser(self, mock_llm):
+		"""Test Sequential Agents, Same Profile, Different Browser pattern"""
+		from browser_use import Agent
+		from browser_use.browser.profile import BrowserProfile
+
+		# Create a reusable profile
+		reused_profile = BrowserProfile(
+			user_data_dir=None,  # Use temp dir for testing
+			headless=True,
+		)
+
+		# First agent
+		agent1 = Agent(
+			task='The first task...',
+			llm=mock_llm,
+			browser_profile=reused_profile,
+		)
+		await agent1.run()
+
+		# Verify first agent's session is closed
+		assert agent1.browser_session is not None
+		assert not agent1.browser_session._cdp_client_root is not None
+
+		# Second agent with same profile
+		agent2 = Agent(
+			task='The second task...',
+			llm=mock_llm,
+			browser_profile=reused_profile,
+			# Disable memory for tests
+		)
+		await agent2.run()
+
+		# Verify second agent created a new session
+		assert agent2.browser_session is not None
+		assert agent1.browser_session is not agent2.browser_session
+		assert not agent2.browser_session._cdp_client_root is not None
+
+	async def test_sequential_agents_same_profile_same_browser(self, mock_llm):
+		"""Test Sequential Agents, Same Profile, Same Browser pattern"""
+		from browser_use import Agent, BrowserSession
+
+		# Create a reusable session with keep_alive
+		reused_session = BrowserSession(
+			browser_profile=BrowserProfile(
+				user_data_dir=None,  # Use temp dir for testing
+				headless=True,
+				keep_alive=True,  # Don't close browser after agent.run()
+			),
+		)
+
+		try:
+			# Start the session manually (agents will reuse this initialized session)
+			await reused_session.start()
+
+			# First agent
+			agent1 = Agent(
+				task='The first task...',
+				llm=mock_llm,
+				browser_session=reused_session,
+				# Disable memory for tests
+			)
+			await agent1.run()
+
+			# Verify session is still alive
+			assert reused_session._cdp_client_root is not None
+
+			# Second agent reusing the same session
+			agent2 = Agent(
+				task='The second task...',
+				llm=mock_llm,
+				browser_session=reused_session,
+				# Disable memory for tests
+			)
+			await agent2.run()
+
+			# Verify same browser was used (using __eq__ to check browser_pid, cdp_url)
+			assert agent1.browser_session == agent2.browser_session
+			assert agent1.browser_session == reused_session
+			assert reused_session._cdp_client_root is not None
 
 		finally:
-			# Force cleanup for test
-			session.browser_profile.keep_alive = False
-			await session.stop()
+			await reused_session.kill()
 
-	async def test_require_initialization_decorator_already_started(self, browser_session):
-		"""Test @require_initialization decorator when session is already started."""
-		# logger.info('Testing @require_initialization decorator with already started session')
 
-		# Start the session first
+class TestBrowserSessionEventSystem:
+	"""Tests for the new event system integration in BrowserSession."""
+
+	@pytest.fixture(scope='function')
+	async def browser_session(self):
+		"""Create a BrowserSession instance for event system testing."""
+		profile = BrowserProfile(headless=True, user_data_dir=None, keep_alive=False)
+		session = BrowserSession(browser_profile=profile)
+		yield session
+		await session.kill()
+
+	async def test_event_bus_initialization(self, browser_session):
+		"""Test that event bus is properly initialized with unique name."""
+		# Event bus should be created during __init__
+		assert browser_session.event_bus is not None
+		assert browser_session.event_bus.name.startswith('EventBus_')
+		# Event bus name format may vary, just check it exists
+
+	async def test_event_handlers_registration(self, browser_session: BrowserSession):
+		"""Test that event handlers are properly registered."""
+		# Attach all watchdogs to register their handlers
+		await browser_session.attach_all_watchdogs()
+
+		# Check that handlers are registered in the event bus
+		from browser_use.browser.events import (
+			BrowserStartEvent,
+			BrowserStateRequestEvent,
+			BrowserStopEvent,
+			ClickElementEvent,
+			CloseTabEvent,
+			ScreenshotEvent,
+			ScrollEvent,
+			TypeTextEvent,
+		)
+
+		# These event types should have handlers registered
+		event_types_with_handlers = [
+			BrowserStartEvent,
+			BrowserStopEvent,
+			ClickElementEvent,
+			TypeTextEvent,
+			ScrollEvent,
+			CloseTabEvent,
+			BrowserStateRequestEvent,
+			ScreenshotEvent,
+		]
+
+		for event_type in event_types_with_handlers:
+			handlers = browser_session.event_bus.handlers.get(event_type.__name__, [])
+			assert len(handlers) > 0, f'No handlers registered for {event_type.__name__}'
+
+	async def test_direct_event_dispatching(self, browser_session):
+		"""Test direct event dispatching without using the public API."""
+		from browser_use.browser.events import BrowserConnectedEvent, BrowserStartEvent
+
+		# Dispatch BrowserStartEvent directly
+		start_event = browser_session.event_bus.dispatch(BrowserStartEvent())
+
+		# Wait for event to complete
+		await start_event
+
+		# Check if BrowserConnectedEvent was dispatched
+		assert browser_session._cdp_client_root is not None
+
+		# Check event history
+		event_history = list(browser_session.event_bus.event_history.values())
+		assert len(event_history) >= 2  # BrowserStartEvent + BrowserConnectedEvent + others
+
+		# Find the BrowserConnectedEvent in history
+		started_events = [e for e in event_history if isinstance(e, BrowserConnectedEvent)]
+		assert len(started_events) >= 1
+		assert started_events[0].cdp_url is not None
+
+	async def test_event_system_error_handling(self, browser_session):
+		"""Test error handling in event system."""
+		from browser_use.browser.events import BrowserStartEvent
+
+		# Create session with invalid CDP URL to trigger error
+		error_session = BrowserSession(
+			browser_profile=BrowserProfile(headless=True),
+			cdp_url='http://localhost:99999',  # Invalid port
+		)
+
+		try:
+			# Dispatch start event directly - should trigger error handling
+			start_event = error_session.event_bus.dispatch(BrowserStartEvent())
+
+			# The event bus catches and logs the error, but the event awaits successfully
+			await start_event
+
+			# The session should not be initialized due to the error
+			assert error_session._cdp_client_root is None, 'Session should not be initialized after connection error'
+
+			# Verify the error was logged in the event history (good enough for error handling test)
+			assert len(error_session.event_bus.event_history) > 0, 'Event should be tracked even with errors'
+
+		finally:
+			await error_session.kill()
+
+	async def test_concurrent_event_dispatching(self, browser_session: BrowserSession):
+		"""Test that concurrent events are handled properly."""
+		from browser_use.browser.events import ScreenshotEvent
+
+		# Start browser first
 		await browser_session.start()
-		assert browser_session.initialized is True
-		assert browser_session.browser_context is not None
 
-		# Track if start() gets called again by monitoring the lock acquisition
-		original_start_lock = browser_session._start_lock
-		lock_acquire_count = 0
+		# Dispatch multiple events concurrently
+		screenshot_event1 = browser_session.event_bus.dispatch(ScreenshotEvent())
+		screenshot_event2 = browser_session.event_bus.dispatch(ScreenshotEvent())
 
-		class CountingLock:
-			def __init__(self, original_lock):
-				self._original_lock = original_lock
+		# Both should complete successfully
+		results = await asyncio.gather(screenshot_event1, screenshot_event2, return_exceptions=True)
 
-			async def __aenter__(self):
-				nonlocal lock_acquire_count
-				lock_acquire_count += 1
-				return await self._original_lock.__aenter__()
+		# Check that no exceptions were raised
+		for result in results:
+			assert not isinstance(result, Exception), f'Event failed with: {result}'
 
-			async def __aexit__(self, exc_type, exc_val, exc_tb):
-				return await self._original_lock.__aexit__(exc_type, exc_val, exc_tb)
+	# async def test_many_parallel_browser_sessions(self):
+	# 	"""Test spawning 12 parallel browser_sessions with different settings and ensure they all work"""
+	# 	from browser_use import BrowserSession
 
-		browser_session._start_lock = CountingLock(original_start_lock)
+	# 	browser_sessions = []
 
-		# Call a method decorated with @require_initialization
-		# This should work without calling start() again
-		tabs_info = await browser_session.get_tabs_info()
+	# 	for i in range(3):
+	# 		browser_sessions.append(
+	# 			BrowserSession(
+	# 				browser_profile=BrowserProfile(
+	# 					user_data_dir=None,
+	# 					headless=True,
+	# 					keep_alive=True,
+	# 				),
+	# 			)
+	# 		)
+	# 	for i in range(3):
+	# 		browser_sessions.append(
+	# 			BrowserSession(
+	# 				browser_profile=BrowserProfile(
+	# 					user_data_dir=Path(tempfile.mkdtemp(prefix=f'browseruse-tmp-{i}')),
+	# 					headless=True,
+	# 					keep_alive=True,
+	# 				),
+	# 			)
+	# 		)
+	# 	for i in range(3):
+	# 		browser_sessions.append(
+	# 			BrowserSession(
+	# 				browser_profile=BrowserProfile(
+	# 					user_data_dir=None,
+	# 					headless=True,
+	# 					keep_alive=False,
+	# 				),
+	# 			)
+	# 		)
+	# 	for i in range(3):
+	# 		browser_sessions.append(
+	# 			BrowserSession(
+	# 				browser_profile=BrowserProfile(
+	# 					user_data_dir=Path(tempfile.mkdtemp(prefix=f'browseruse-tmp-{i}')),
+	# 					headless=True,
+	# 					keep_alive=False,
+	# 				),
+	# 			)
+	# 		)
 
-		# Verify the method worked and start() wasn't called again (lock not acquired)
-		assert isinstance(tabs_info, list)
-		assert lock_acquire_count == 0  # start() should not have been called
-		assert browser_session.initialized is True
+	# 	print('Starting many parallel browser sessions...')
+	# 	await asyncio.gather(*[browser_session.start() for browser_session in browser_sessions])
 
-	async def test_require_initialization_decorator_not_started(self, browser_session):
-		"""Test @require_initialization decorator when session is not started."""
-		# logger.info('Testing @require_initialization decorator with unstarted session')
+	# 	print('Ensuring all parallel browser sessions are connected and usable...')
+	# 	new_tab_tasks = []
+	# 	for browser_session in browser_sessions:
+	# 		assert browser_session._cdp_client_root is not None
+	# 		assert browser_session._cdp_client_root is not None
+	# 		new_tab_tasks.append(browser_session.create_new_tab('chrome://version'))
+	# 	await asyncio.gather(*new_tab_tasks)
 
-		# Ensure session is not started
-		assert browser_session.initialized is False
-		assert browser_session.browser_context is None
+	# 	print('killing every 3rd browser_session to test parallel shutdown')
+	# 	kill_tasks = []
+	# 	for i in range(0, len(browser_sessions), 3):
+	# 		kill_tasks.append(browser_sessions[i].kill())
+	# 		browser_sessions[i] = None
+	# 	results = await asyncio.gather(*kill_tasks, return_exceptions=True)
+	# 	# Check that no exceptions were raised during cleanup
+	# 	for i, result in enumerate(results):
+	# 		if isinstance(result, Exception):
+	# 			print(f'Warning: Browser session kill raised exception: {type(result).__name__}: {result}')
 
-		# Track calls to start() method
-		original_start = browser_session.start
-		start_call_count = 0
+	# 	print('ensuring the remaining browser_sessions are still connected and usable')
+	# 	new_tab_tasks = []
+	# 	screenshot_tasks = []
+	# 	for browser_session in filter(bool, browser_sessions):
+	# 		assert browser_session._cdp_client_root is not None
+	# 		assert browser_session._cdp_client_root is not None
+	# 		new_tab_tasks.append(browser_session.create_new_tab('chrome://version'))
+	# 		screenshot_tasks.append(browser_session.take_screenshot())
+	# 	await asyncio.gather(*new_tab_tasks)
+	# 	await asyncio.gather(*screenshot_tasks)
 
-		async def counting_start():
-			nonlocal start_call_count
-			start_call_count += 1
-			return await original_start()
-
-		browser_session.start = counting_start
-
-		# Call a method that requires initialization
-		tabs_info = await browser_session.get_tabs_info()
-
-		# Verify the decorator called start() and the session is now initialized
-		assert start_call_count == 1  # start() should have been called once
-		assert browser_session.initialized is True
-		assert browser_session.browser_context is not None
-		assert isinstance(tabs_info, list)  # Should return valid tabs info
-
-	async def test_require_initialization_decorator_with_closed_page(self, browser_session):
-		"""Test @require_initialization decorator handles closed pages correctly."""
-		# logger.info('Testing @require_initialization decorator with closed page')
-
-		# Start the session and get a page
-		await browser_session.start()
-		current_page = await browser_session.get_current_page()
-		assert current_page is not None
-		assert not current_page.is_closed()
-
-		# Close the current page
-		await current_page.close()
-
-		# Call a method decorated with @require_initialization
-		# This should create a new tab since the current page is closed
-		tabs_info = await browser_session.get_tabs_info()
-
-		# Verify a new page was created
-		assert isinstance(tabs_info, list)
-		new_current_page = await browser_session.get_current_page()
-		assert new_current_page is not None
-		assert not new_current_page.is_closed()
-		assert new_current_page != current_page  # Should be a different page
+	# 	kill_tasks = []
+	# 	print('killing the remaining browser_sessions')
+	# 	for browser_session in filter(bool, browser_sessions):
+	# 		kill_tasks.append(browser_session.kill())
+	# 	results = await asyncio.gather(*kill_tasks, return_exceptions=True)
+	# 	# Check that no exceptions were raised during cleanup
+	# 	for i, result in enumerate(results):
+	# 		if isinstance(result, Exception):
+	# 			print(f'Warning: Browser session kill raised exception: {type(result).__name__}: {result}')

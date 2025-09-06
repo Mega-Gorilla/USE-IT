@@ -4,75 +4,52 @@ import json
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Generic, Literal
 
-from langchain_core.language_models.chat_models import BaseChatModel
 from openai import RateLimitError
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model, model_validator
+from typing_extensions import TypeVar
 from uuid_extensions import uuid7str
 
 from browser_use.agent.message_manager.views import MessageManagerState
 from browser_use.browser.views import BrowserStateHistory
-from browser_use.controller.registry.views import ActionModel
-from browser_use.dom.history_tree_processor.service import (
-	DOMElementNode,
-	DOMHistoryElement,
-	HistoryTreeProcessor,
-)
-from browser_use.dom.views import SelectorMap
+from browser_use.dom.views import DEFAULT_INCLUDE_ATTRIBUTES, DOMInteractedElement, DOMSelectorMap
 
-ToolCallingMethod = Literal['function_calling', 'json_mode', 'raw', 'auto', 'tools']
-REQUIRED_LLM_API_ENV_VARS = {
-	'ChatOpenAI': ['OPENAI_API_KEY'],
-	'AzureChatOpenAI': ['AZURE_OPENAI_ENDPOINT', 'AZURE_OPENAI_KEY'],
-	'ChatBedrockConverse': ['ANTHROPIC_API_KEY'],
-	'ChatAnthropic': ['ANTHROPIC_API_KEY'],
-	'ChatGoogleGenerativeAI': ['GOOGLE_API_KEY'],
-	'ChatDeepSeek': ['DEEPSEEK_API_KEY'],
-	'ChatOllama': [],
-	'ChatGrok': ['GROK_API_KEY'],
-}
+# from browser_use.dom.history_tree_processor.service import (
+# 	DOMElementNode,
+# 	DOMHistoryElement,
+# 	HistoryTreeProcessor,
+# )
+# from browser_use.dom.views import SelectorMap
+from browser_use.filesystem.file_system import FileSystemState
+from browser_use.llm.base import BaseChatModel
+from browser_use.tokens.views import UsageSummary
+from browser_use.tools.registry.views import ActionModel
 
 
 class AgentSettings(BaseModel):
 	"""Configuration options for the Agent"""
 
 	use_vision: bool = True
-	use_vision_for_planner: bool = False
-	save_conversation_path: str | None = None
+	vision_detail_level: Literal['auto', 'low', 'high'] = 'auto'
+	save_conversation_path: str | Path | None = None
 	save_conversation_path_encoding: str | None = 'utf-8'
 	max_failures: int = 3
-	retry_delay: int = 10
-	max_input_tokens: int = 128000
-	validate_output: bool = False
-	message_context: str | None = None
 	generate_gif: bool | str = False
-	available_file_paths: list[str] | None = None
 	override_system_message: str | None = None
 	extend_system_message: str | None = None
-	include_attributes: list[str] = [
-		'title',
-		'type',
-		'name',
-		'role',
-		'tabindex',
-		'aria-label',
-		'placeholder',
-		'value',
-		'alt',
-		'aria-expanded',
-	]
-	max_actions_per_step: int = 10
+	include_attributes: list[str] | None = DEFAULT_INCLUDE_ATTRIBUTES
+	max_actions_per_step: int = 4
+	use_thinking: bool = True
+	flash_mode: bool = False  # If enabled, disables evaluation_previous_goal and next_goal, and sets use_thinking = False
+	max_history_items: int | None = None
 
-	tool_calling_method: ToolCallingMethod | None = 'auto'
 	page_extraction_llm: BaseChatModel | None = None
-	planner_llm: BaseChatModel | None = None
-	planner_interval: int = 1  # Run planner every N steps
-	is_planner_reasoning: bool = False  # type: ignore
-	extend_planner_system_message: str | None = None
-
-	# Playwright script generation setting
-	save_playwright_script_path: str | None = None  # Path to save the generated Playwright script TODO: fix or remove
+	calculate_cost: bool = False
+	include_tool_call_examples: bool = False
+	llm_timeout: int = 60  # Timeout in seconds for LLM calls
+	step_timeout: int = 180  # Timeout in seconds for each step
+	final_response_after_failure: bool = True  # If True, attempt one final recovery call after max_failures
 
 
 class AgentState(BaseModel):
@@ -82,12 +59,15 @@ class AgentState(BaseModel):
 	n_steps: int = 1
 	consecutive_failures: int = 0
 	last_result: list[ActionResult] | None = None
-	history: AgentHistoryList = Field(default_factory=lambda: AgentHistoryList(history=[]))
 	last_plan: str | None = None
+	last_model_output: AgentOutput | None = None
 	paused: bool = False
 	stopped: bool = False
+	session_initialized: bool = False  # Track if session events have been dispatched
+	follow_up_task: bool = False  # Track if the agent is a follow-up task
 
 	message_manager_state: MessageManagerState = Field(default_factory=MessageManagerState)
+	file_system_state: FileSystemState | None = None
 
 	# class Config:
 	# 	arbitrary_types_allowed = True
@@ -106,11 +86,40 @@ class AgentStepInfo:
 class ActionResult(BaseModel):
 	"""Result of executing an action"""
 
+	# For done action
 	is_done: bool | None = False
 	success: bool | None = None
-	extracted_content: str | None = None
+
+	# Error handling - always include in long term memory
 	error: str | None = None
-	include_in_memory: bool = False  # whether to include in past messages as context or not
+
+	# Files
+	attachments: list[str] | None = None  # Files to display in the done message
+
+	# Always include in long term memory
+	long_term_memory: str | None = None  # Memory of this action
+
+	# if update_only_read_state is True we add the extracted_content to the agent context only once for the next step
+	# if update_only_read_state is False we add the extracted_content to the agent long term memory if no long_term_memory is provided
+	extracted_content: str | None = None
+	include_extracted_content_only_once: bool = False  # Whether the extracted content should be used to update the read_state
+
+	# Metadata for observability (e.g., click coordinates)
+	metadata: dict | None = None
+
+	# Deprecated
+	include_in_memory: bool = False  # whether to include in extracted_content inside long_term_memory
+
+	@model_validator(mode='after')
+	def validate_success_requires_done(self):
+		"""Ensure success=True can only be set when is_done=True"""
+		if self.success is True and self.is_done is not True:
+			raise ValueError(
+				'success=True can only be set when is_done=True. '
+				'For regular actions that succeed, leave success as None. '
+				'Use success=False only for actions that fail.'
+			)
+		return self
 
 
 class StepMetadata(BaseModel):
@@ -118,7 +127,6 @@ class StepMetadata(BaseModel):
 
 	step_start_time: float
 	step_end_time: float
-	input_tokens: int  # Approximate tokens from message manager for this step
 	step_number: int
 
 	@property
@@ -128,53 +136,110 @@ class StepMetadata(BaseModel):
 
 
 class AgentBrain(BaseModel):
-	"""Current internal working memory of the agent, we ask the LLM to decide new values for these on each output"""
-
+	thinking: str | None = None
 	evaluation_previous_goal: str
 	memory: str
 	next_goal: str
 
 
 class AgentOutput(BaseModel):
-	"""
-	Output model for LLM, i.e. what we are expecting in LLM structured output in response to our prompt.
-	{
-		current_state: AgentBrain({
-			evaluation_previous_goal: "we did ok, team",
-			memory: "filled in xyz into page, still need to do xyz...",
-			next_goal: "click on the link at index 127, then open that new tab"
-		}),
-		"action": [
-			ActionModel({action_name: "click_element_by_index", action_params: {index: 127}}),
-			ActionModel({action_name: "switch_to_tab", action_params: {page_id: 3}}),
-			... other multi-action steps ...
-		],
-	}
-	"""
+	model_config = ConfigDict(arbitrary_types_allowed=True, extra='forbid')
 
-	model_config = ConfigDict(arbitrary_types_allowed=True)
-
-	current_state: AgentBrain
+	thinking: str | None = None
+	evaluation_previous_goal: str | None = None
+	memory: str | None = None
+	next_goal: str | None = None
 	action: list[ActionModel] = Field(
 		...,
 		description='List of actions to execute',
 		json_schema_extra={'min_items': 1},  # Ensure at least one action is provided
 	)
 
+	@classmethod
+	def model_json_schema(cls, **kwargs):
+		schema = super().model_json_schema(**kwargs)
+		schema['required'] = ['evaluation_previous_goal', 'memory', 'next_goal', 'action']
+		return schema
+
+	@property
+	def current_state(self) -> AgentBrain:
+		"""For backward compatibility - returns an AgentBrain with the flattened properties"""
+		return AgentBrain(
+			thinking=self.thinking,
+			evaluation_previous_goal=self.evaluation_previous_goal if self.evaluation_previous_goal else '',
+			memory=self.memory if self.memory else '',
+			next_goal=self.next_goal if self.next_goal else '',
+		)
+
 	@staticmethod
 	def type_with_custom_actions(custom_actions: type[ActionModel]) -> type[AgentOutput]:
 		"""Extend actions with custom actions"""
+
 		model_ = create_model(
 			'AgentOutput',
 			__base__=AgentOutput,
 			action=(
-				list[custom_actions],
+				list[custom_actions],  # type: ignore
 				Field(..., description='List of actions to execute', json_schema_extra={'min_items': 1}),
 			),
 			__module__=AgentOutput.__module__,
 		)
 		model_.__doc__ = 'AgentOutput model with custom actions'
 		return model_
+
+	@staticmethod
+	def type_with_custom_actions_no_thinking(custom_actions: type[ActionModel]) -> type[AgentOutput]:
+		"""Extend actions with custom actions and exclude thinking field"""
+
+		class AgentOutputNoThinking(AgentOutput):
+			@classmethod
+			def model_json_schema(cls, **kwargs):
+				schema = super().model_json_schema(**kwargs)
+				del schema['properties']['thinking']
+				schema['required'] = ['evaluation_previous_goal', 'memory', 'next_goal', 'action']
+				return schema
+
+		model = create_model(
+			'AgentOutput',
+			__base__=AgentOutputNoThinking,
+			action=(
+				list[custom_actions],  # type: ignore
+				Field(..., description='List of actions to execute', json_schema_extra={'min_items': 1}),
+			),
+			__module__=AgentOutputNoThinking.__module__,
+		)
+
+		model.__doc__ = 'AgentOutput model with custom actions'
+		return model
+
+	@staticmethod
+	def type_with_custom_actions_flash_mode(custom_actions: type[ActionModel]) -> type[AgentOutput]:
+		"""Extend actions with custom actions for flash mode - memory and action fields only"""
+
+		class AgentOutputFlashMode(AgentOutput):
+			@classmethod
+			def model_json_schema(cls, **kwargs):
+				schema = super().model_json_schema(**kwargs)
+				# Remove thinking, evaluation_previous_goal, and next_goal fields
+				del schema['properties']['thinking']
+				del schema['properties']['evaluation_previous_goal']
+				del schema['properties']['next_goal']
+				# Update required fields to only include remaining properties
+				schema['required'] = ['memory', 'action']
+				return schema
+
+		model = create_model(
+			'AgentOutput',
+			__base__=AgentOutputFlashMode,
+			action=(
+				list[custom_actions],  # type: ignore
+				Field(..., description='List of actions to execute', json_schema_extra={'min_items': 1}),
+			),
+			__module__=AgentOutputFlashMode.__module__,
+		)
+
+		model.__doc__ = 'AgentOutput model with custom actions'
+		return model
 
 
 class AgentHistory(BaseModel):
@@ -188,13 +253,13 @@ class AgentHistory(BaseModel):
 	model_config = ConfigDict(arbitrary_types_allowed=True, protected_namespaces=())
 
 	@staticmethod
-	def get_interacted_element(model_output: AgentOutput, selector_map: SelectorMap) -> list[DOMHistoryElement | None]:
+	def get_interacted_element(model_output: AgentOutput, selector_map: DOMSelectorMap) -> list[DOMInteractedElement | None]:
 		elements = []
 		for action in model_output.action:
 			index = action.get_index()
 			if index is not None and index in selector_map:
-				el: DOMElementNode = selector_map[index]
-				elements.append(HistoryTreeProcessor.convert_dom_element_to_history_element(el))
+				el = selector_map[index]
+				elements.append(DOMInteractedElement.load_from_enhanced_dom_tree(el))
 			else:
 				elements.append(None)
 		return elements
@@ -207,9 +272,14 @@ class AgentHistory(BaseModel):
 		if self.model_output:
 			action_dump = [action.model_dump(exclude_none=True) for action in self.model_output.action]
 			model_output_dump = {
-				'current_state': self.model_output.current_state.model_dump(),
+				'evaluation_previous_goal': self.model_output.evaluation_previous_goal,
+				'memory': self.model_output.memory,
+				'next_goal': self.model_output.next_goal,
 				'action': action_dump,  # This preserves the actual action data
 			}
+			# Only include thinking if it's present
+			if self.model_output.thinking is not None:
+				model_output_dump['thinking'] = self.model_output.thinking
 
 		return {
 			'model_output': model_output_dump,
@@ -219,10 +289,16 @@ class AgentHistory(BaseModel):
 		}
 
 
-class AgentHistoryList(BaseModel):
+AgentStructuredOutput = TypeVar('AgentStructuredOutput', bound=BaseModel)
+
+
+class AgentHistoryList(BaseModel, Generic[AgentStructuredOutput]):
 	"""List of AgentHistory messages, i.e. the history of the agent's actions and thoughts."""
 
 	history: list[AgentHistory]
+	usage: UsageSummary | None = None
+
+	_output_model_schema: type[AgentStructuredOutput] | None = None
 
 	def total_duration_seconds(self) -> float:
 		"""Get total duration of all steps in seconds"""
@@ -232,25 +308,17 @@ class AgentHistoryList(BaseModel):
 				total += h.metadata.duration_seconds
 		return total
 
-	def total_input_tokens(self) -> int:
-		"""
-		Get total tokens used across all steps.
-		Note: These are from the approximate token counting of the message manager.
-		For accurate token counting, use tools like LangChain Smith or OpenAI's token counters.
-		"""
-		total = 0
-		for h in self.history:
-			if h.metadata:
-				total += h.metadata.input_tokens
-		return total
-
-	def input_token_usage(self) -> list[int]:
-		"""Get token usage for each step"""
-		return [h.metadata.input_tokens for h in self.history if h.metadata]
+	def __len__(self) -> int:
+		"""Return the number of history items"""
+		return len(self.history)
 
 	def __str__(self) -> str:
 		"""Representation of the AgentHistoryList object"""
 		return f'AgentHistoryList(all_results={self.action_results()}, all_model_outputs={self.model_actions()})'
+
+	def add_item(self, history_item: AgentHistory) -> None:
+		"""Add a history item to the list"""
+		self.history.append(history_item)
 
 	def __repr__(self) -> str:
 		"""Representation of the AgentHistoryList object"""
@@ -366,9 +434,39 @@ class AgentHistoryList(BaseModel):
 		"""Get all unique URLs from history"""
 		return [h.state.url if h.state.url is not None else None for h in self.history]
 
-	def screenshots(self) -> list[str | None]:
-		"""Get all screenshots from history"""
-		return [h.state.screenshot if h.state.screenshot is not None else None for h in self.history]
+	def screenshot_paths(self, n_last: int | None = None, return_none_if_not_screenshot: bool = True) -> list[str | None]:
+		"""Get all screenshot paths from history"""
+		if n_last == 0:
+			return []
+		if n_last is None:
+			if return_none_if_not_screenshot:
+				return [h.state.screenshot_path if h.state.screenshot_path is not None else None for h in self.history]
+			else:
+				return [h.state.screenshot_path for h in self.history if h.state.screenshot_path is not None]
+		else:
+			if return_none_if_not_screenshot:
+				return [h.state.screenshot_path if h.state.screenshot_path is not None else None for h in self.history[-n_last:]]
+			else:
+				return [h.state.screenshot_path for h in self.history[-n_last:] if h.state.screenshot_path is not None]
+
+	def screenshots(self, n_last: int | None = None, return_none_if_not_screenshot: bool = True) -> list[str | None]:
+		"""Get all screenshots from history as base64 strings"""
+		if n_last == 0:
+			return []
+
+		history_items = self.history if n_last is None else self.history[-n_last:]
+		screenshots = []
+
+		for item in history_items:
+			screenshot_b64 = item.state.get_screenshot()
+			if screenshot_b64:
+				screenshots.append(screenshot_b64)
+			else:
+				if return_none_if_not_screenshot:
+					screenshots.append(None)
+				# If return_none_if_not_screenshot is False, we skip None values
+
+		return screenshots
 
 	def action_names(self) -> list[str]:
 		"""Get all action names from history"""
@@ -394,11 +492,33 @@ class AgentHistoryList(BaseModel):
 
 		for h in self.history:
 			if h.model_output:
-				for action, interacted_element in zip(h.model_output.action, h.state.interacted_element):
+				# Guard against None interacted_element before zipping
+				interacted_elements = h.state.interacted_element or [None] * len(h.model_output.action)
+				for action, interacted_element in zip(h.model_output.action, interacted_elements):
 					output = action.model_dump(exclude_none=True)
 					output['interacted_element'] = interacted_element
 					outputs.append(output)
 		return outputs
+
+	def action_history(self) -> list[list[dict]]:
+		"""Get truncated action history with only essential fields"""
+		step_outputs = []
+
+		for h in self.history:
+			step_actions = []
+			if h.model_output:
+				# Guard against None interacted_element before zipping
+				interacted_elements = h.state.interacted_element or [None] * len(h.model_output.action)
+				# Zip actions with interacted elements and results
+				for action, interacted_element, result in zip(h.model_output.action, interacted_elements, h.result):
+					action_output = action.model_dump(exclude_none=True)
+					action_output['interacted_element'] = interacted_element
+					# Only keep long_term_memory from result
+					action_output['result'] = result.long_term_memory if result and result.long_term_memory else None
+					step_actions.append(action_output)
+			step_outputs.append(step_actions)
+
+		return step_outputs
 
 	def action_results(self) -> list[ActionResult]:
 		"""Get all results from history"""
@@ -429,6 +549,20 @@ class AgentHistoryList(BaseModel):
 	def number_of_steps(self) -> int:
 		"""Get the number of steps in the history"""
 		return len(self.history)
+
+	@property
+	def structured_output(self) -> AgentStructuredOutput | None:
+		"""Get the structured output from the history
+
+		Returns:
+			The structured output if both final_result and _output_model_schema are available,
+			otherwise None
+		"""
+		final_result = self.final_result()
+		if final_result is not None and self._output_model_schema is not None:
+			return self._output_model_schema.model_validate_json(final_result)
+
+		return None
 
 
 class AgentError:

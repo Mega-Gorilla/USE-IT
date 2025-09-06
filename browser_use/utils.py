@@ -2,22 +2,45 @@ import asyncio
 import logging
 import os
 import platform
+import re
 import signal
 import time
 from collections.abc import Callable, Coroutine
 from fnmatch import fnmatch
-from functools import wraps
+from functools import cache, wraps
+from pathlib import Path
 from sys import stderr
 from typing import Any, ParamSpec, TypeVar
 from urllib.parse import urlparse
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Pre-compiled regex for URL detection - used in URL shortening
+URL_PATTERN = re.compile(r'https?://[^\s<>"\']+|www\.[^\s<>"\']+|[^\s<>"\']+\.[a-z]{2,}(?:/[^\s<>"\']*)?', re.IGNORECASE)
+
+
 logger = logging.getLogger(__name__)
+
+# Import error types - these may need to be adjusted based on actual import paths
+try:
+	from openai import BadRequestError as OpenAIBadRequestError
+except ImportError:
+	OpenAIBadRequestError = None
+
+try:
+	from groq import BadRequestError as GroqBadRequestError  # type: ignore[import-not-found]
+except ImportError:
+	GroqBadRequestError = None
+
 
 # Global flag to prevent duplicate exit messages
 _exiting = False
 
 # Define generic type variables for return type and parameters
 R = TypeVar('R')
+T = TypeVar('T')
 P = ParamSpec('P')
 
 
@@ -41,7 +64,7 @@ class SignalHandler:
 		resume_callback: Callable[[], None] | None = None,
 		custom_exit_callback: Callable[[], None] | None = None,
 		exit_on_second_int: bool = True,
-		interruptible_task_patterns: list[str] = None,
+		interruptible_task_patterns: list[str] | None = None,
 	):
 		"""
 		Initialize the signal handler.
@@ -192,7 +215,7 @@ class SignalHandler:
 				self._handle_second_ctrl_c()
 
 		# Mark that Ctrl+C was pressed
-		self.loop.ctrl_c_pressed = True
+		setattr(self.loop, 'ctrl_c_pressed', True)
 
 		# Cancel current tasks that should be interruptible - this is crucial for immediate pausing
 		self._cancel_interruptible_tasks()
@@ -298,9 +321,9 @@ class SignalHandler:
 		"""Reset state after resuming."""
 		# Clear the flags
 		if hasattr(self.loop, 'ctrl_c_pressed'):
-			self.loop.ctrl_c_pressed = False
+			setattr(self.loop, 'ctrl_c_pressed', False)
 		if hasattr(self.loop, 'waiting_for_input'):
-			self.loop.waiting_for_input = False
+			setattr(self.loop, 'waiting_for_input', False)
 
 
 def time_execution_sync(additional_text: str = '') -> Callable[[Callable[P, R]], Callable[P, R]]:
@@ -312,6 +335,15 @@ def time_execution_sync(additional_text: str = '') -> Callable[[Callable[P, R]],
 			execution_time = time.time() - start_time
 			# Only log if execution takes more than 0.25 seconds
 			if execution_time > 0.25:
+				self_has_logger = args and getattr(args[0], 'logger', None)
+				if self_has_logger:
+					logger = getattr(args[0], 'logger')
+				elif 'agent' in kwargs:
+					logger = getattr(kwargs['agent'], 'logger')
+				elif 'browser_session' in kwargs:
+					logger = getattr(kwargs['browser_session'], 'logger')
+				else:
+					logger = logging.getLogger(__name__)
 				logger.debug(f'⏳ {additional_text.strip("-")}() took {execution_time:.2f}s')
 			return result
 
@@ -332,6 +364,15 @@ def time_execution_async(
 			# Only log if execution takes more than 0.25 seconds to avoid spamming the logs
 			# you can lower this threshold locally when you're doing dev work to performance optimize stuff
 			if execution_time > 0.25:
+				self_has_logger = args and getattr(args[0], 'logger', None)
+				if self_has_logger:
+					logger = getattr(args[0], 'logger')
+				elif 'agent' in kwargs:
+					logger = getattr(kwargs['agent'], 'logger')
+				elif 'browser_session' in kwargs:
+					logger = getattr(kwargs['browser_session'], 'logger')
+				else:
+					logger = logging.getLogger(__name__)
 				logger.debug(f'⏳ {additional_text.strip("-")}() took {execution_time:.2f}s')
 			return result
 
@@ -377,6 +418,19 @@ def is_unsafe_pattern(pattern: str) -> bool:
 	return '*' in bare_domain
 
 
+def is_new_tab_page(url: str) -> bool:
+	"""
+	Check if a URL is a new tab page (about:blank, chrome://new-tab-page, or chrome://newtab).
+
+	Args:
+		url: The URL to check
+
+	Returns:
+		bool: True if the URL is a new tab page, False otherwise
+	"""
+	return url in ('about:blank', 'chrome://new-tab-page/', 'chrome://new-tab-page', 'chrome://newtab/', 'chrome://newtab')
+
+
 def match_url_with_domain_pattern(url: str, domain_pattern: str, log_warnings: bool = False) -> bool:
 	"""
 	Check if a URL matches a domain pattern. SECURITY CRITICAL.
@@ -390,7 +444,7 @@ def match_url_with_domain_pattern(url: str, domain_pattern: str, log_warnings: b
 	When no scheme is specified, https is used by default for security.
 	For example, 'example.com' will match 'https://example.com' but not 'http://example.com'.
 
-	Note: about:blank must be handled at the callsite, not inside this function.
+	Note: New tab pages (about:blank, chrome://new-tab-page) must be handled at the callsite, not inside this function.
 
 	Args:
 		url: The URL to check
@@ -401,8 +455,8 @@ def match_url_with_domain_pattern(url: str, domain_pattern: str, log_warnings: b
 		bool: True if the URL matches the pattern, False otherwise
 	"""
 	try:
-		# Note: about:blank should be handled at the callsite, not here
-		if url == 'about:blank':
+		# Note: new tab pages should be handled at the callsite, not here
+		if is_new_tab_page(url):
 			return False
 
 		parsed_url = urlparse(url)
@@ -491,3 +545,107 @@ def merge_dicts(a: dict, b: dict, path: tuple[str, ...] = ()):
 		else:
 			a[key] = b[key]
 	return a
+
+
+@cache
+def get_browser_use_version() -> str:
+	"""Get the browser-use package version using the same logic as Agent._set_browser_use_version_and_source"""
+	try:
+		package_root = Path(__file__).parent.parent
+		pyproject_path = package_root / 'pyproject.toml'
+
+		# Try to read version from pyproject.toml
+		if pyproject_path.exists():
+			import re
+
+			with open(pyproject_path, encoding='utf-8') as f:
+				content = f.read()
+				match = re.search(r'version\s*=\s*["\']([^"\']+)["\']', content)
+				if match:
+					version = f'{match.group(1)}'
+					os.environ['LIBRARY_VERSION'] = version  # used by bubus event_schema so all Event schemas include versioning
+					return version
+
+		# If pyproject.toml doesn't exist, try getting version from pip
+		from importlib.metadata import version as get_version
+
+		version = str(get_version('browser-use'))
+		os.environ['LIBRARY_VERSION'] = version
+		return version
+
+	except Exception as e:
+		logger.debug(f'Error detecting browser-use version: {type(e).__name__}: {e}')
+		return 'unknown'
+
+
+@cache
+def get_git_info() -> dict[str, str] | None:
+	"""Get git information if installed from git repository"""
+	try:
+		import subprocess
+
+		package_root = Path(__file__).parent.parent
+		git_dir = package_root / '.git'
+		if not git_dir.exists():
+			return None
+
+		# Get git commit hash
+		commit_hash = (
+			subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=package_root, stderr=subprocess.DEVNULL).decode().strip()
+		)
+
+		# Get git branch
+		branch = (
+			subprocess.check_output(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], cwd=package_root, stderr=subprocess.DEVNULL)
+			.decode()
+			.strip()
+		)
+
+		# Get remote URL
+		remote_url = (
+			subprocess.check_output(['git', 'config', '--get', 'remote.origin.url'], cwd=package_root, stderr=subprocess.DEVNULL)
+			.decode()
+			.strip()
+		)
+
+		# Get commit timestamp
+		commit_timestamp = (
+			subprocess.check_output(['git', 'show', '-s', '--format=%ci', 'HEAD'], cwd=package_root, stderr=subprocess.DEVNULL)
+			.decode()
+			.strip()
+		)
+
+		return {'commit_hash': commit_hash, 'branch': branch, 'remote_url': remote_url, 'commit_timestamp': commit_timestamp}
+	except Exception as e:
+		logger.debug(f'Error getting git info: {type(e).__name__}: {e}')
+		return None
+
+
+def _log_pretty_path(path: str | Path | None) -> str:
+	"""Pretty-print a path, shorten home dir to ~ and cwd to ."""
+
+	if not path or not str(path).strip():
+		return ''  # always falsy in -> falsy out so it can be used in ternaries
+
+	# dont print anything thats not a path
+	if not isinstance(path, (str, Path)):
+		# no other types are safe to just str(path) and log to terminal unless we know what they are
+		# e.g. what if we get storage_date=dict | Path and the dict version could contain real cookies
+		return f'<{type(path).__name__}>'
+
+	# replace home dir and cwd with ~ and .
+	pretty_path = str(path).replace(str(Path.home()), '~').replace(str(Path.cwd().resolve()), '.')
+
+	# wrap in quotes if it contains spaces
+	if pretty_path.strip() and ' ' in pretty_path:
+		pretty_path = f'"{pretty_path}"'
+
+	return pretty_path
+
+
+def _log_pretty_url(s: str, max_len: int | None = 22) -> str:
+	"""Truncate/pretty-print a URL with a maximum length, removing the protocol and www. prefix"""
+	s = s.replace('https://', '').replace('http://', '').replace('www.', '')
+	if max_len is not None and len(s) > max_len:
+		return s[:max_len] + '…'
+	return s
