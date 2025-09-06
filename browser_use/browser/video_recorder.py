@@ -7,13 +7,12 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 
-import numpy as np
-
 from browser_use.browser.profile import ViewportSize
 
 try:
 	import imageio.v2 as iio
 	import imageio_ffmpeg
+	import numpy as np
 	from imageio.core.format import Format
 
 	IMAGEIO_AVAILABLE = True
