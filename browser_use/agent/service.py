@@ -617,11 +617,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			if await self.register_external_agent_status_raise_error_callback():
 				raise InterruptedError
 
-		# A stop request should always interrupt execution immediately.
 		if self.state.stopped:
 			raise InterruptedError
 
-		# Use the consolidated pause event from state as the single source of truth
 		if self.state.paused:
 			raise InterruptedError
 
