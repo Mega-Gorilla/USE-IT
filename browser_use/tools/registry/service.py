@@ -434,15 +434,15 @@ class Registry(Generic[Context]):
 		def recursively_replace_secrets(value: str | dict | list) -> str | dict | list:
 			if isinstance(value, str):
 				matches = secret_pattern.findall(value)
-
+				# check if the placeholder key, like x_password is in the output parameters of the LLM and replace it with the sensitive data
 				for placeholder in matches:
 					if placeholder in applicable_secrets:
-						replacement_value = applicable_secrets[placeholder]
-
 						# generate a totp code if secret is a 2fa secret
 						if 'otp_secret' in placeholder:
 							totp = pyotp.TOTP(applicable_secrets[placeholder], digits=6)
 							replacement_value = totp.now()
+						else:
+							replacement_value = applicable_secrets[placeholder]
 
 						value = value.replace(f'<secret>{placeholder}</secret>', replacement_value)
 						replaced_placeholders.add(placeholder)
