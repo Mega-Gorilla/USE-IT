@@ -1938,7 +1938,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		"""Stop the agent"""
 		self.logger.info('⏹️ Agent stopping')
 		self.state.stopped = True
-		
+
 		# Signal pause event to unblock any waiting code so it can check the stopped state
 		self._external_pause_event.set()
 
