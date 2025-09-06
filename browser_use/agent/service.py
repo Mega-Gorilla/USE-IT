@@ -1082,7 +1082,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				# Process dictionary values in place
 				Agent._recursive_process_dict(field_value, url_replacements)
 			elif isinstance(field_value, (list, tuple)):
-				Agent._recursive_process_list_or_tuple(field_value, url_replacements)
+				processed_value = Agent._recursive_process_list_or_tuple(field_value, url_replacements)
+				setattr(model, field_name, processed_value)
 
 	@staticmethod
 	def _recursive_process_dict(dictionary: dict, url_replacements: dict[str, str]) -> None:
@@ -1095,20 +1096,40 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			elif isinstance(v, dict):
 				Agent._recursive_process_dict(v, url_replacements)
 			elif isinstance(v, (list, tuple)):
-				Agent._recursive_process_list_or_tuple(v, url_replacements)
+				dictionary[k] = Agent._recursive_process_list_or_tuple(v, url_replacements)
 
 	@staticmethod
-	def _recursive_process_list_or_tuple(container, url_replacements: dict[str, str]) -> None:
+	def _recursive_process_list_or_tuple(container: list | tuple, url_replacements: dict[str, str]) -> list | tuple:
 		"""Helper method to process lists and tuples."""
-		for i, item in enumerate(container):
-			if isinstance(item, str):
-				container[i] = Agent._replace_shortened_urls_in_string(item, url_replacements)
-			elif isinstance(item, BaseModel):
-				Agent._recursive_process_all_strings_inside_pydantic_model(item, url_replacements)
-			elif isinstance(item, dict):
-				Agent._recursive_process_dict(item, url_replacements)
-			elif isinstance(item, (list, tuple)):
-				Agent._recursive_process_list_or_tuple(item, url_replacements)
+		if isinstance(container, tuple):
+			# For tuples, create a new tuple with processed items
+			processed_items = []
+			for item in container:
+				if isinstance(item, str):
+					processed_items.append(Agent._replace_shortened_urls_in_string(item, url_replacements))
+				elif isinstance(item, BaseModel):
+					Agent._recursive_process_all_strings_inside_pydantic_model(item, url_replacements)
+					processed_items.append(item)
+				elif isinstance(item, dict):
+					Agent._recursive_process_dict(item, url_replacements)
+					processed_items.append(item)
+				elif isinstance(item, (list, tuple)):
+					processed_items.append(Agent._recursive_process_list_or_tuple(item, url_replacements))
+				else:
+					processed_items.append(item)
+			return tuple(processed_items)
+		else:
+			# For lists, modify in place
+			for i, item in enumerate(container):
+				if isinstance(item, str):
+					container[i] = Agent._replace_shortened_urls_in_string(item, url_replacements)
+				elif isinstance(item, BaseModel):
+					Agent._recursive_process_all_strings_inside_pydantic_model(item, url_replacements)
+				elif isinstance(item, dict):
+					Agent._recursive_process_dict(item, url_replacements)
+				elif isinstance(item, (list, tuple)):
+					container[i] = Agent._recursive_process_list_or_tuple(item, url_replacements)
+			return container
 
 	@staticmethod
 	def _replace_shortened_urls_in_string(text: str, url_replacements: dict[str, str]) -> str:
