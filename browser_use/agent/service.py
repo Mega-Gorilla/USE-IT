@@ -1258,6 +1258,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 				self.state.session_initialized = True
 
+				# Brief delay to ensure session is created in backend before sending task
+				await asyncio.sleep(0.2)
+
 			self.logger.debug('📡 Dispatching CreateAgentTaskEvent...')
 			# Emit CreateAgentTaskEvent at the START of run()
 			self.eventbus.dispatch(CreateAgentTaskEvent.from_agent(self))

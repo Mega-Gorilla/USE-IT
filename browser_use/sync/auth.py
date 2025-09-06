@@ -351,4 +351,8 @@ class DeviceAuthClient:
 	def clear_auth(self) -> None:
 		"""Clear stored authentication"""
 		self.auth_config = CloudAuthConfig()
-		self.auth_config.save_to_file()
+
+		# Remove the config file entirely instead of saving empty values
+		config_path = CONFIG.BROWSER_USE_CONFIG_DIR / 'cloud_auth.json'
+		if config_path.exists():
+			config_path.unlink()

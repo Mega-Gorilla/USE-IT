@@ -381,7 +381,7 @@ class TestCloudSync:
 		assert event['task'] == 'Test task'
 
 	async def test_send_event_pre_auth(self, httpserver: HTTPServer, temp_config_dir):
-		"""Test that non-session events are not sent before authentication."""
+		"""Test that non-session events are not sent when auth is not in progress."""
 		requests = []
 
 		def capture_request(request):
@@ -397,26 +397,15 @@ class TestCloudSync:
 
 		httpserver.expect_request('/api/v1/events', method='POST').respond_with_handler(capture_request)
 
-		# Create unauthenticated service
+		# Create unauthenticated service WITHOUT triggering auth
 		auth = DeviceAuthClient(base_url=httpserver.url_for(''))
 		# Don't set api_token - leave it unauthenticated
 
 		service = CloudSync(base_url=httpserver.url_for(''))
 		service.auth_client = auth
-		service.session_id = 'test-session-id'
+		service.session_id = 'test-session-id'  # Set manually, don't trigger CreateAgentSessionEvent
 
-		# Send session event first (should be sent)
-		await service.handle_event(
-			CreateAgentSessionEvent(
-				user_id=TEMP_USER_ID,
-				browser_session_id='test-browser-session',
-				browser_session_live_url='http://example.com',
-				browser_session_cdp_url='ws://example.com',
-				device_id='test-device-id',
-			)
-		)
-
-		# Send task event (should be skipped - not authenticated)
+		# Send task event when NO auth is in progress (should be skipped)
 		await service.handle_event(
 			CreateAgentTaskEvent(
 				agent_session_id='test-session',
@@ -431,9 +420,88 @@ class TestCloudSync:
 			)
 		)
 
-		# Check that only the session event was sent (1 request)
+		# Check that no requests were made
+		assert len(requests) == 0
+
+	async def test_send_event_during_auth_progress(self, httpserver: HTTPServer, temp_config_dir):
+		"""Test that task events ARE sent when authentication is in progress (fixes first-run data loss)."""
+		requests = []
+
+		def capture_request(request):
+			requests.append(
+				{
+					'headers': dict(request.headers),
+					'json': request.get_json(),
+				}
+			)
+			from werkzeug.wrappers import Response
+
+			return Response('{"processed": 1, "failed": 0}', status=200, mimetype='application/json')
+
+		httpserver.expect_request('/api/v1/events', method='POST').respond_with_handler(capture_request)
+
+		# Set up auth endpoints to simulate background auth in progress
+		httpserver.expect_request(
+			'/api/v1/oauth/device/authorize',
+			method='POST',
+		).respond_with_json(
+			{
+				'device_code': 'test-device-code',
+				'user_code': 'ABCD-1234',
+				'verification_uri': 'https://example.com/device',
+				'verification_uri_complete': 'https://example.com/device?user_code=ABCD-1234',
+				'expires_in': 1800,
+				'interval': 5,
+			}
+		)
+
+		httpserver.expect_request(
+			'/api/v1/oauth/device/token',
+			method='POST',
+		).respond_with_json(
+			{
+				'error': 'authorization_pending',
+				'error_description': 'Authorization pending',
+			}
+		)
+
+		# Create unauthenticated service
+		auth = DeviceAuthClient(base_url=httpserver.url_for(''))
+		# Don't set api_token - leave it unauthenticated
+
+		service = CloudSync(base_url=httpserver.url_for(''))
+		service.auth_client = auth
+
+		# Manually start an auth task to simulate the scenario where auth is in progress
+		import asyncio
+
+		async def fake_auth():
+			await asyncio.sleep(1)  # Simulate auth taking some time
+
+		service.auth_task = asyncio.create_task(fake_auth())
+
+		# Set session ID
+		service.session_id = 'test-session-id'
+
+		# Send task event while auth is in progress (should NOW be sent due to our fix)
+		await service.handle_event(
+			CreateAgentTaskEvent(
+				agent_session_id='test-session',
+				llm_model='test-model',
+				task='Test task during auth',
+				user_id=TEMP_USER_ID,
+				done_output=None,
+				user_feedback_type=None,
+				user_comment=None,
+				gif_url=None,
+				device_id='test-device-id',
+			)
+		)
+
+		# Check that the task event was sent (our fix allows it during auth progress)
 		assert len(requests) == 1
-		assert requests[0]['json']['events'][0]['event_type'] == 'CreateAgentSessionEvent'
+		assert requests[0]['json']['events'][0]['event_type'] == 'CreateAgentTaskEvent'
+		assert requests[0]['json']['events'][0]['task'] == 'Test task during auth'
 
 	async def test_authenticate_then_send(self, httpserver: HTTPServer, temp_config_dir):
 		"""Test that events are only sent after authentication."""

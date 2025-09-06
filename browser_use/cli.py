@@ -1589,7 +1589,7 @@ async def run_auth_command():
 
 	auth_client = DeviceAuthClient()
 
-	print(f'🔍 Debug: Checking authentication status...')
+	print('🔍 Debug: Checking authentication status...')
 	print(f'    API Token: {"✅ Present" if auth_client.api_token else "❌ Missing"}')
 	print(f'    User ID: {auth_client.user_id}')
 	print(f'    Is Authenticated: {auth_client.is_authenticated}')
@@ -1663,6 +1663,9 @@ async def run_auth_command():
 		)
 		await sync_service.handle_event(session_event)
 
+		# Brief delay to ensure session is created in backend before sending task
+		await asyncio.sleep(0.5)
+
 		# 2. Create task (like main branch does at start)
 		task_event = CreateAgentTaskEvent(
 			id=task_id,
@@ -1678,8 +1681,8 @@ async def run_auth_command():
 		)
 		await sync_service.handle_event(task_event)
 
-		# Brief delay to let events process
-		await asyncio.sleep(0.1)
+		# Longer delay to ensure task is created in backend before sending step event
+		await asyncio.sleep(1.0)
 
 		# 3. Run authentication with timeout
 		print('⏳ Waiting for authentication... (this may take up to 2 minutes for testing)')
@@ -1716,13 +1719,13 @@ async def run_auth_command():
 			auth_duration = asyncio.get_event_loop().time() - auth_start_time
 			print(f'🔧 Debug: Authentication returned: {success} (took {auth_duration:.1f}s)')
 
-		except asyncio.TimeoutError:
+		except TimeoutError:
 			print('⏱️ Authentication timed out after 2 minutes.')
 			print('   Checking if authentication completed in background...')
 
 			# Create a fresh auth client to check current status
 			fresh_auth_client = DeviceAuthClient()
-			print(f'🔧 Debug: Fresh auth client check:')
+			print('🔧 Debug: Fresh auth client check:')
 			print(f'    API Token: {"✅ Present" if fresh_auth_client.api_token else "❌ Missing"}')
 			print(f'    Is Authenticated: {fresh_auth_client.is_authenticated}')
 
@@ -1745,9 +1748,9 @@ async def run_auth_command():
 			# 4. Send step event to show progress (like main branch during execution)
 			# Use the sync service's auth client which has the updated user_id
 			step_event = CreateAgentStepEvent(
-				id=f'{task_id}-step-1',
-				user_id=sync_service.auth_client.user_id,  # Use updated auth client
-				device_id=sync_service.auth_client.device_id,  # Use consistent device_id
+				# Remove explicit ID - let it auto-generate to avoid backend validation issues
+				user_id=auth_client.temp_user_id,  # Use same temp user_id as task for consistency
+				device_id=auth_client.device_id,  # Use consistent device_id
 				agent_task_id=task_id,
 				step=1,
 				actions=[
@@ -1778,8 +1781,8 @@ async def run_auth_command():
 			# 5. Complete task (like main branch does at end)
 			completion_event = UpdateAgentTaskEvent(
 				id=task_id,
-				user_id=sync_service.auth_client.user_id,
-				device_id=sync_service.auth_client.device_id,  # Use consistent device_id
+				user_id=auth_client.temp_user_id,  # Use same temp user_id as task for consistency
+				device_id=auth_client.device_id,  # Use consistent device_id
 				done_output="🎉 Welcome to Browser Use! You're now authenticated and part of our community. ⭐ Your future tasks will sync to the cloud automatically.",
 				user_feedback_type=None,
 				user_comment=None,

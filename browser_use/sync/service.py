@@ -52,8 +52,12 @@ class CloudSync:
 				# Mark auth flow as active when we see a session event
 				if event.event_type == 'CreateAgentSessionEvent':
 					self.auth_flow_active = True
+			elif self.auth_task and not self.auth_task.done():
+				# Authentication is in progress - send all events to preserve first-run data
+				# The backend will handle pre-auth events and upgrade them to the correct user_id once auth completes
+				await self._send_event(event)
 			else:
-				# User is not authenticated - don't send anything
+				# User is not authenticated and no auth in progress - don't send anything
 				logger.debug(f'Skipping event {event.event_type} - user not authenticated')
 
 		except Exception as e:
@@ -64,11 +68,17 @@ class CloudSync:
 		try:
 			headers = {}
 
-			# override user_id on event with auth client user_id if available
-			if self.auth_client:
-				event.user_id = str(self.auth_client.user_id)  # type: ignore
+			# Override user_id only if it's not already set to a specific value
+			# This allows CLI and other code to explicitly set temp user_id when needed
+			if self.auth_client and self.auth_client.is_authenticated:
+				# Only override if we're fully authenticated and event doesn't have temp user_id
+				current_user_id = getattr(event, 'user_id', None)
+				if current_user_id != TEMP_USER_ID:
+					setattr(event, 'user_id', str(self.auth_client.user_id))
 			else:
-				event.user_id = TEMP_USER_ID  # type: ignore
+				# Set temp user_id if not already set
+				if not hasattr(event, 'user_id') or not getattr(event, 'user_id', None):
+					setattr(event, 'user_id', TEMP_USER_ID)
 
 			# Add auth headers if available
 			if self.auth_client:
@@ -93,6 +103,8 @@ class CloudSync:
 					logger.debug(
 						f'Failed to send sync event: POST {response.request.url} {response.status_code} - {response.text}'
 					)
+					# Also log the payload for debugging
+					logger.debug(f'Event payload was: {event_data}')
 		except httpx.TimeoutException:
 			logger.warning(f'Event send timed out after 10 seconds: {event}')
 		except httpx.ConnectError as e:
