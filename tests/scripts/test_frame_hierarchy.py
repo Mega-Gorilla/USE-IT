@@ -134,7 +134,7 @@ async def analyze_frame_hierarchy(url):
 		for tid, sess_id in target_sessions.items():
 			try:
 				await session.cdp_client.send.Target.detachFromTarget(params={'sessionId': sess_id})
-			except:
+			except Exception:
 				pass
 
 		print('\n📊 Frame Statistics:')
@@ -224,7 +224,7 @@ async def analyze_frame_hierarchy(url):
 		if session._cdp_client_root:
 			try:
 				await session._cdp_client_root.stop()
-			except:
+			except Exception:
 				pass  # Ignore errors if already disconnected
 
 		# Then stop the browser process

@@ -6,7 +6,6 @@ import aiofiles
 
 from browser_use.browser import BrowserProfile, BrowserSession
 from browser_use.browser.types import ViewportSize
-from browser_use.dom.debug.highlights import inject_highlighting_script, remove_highlighting_script
 from browser_use.dom.service import DomService
 from browser_use.dom.views import EnhancedDOMTreeNode
 
@@ -35,16 +34,17 @@ async def main():
 	# await browser.create_new_tab('https://semantic-ui.com/modules/dropdown.html#/definition')
 	# await browser.navigate('https://v0-website-with-clickable-elements.vercel.app/iframe-buttons')
 	from browser_use.browser.events import NavigateToUrlEvent
-	nav_event = browser.event_bus.dispatch(NavigateToUrlEvent(url='https://v0-website-with-clickable-elements.vercel.app/nested-iframe'))
+
+	nav_event = browser.event_bus.dispatch(
+		NavigateToUrlEvent(url='https://v0-website-with-clickable-elements.vercel.app/nested-iframe')
+	)
 	await nav_event
-	
+
 	# Wait a moment for page to fully load
 	await asyncio.sleep(2)
 
 	while True:
 		async with DomService(browser) as dom_service:
-			await remove_highlighting_script(dom_service)
-
 			start = time.time()
 			# Get current target ID from browser session
 			if browser.agent_focus and browser.agent_focus.target_id:
@@ -55,7 +55,7 @@ async def main():
 				if not targets:
 					raise ValueError('No targets available')
 				target_id = targets[0]['targetId']
-			
+
 			result = await dom_service.get_dom_tree(target_id)
 			if isinstance(result, tuple):
 				dom_tree = result[0]
@@ -118,8 +118,6 @@ async def main():
 			print('saved dom tree to tmp/dom_tree.json')
 			print('saved snapshot to tmp/snapshot.json')
 			print('saved ax tree to tmp/ax_tree.json')
-
-			await inject_highlighting_script(dom_service, serialized_dom_state.selector_map)
 
 			input('Done. Press Enter to continue...')
 

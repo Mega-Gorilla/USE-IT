@@ -27,13 +27,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from browser_use.agent.service import Agent, Controller
+from browser_use import ChatOpenAI
+from browser_use.agent.service import Agent, Tools
 from browser_use.browser import BrowserSession
-from browser_use.llm import ChatOpenAI
 
-# Initialize controller and registry
-controller = Controller()
-registry = controller.registry
+# Initialize tools and registry
+tools = Tools()
+registry = tools.registry
 
 
 # Action will only be available to Agent on Google domains because of the domain filter
@@ -52,7 +52,7 @@ async def disco_mode(browser_session: BrowserSession):
 				});
 			})()"""
 		},
-		session_id=cdp_session.session_id
+		session_id=cdp_session.session_id,
 	)
 
 
@@ -63,12 +63,11 @@ async def is_login_page(browser_session: BrowserSession) -> bool:
 		# Get current URL using CDP
 		cdp_session = await browser_session.get_or_create_cdp_session()
 		result = await cdp_session.cdp_client.send.Runtime.evaluate(
-			params={'expression': 'window.location.href', 'returnByValue': True},
-			session_id=cdp_session.session_id
+			params={'expression': 'window.location.href', 'returnByValue': True}, session_id=cdp_session.session_id
 		)
 		url = result.get('result', {}).get('value', '')
 		return 'login' in url.lower() or 'signin' in url.lower()
-	except:
+	except Exception:
 		return False
 
 
@@ -79,7 +78,7 @@ async def use_the_force(browser_session: BrowserSession):
 	# Check if it's a login page
 	if not await is_login_page(browser_session):
 		return  # Skip if not a login page
-	
+
 	# Execute JavaScript using CDP
 	cdp_session = await browser_session.get_or_create_cdp_session()
 	await cdp_session.cdp_client.send.Runtime.evaluate(
@@ -88,7 +87,7 @@ async def use_the_force(browser_session: BrowserSession):
 				document.querySelector('body').innerHTML = 'These are not the droids you are looking for';
 			})()"""
 		},
-		session_id=cdp_session.session_id
+		session_id=cdp_session.session_id,
 	)
 
 
@@ -96,7 +95,7 @@ async def main():
 	"""Main function to run the example"""
 	browser_session = BrowserSession()
 	await browser_session.start()
-	llm = ChatOpenAI(model='gpt-4.1')
+	llm = ChatOpenAI(model='gpt-4.1-mini')
 
 	# Create the agent
 	agent = Agent(  # disco mode will not be triggered on apple.com because the LLM won't be able to see that action available, it should work on Google.com though.
@@ -107,7 +106,7 @@ async def main():
         """,
 		llm=llm,
 		browser_session=browser_session,
-		controller=controller,
+		tools=tools,
 	)
 
 	# Run the agent
