@@ -73,7 +73,7 @@ sensitive_data = {'company_name': 'browser-use'}
 
 
 # Create Agent
-agent = Agent(task=task, llm=llm, browser_profile=browser_profile, sensitive_data=sensitive_data)
+agent = Agent(task=task, llm=llm, browser_profile=browser_profile, sensitive_data=sensitive_data)  # type: ignore
 
 
 async def main():
