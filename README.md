@@ -24,10 +24,6 @@
 [Русский](https://www.readme-i18n.com/browser-use/browser-use?lang=ru) | 
 [中文](https://www.readme-i18n.com/browser-use/browser-use?lang=zh)
 
-🌐 Browser-use is the easiest way to connect your AI agents with the browser.
-
-💡 See what others are building and share your projects in our [Discord](https://link.browser-use.com/discord)! Want Swag? Check out our [Merch store](https://browsermerch.com).
-
 🌤️ Want to skip the setup? Use our <b>[cloud](https://cloud.browser-use.com)</b> for faster, scalable, stealth-enabled browser automation!
 
 # Quick start
