@@ -28,8 +28,8 @@ if TYPE_CHECKING:
 	from browser_use.browser.session import BrowserSession
 
 # Global limits to prevent iframe explosion
-MAX_TOTAL_IFRAMES = 3   # Maximum number of iframe documents to process (very conservative to prevent explosions)
-MAX_IFRAME_DEPTH = 1    # Maximum depth for cross-origin iframe recursion (only 1 level deep)
+MAX_TOTAL_IFRAMES = 3  # Maximum number of iframe documents to process (very conservative to prevent explosions)
+MAX_IFRAME_DEPTH = 1  # Maximum depth for cross-origin iframe recursion (only 1 level deep)
 
 
 class DomService:
@@ -416,17 +416,19 @@ class DomService:
 			original_doc_count = len(snapshot['documents'])
 			# Limit to MAX_TOTAL_IFRAMES documents to prevent iframe explosion
 			if original_doc_count > MAX_TOTAL_IFRAMES:
-				self.logger.warning(f'⚠️ Limiting processing of {original_doc_count} iframes on page to only first {MAX_TOTAL_IFRAMES} to prevent crashes!')
+				self.logger.warning(
+					f'⚠️ Limiting processing of {original_doc_count} iframes on page to only first {MAX_TOTAL_IFRAMES} to prevent crashes!'
+				)
 				snapshot['documents'] = snapshot['documents'][:MAX_TOTAL_IFRAMES]
-			
+
 			total_nodes = sum(len(doc.get('nodes', [])) for doc in snapshot['documents'])
-			self.logger.debug(
-				f'🔍 DEBUG: Snapshot contains {len(snapshot["documents"])} frames with {total_nodes} total nodes'
-			)
+			self.logger.debug(f'🔍 DEBUG: Snapshot contains {len(snapshot["documents"])} frames with {total_nodes} total nodes')
 			# Log iframe-specific info
 			for doc_idx, doc in enumerate(snapshot['documents']):
 				if doc_idx > 0:  # Not the main document
-					self.logger.debug(f'🔍 DEBUG: Iframe #{doc_idx} {doc.get("frameId", "no-frame-id")} {doc.get("url", "no-url")} has {len(doc.get("nodes", []))} nodes')
+					self.logger.debug(
+						f'🔍 DEBUG: Iframe #{doc_idx} {doc.get("frameId", "no-frame-id")} {doc.get("url", "no-url")} has {len(doc.get("nodes", []))} nodes'
+					)
 
 		return TargetAllTrees(
 			snapshot=snapshot,
@@ -635,11 +637,13 @@ class DomService:
 			):  # None meaning there is no content
 				# Check iframe depth to prevent infinite recursion
 				if iframe_depth >= MAX_IFRAME_DEPTH:
-					self.logger.debug(f'Skipping iframe at depth {iframe_depth} to prevent infinite recursion (max depth: {MAX_IFRAME_DEPTH})')
+					self.logger.debug(
+						f'Skipping iframe at depth {iframe_depth} to prevent infinite recursion (max depth: {MAX_IFRAME_DEPTH})'
+					)
 				else:
 					# Check if iframe is visible and large enough (>= 200px in both dimensions)
 					should_process_iframe = False
-					
+
 					# First check if the iframe element itself is visible
 					if dom_tree_node.is_visible:
 						# Check iframe dimensions
@@ -647,18 +651,20 @@ class DomService:
 							bounds = dom_tree_node.snapshot_node.bounds
 							width = bounds.get('width', 0)
 							height = bounds.get('height', 0)
-							
+
 							# Only process if iframe is at least 200px in both dimensions
 							if width >= 200 and height >= 200:
 								should_process_iframe = True
 								self.logger.debug(f'Processing cross-origin iframe: visible=True, width={width}, height={height}')
 							else:
-								self.logger.debug(f'Skipping small cross-origin iframe: width={width}, height={height} (needs >= 200px)')
+								self.logger.debug(
+									f'Skipping small cross-origin iframe: width={width}, height={height} (needs >= 200px)'
+								)
 						else:
 							self.logger.debug('Skipping cross-origin iframe: no bounds available')
 					else:
 						self.logger.debug('Skipping invisible cross-origin iframe')
-					
+
 					if should_process_iframe:
 						# Use get_all_frames to find the iframe's target
 						frame_id = node.get('frameId', None)
@@ -676,7 +682,9 @@ class DomService:
 							iframe_document_target = None
 						# if target actually exists in one of the frames, just recursively build the dom tree for it
 						if iframe_document_target:
-							self.logger.debug(f'Getting content document for iframe {node.get("frameId", None)} at depth {iframe_depth + 1}')
+							self.logger.debug(
+								f'Getting content document for iframe {node.get("frameId", None)} at depth {iframe_depth + 1}'
+							)
 							content_document = await self.get_dom_tree(
 								target_id=iframe_document_target.get('targetId'),
 								# TODO: experiment with this values -> not sure whether the whole cross origin iframe should be ALWAYS included as soon as some part of it is visible or not.
