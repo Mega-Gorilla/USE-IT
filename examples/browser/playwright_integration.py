@@ -1,14 +1,8 @@
 """
-Advanced example showing Playwright and Browser-Use working together with custom actions.
-
-This example demonstrates:
-1. Starting Chrome with CDP (Chrome DevTools Protocol) enabled
-2. Creating custom actions that use Playwright functions
-3. Using Browser-Use AI to orchestrate the overall workflow
-4. Both tools sharing the same browser session seamlessly
-
-Dependencies: playwright, aiohttp, browser-use
-Run: python examples/integrations/playwright_browser_use_shared_cdp.py
+Key features:
+1. Browser-Use and Playwright sharing the same Chrome instance via CDP
+2. Take actions with Playwright and continue with Browser-Use actions
+3. Let the agent call Playwright functions like screenshot or click on selectors
 """
 
 import asyncio
