@@ -147,7 +147,7 @@ class DownloadsWatchdog(BaseWatchdog):
 					'suggested_filename': suggested_filename,
 					'handled': False,
 				}
-			except Exception:
+			except (AssertionError, KeyError):
 				pass
 			# Create and track the task
 			task = asyncio.create_task(self._handle_cdp_download(event, target_id, session_id))
@@ -169,7 +169,7 @@ class DownloadsWatchdog(BaseWatchdog):
 						try:
 							if guid in self._cdp_downloads_info:
 								self._cdp_downloads_info[guid]['handled'] = True
-						except Exception:
+						except (KeyError, AttributeError):
 							pass
 					else:
 						# No local file path provided, local polling in _handle_cdp_download will handle it
@@ -180,7 +180,7 @@ class DownloadsWatchdog(BaseWatchdog):
 					# Remote browser: do not touch local filesystem. Fallback to downloadPath+suggestedFilename
 					info = self._cdp_downloads_info.get(guid, {})
 					try:
-						suggested_filename = info['suggested_filename']
+						suggested_filename = info.get('suggested_filename') or (Path(file_path).name if file_path else 'download')
 						downloads_path = str(self.browser_session.browser_profile.downloads_path or '')
 						effective_path = file_path or str(Path(downloads_path) / suggested_filename)
 						file_name = Path(effective_path).name
@@ -222,6 +222,9 @@ class DownloadsWatchdog(BaseWatchdog):
 
 				# Set download behavior to allow downloads and enable events
 				downloads_path = self.browser_session.browser_profile.downloads_path
+				if not downloads_path:
+					self.logger.warning('[DownloadsWatchdog] No downloads path configured, skipping CDP download setup')
+					return
 				# Ensure path is properly expanded (~ -> absolute path)
 				expanded_downloads_path = Path(downloads_path).expanduser().resolve()
 				await cdp_client.send.Browser.setDownloadBehavior(
@@ -294,10 +297,9 @@ class DownloadsWatchdog(BaseWatchdog):
 		download_result = None
 		download_url = event.get('url', '')
 		suggested_filename = event.get('suggestedFilename', 'download')
+		guid = event.get('guid', '')
 
 		try:
-			guid = event.get('guid', '')
-
 			self.logger.debug(f'[DownloadsWatchdog] ⬇️ File download starting: {suggested_filename} from {download_url[:100]}...')
 			self.logger.debug(f'[DownloadsWatchdog] Full CDP event: {event}')
 
@@ -393,7 +395,7 @@ class DownloadsWatchdog(BaseWatchdog):
 						try:
 							if guid in self._cdp_downloads_info:
 								self._cdp_downloads_info[guid]['handled'] = True
-						except Exception:
+						except (KeyError, AttributeError):
 							pass
 						self.logger.debug(
 							f'[DownloadsWatchdog] ✅ File download completed via CDP: {suggested_filename} ({file_size} bytes) saved to {expected_path}'
@@ -464,7 +466,7 @@ class DownloadsWatchdog(BaseWatchdog):
 								try:
 									if guid in self._cdp_downloads_info:
 										self._cdp_downloads_info[guid]['handled'] = True
-								except Exception:
+								except (KeyError, AttributeError):
 									pass
 								return
 						except Exception as e:
