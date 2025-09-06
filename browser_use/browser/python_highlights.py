@@ -4,9 +4,11 @@ This module replaces JavaScript-based highlighting with fast Python image proces
 to draw bounding boxes around interactive elements directly on screenshots.
 """
 
+import asyncio
 import base64
 import io
 import logging
+import os
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -15,6 +17,57 @@ from browser_use.observability import observe_debug
 from browser_use.utils import time_execution_async
 
 logger = logging.getLogger(__name__)
+
+# Font cache to prevent repeated font loading and reduce memory usage
+_FONT_CACHE: dict[tuple[str, int], ImageFont.FreeTypeFont | None] = {}
+
+# Cross-platform font paths
+_FONT_PATHS = [
+	'/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',  # Linux (Debian/Ubuntu)
+	'/usr/share/fonts/TTF/DejaVuSans-Bold.ttf',  # Linux (Arch/Fedora)
+	'/System/Library/Fonts/Arial.ttf',  # macOS
+	'C:\\Windows\\Fonts\\arial.ttf',  # Windows
+	'arial.ttf',  # Windows (system path)
+	'Arial Bold.ttf',  # macOS alternative
+	'/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',  # Linux alternative
+]
+
+
+def get_cross_platform_font(font_size: int) -> ImageFont.FreeTypeFont | None:
+	"""Get a cross-platform compatible font with caching to prevent memory leaks.
+
+	Args:
+	    font_size: Size of the font to load
+
+	Returns:
+	    ImageFont object or None if no system fonts are available
+	"""
+	# Use cache key based on font size
+	cache_key = ('system_font', font_size)
+
+	# Return cached font if available
+	if cache_key in _FONT_CACHE:
+		return _FONT_CACHE[cache_key]
+
+	# Try to load a system font
+	font = None
+	for font_path in _FONT_PATHS:
+		try:
+			font = ImageFont.truetype(font_path, font_size)
+			break
+		except OSError:
+			continue
+
+	# Cache the result (even if None) to avoid repeated attempts
+	_FONT_CACHE[cache_key] = font
+	return font
+
+
+def cleanup_font_cache() -> None:
+	"""Clean up the font cache to prevent memory leaks in long-running applications."""
+	global _FONT_CACHE
+	_FONT_CACHE.clear()
+
 
 # Color scheme for different element types
 ELEMENT_COLORS = {
@@ -60,6 +113,7 @@ def draw_enhanced_bounding_box_with_text(
 	font: ImageFont.FreeTypeFont | None = None,
 	element_type: str = 'div',
 	image_size: tuple[int, int] = (2000, 1500),
+	device_pixel_ratio: float = 1.0,
 ) -> None:
 	"""Draw an enhanced bounding box with much bigger index containers and dashed borders."""
 	x1, y1, x2, y2 = bbox
@@ -93,22 +147,16 @@ def draw_enhanced_bounding_box_with_text(
 	# Draw much bigger index overlay if we have index text
 	if text:
 		try:
-			# Scale font size based on image dimensions for consistent appearance across viewports
+			# Scale font size for appropriate sizing across different resolutions
 			img_width, img_height = image_size
-			# Base font size scales with viewport width (36px for 1200px viewport)
-			base_font_size = max(16, min(48, int(img_width * 0.03)))  # 3% of viewport width
-			big_font = None
-			try:
-				big_font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', base_font_size)
-			except OSError:
-				try:
-					big_font = ImageFont.truetype('arial.ttf', base_font_size)
-				except OSError:
-					# Try system fonts on different platforms
-					try:
-						big_font = ImageFont.truetype('Arial Bold.ttf', base_font_size)
-					except OSError:
-						big_font = font  # Fallback to original font
+
+			css_width = img_width  # / device_pixel_ratio
+			# Much smaller scaling - 1% of CSS viewport width, max 16px to prevent huge highlights
+			base_font_size = max(10, min(20, int(css_width * 0.01)))
+			# Use shared font loading function with caching
+			big_font = get_cross_platform_font(base_font_size)
+			if big_font is None:
+				big_font = font  # Fallback to original font if no system fonts found
 
 			# Get text size with bigger font
 			if big_font:
@@ -121,8 +169,8 @@ def draw_enhanced_bounding_box_with_text(
 				text_width = bbox_text[2] - bbox_text[0]
 				text_height = bbox_text[3] - bbox_text[1]
 
-			# Scale padding based on viewport size for consistent appearance
-			padding = max(4, int(img_width * 0.005))  # 0.5% of viewport width
+			# Scale padding appropriately for different resolutions
+			padding = max(4, min(10, int(css_width * 0.005)))  # 0.3% of CSS width, max 4px
 			element_width = x2 - x1
 			element_height = y2 - y1
 
@@ -130,15 +178,17 @@ def draw_enhanced_bounding_box_with_text(
 			container_width = text_width + padding * 2
 			container_height = text_height + padding * 2
 
-			# Position in top-left corner (inside if fits, outside if too small)
-			if element_width >= container_width and element_height >= container_height:
-				# Place inside top-left corner
-				bg_x1 = x1 + 2  # Small offset from edge
-				bg_y1 = y1 + 2
+			# Position in top center - for small elements, place further up to avoid blocking content
+			# Center horizontally within the element
+			bg_x1 = x1 + (element_width - container_width) // 2
+
+			# Simple rule: if element is small, place index further up to avoid blocking icons
+			if element_width < 60 or element_height < 30:
+				# Small element: place well above to avoid blocking content
+				bg_y1 = max(0, y1 - container_height - 5)
 			else:
-				# Place outside top-left corner
-				bg_x1 = x1
-				bg_y1 = max(0, y1 - container_height)
+				# Regular element: place inside with small offset
+				bg_y1 = y1 + 2
 
 			bg_x2 = bg_x1 + container_width
 			bg_y2 = bg_y1 + container_height
@@ -339,14 +389,16 @@ def process_element_highlight(
 				# Use the meaningful text that matches what the LLM sees
 				meaningful_text = element.get_meaningful_text_for_llm()
 				# Show ID only if meaningful text is less than 5 characters
-				if len(meaningful_text) < 5:
+				if len(meaningful_text) < 3:
 					index_text = str(element_index)
 			else:
 				# Always show ID when filter is disabled
 				index_text = str(element_index)
 
 		# Draw enhanced bounding box with bigger index
-		draw_enhanced_bounding_box_with_text(draw, (x1, y1, x2, y2), color, index_text, font, tag_name, image_size)
+		draw_enhanced_bounding_box_with_text(
+			draw, (x1, y1, x2, y2), color, index_text, font, tag_name, image_size, device_pixel_ratio
+		)
 
 	except Exception as e:
 		logger.debug(f'Failed to draw highlight for element {element_id}: {e}')
@@ -382,15 +434,9 @@ async def create_highlighted_screenshot(
 		# Create drawing context
 		draw = ImageDraw.Draw(image)
 
-		# Try to load a font, fall back to default if not available
-		font = None
-		try:
-			font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 12)
-		except OSError:
-			try:
-				font = ImageFont.truetype('arial.ttf', 12)
-			except OSError:
-				font = None  # Use default font
+		# Load font using shared function with caching
+		font = get_cross_platform_font(12)
+		# If no system fonts found, font remains None and will use default font
 
 		# Process elements sequentially to avoid ImageDraw thread safety issues
 		# PIL ImageDraw is not thread-safe, so we process elements one by one
@@ -399,16 +445,24 @@ async def create_highlighted_screenshot(
 
 		# Convert back to base64
 		output_buffer = io.BytesIO()
-		image.save(output_buffer, format='PNG')
-		output_buffer.seek(0)
+		try:
+			image.save(output_buffer, format='PNG')
+			output_buffer.seek(0)
+			highlighted_b64 = base64.b64encode(output_buffer.getvalue()).decode('utf-8')
 
-		highlighted_b64 = base64.b64encode(output_buffer.getvalue()).decode('utf-8')
-
-		logger.debug(f'Successfully created highlighted screenshot with {len(selector_map)} elements')
-		return highlighted_b64
+			logger.debug(f'Successfully created highlighted screenshot with {len(selector_map)} elements')
+			return highlighted_b64
+		finally:
+			# Explicit cleanup to prevent memory leaks
+			output_buffer.close()
+			if 'image' in locals():
+				image.close()
 
 	except Exception as e:
 		logger.error(f'Failed to create highlighted screenshot: {e}')
+		# Clean up on error as well
+		if 'image' in locals():
+			image.close()
 		# Return original screenshot on error
 		return screenshot_b64
 
@@ -444,7 +498,6 @@ async def get_viewport_info_from_cdp(cdp_session) -> tuple[float, int, int]:
 		return 1.0, 0, 0
 
 
-@observe_debug(ignore_input=True, ignore_output=True, name='create_highlighted_screenshot_async')
 @time_execution_async('create_highlighted_screenshot_async')
 async def create_highlighted_screenshot_async(
 	screenshot_b64: str, selector_map: DOMSelectorMap, cdp_session=None, filter_highlight_ids: bool = True
@@ -455,6 +508,7 @@ async def create_highlighted_screenshot_async(
 	    screenshot_b64: Base64 encoded screenshot
 	    selector_map: Map of interactive elements
 	    cdp_session: CDP session for getting viewport info
+	    filter_highlight_ids: Whether to filter element IDs based on meaningful text
 
 	Returns:
 	    Base64 encoded highlighted screenshot
@@ -471,6 +525,24 @@ async def create_highlighted_screenshot_async(
 			logger.debug(f'Failed to get viewport info from CDP: {e}')
 
 	# Create highlighted screenshot with async processing
-	return await create_highlighted_screenshot(
+	final_screenshot = await create_highlighted_screenshot(
 		screenshot_b64, selector_map, device_pixel_ratio, viewport_offset_x, viewport_offset_y, filter_highlight_ids
 	)
+
+	filename = os.getenv('BROWSER_USE_SCREENSHOT_FILE')
+	if filename:
+
+		def _write_screenshot():
+			try:
+				with open(filename, 'wb') as f:
+					f.write(base64.b64decode(final_screenshot))
+				logger.debug('Saved screenshot to ' + str(filename))
+			except Exception as e:
+				logger.warning(f'Failed to save screenshot to {filename}: {e}')
+
+		await asyncio.to_thread(_write_screenshot)
+	return final_screenshot
+
+
+# Export the cleanup function for external use in long-running applications
+__all__ = ['create_highlighted_screenshot', 'create_highlighted_screenshot_async', 'cleanup_font_cache']
