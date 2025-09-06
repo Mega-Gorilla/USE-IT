@@ -73,8 +73,11 @@ class ChatGoogle(BaseChatModel):
 
 	# Model configuration
 	model: VerifiedGeminiModels | str
-	temperature: float | None = None
+	temperature: float | None = 0.2
+	top_p: float | None = None
+	seed: int | None = None
 	thinking_budget: int | None = None
+	max_output_tokens: int | None = 4096
 	config: types.GenerateContentConfigDict | None = None
 
 	# Client initialization parameters
@@ -181,9 +184,18 @@ class ChatGoogle(BaseChatModel):
 		if system_instruction:
 			config['system_instruction'] = system_instruction
 
+		if self.top_p is not None:
+			config['top_p'] = self.top_p
+
+		if self.seed is not None:
+			config['seed'] = self.seed
+
 		if self.thinking_budget is not None:
 			thinking_config_dict: types.ThinkingConfigDict = {'thinking_budget': self.thinking_budget}
 			config['thinking_config'] = thinking_config_dict
+
+		if self.max_output_tokens is not None:
+			config['max_output_tokens'] = self.max_output_tokens
 
 		async def _make_api_call():
 			if output_format is None:
@@ -363,6 +375,7 @@ class ChatGoogle(BaseChatModel):
 							key == 'properties'
 							and isinstance(cleaned_value, dict)
 							and len(cleaned_value) == 0
+							and isinstance(obj.get('type', ''), str)
 							and obj.get('type', '').upper() == 'OBJECT'
 						):
 							# Convert empty object to have at least one property
@@ -372,7 +385,8 @@ class ChatGoogle(BaseChatModel):
 
 				# If this is an object type with empty properties, add a placeholder
 				if (
-					cleaned.get('type', '').upper() == 'OBJECT'
+					isinstance(cleaned.get('type', ''), str)
+					and cleaned.get('type', '').upper() == 'OBJECT'
 					and 'properties' in cleaned
 					and isinstance(cleaned['properties'], dict)
 					and len(cleaned['properties']) == 0

@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import platform
+import re
 import signal
 import time
 from collections.abc import Callable, Coroutine
@@ -15,6 +16,9 @@ from urllib.parse import urlparse
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Pre-compiled regex for URL detection - used in URL shortening
+URL_PATTERN = re.compile(r'https?://[^\s<>"\']+|www\.[^\s<>"\']+|[^\s<>"\']+\.[a-z]{2,}(?:/[^\s<>"\']*)?', re.IGNORECASE)
 
 
 logger = logging.getLogger(__name__)
@@ -416,7 +420,7 @@ def is_unsafe_pattern(pattern: str) -> bool:
 
 def is_new_tab_page(url: str) -> bool:
 	"""
-	Check if a URL is a new tab page (about:blank or chrome://new-tab-page).
+	Check if a URL is a new tab page (about:blank, chrome://new-tab-page, or chrome://newtab).
 
 	Args:
 		url: The URL to check
@@ -424,7 +428,7 @@ def is_new_tab_page(url: str) -> bool:
 	Returns:
 		bool: True if the URL is a new tab page, False otherwise
 	"""
-	return url in ('about:blank', 'chrome://new-tab-page/', 'chrome://new-tab-page')
+	return url in ('about:blank', 'chrome://new-tab-page/', 'chrome://new-tab-page', 'chrome://newtab/', 'chrome://newtab')
 
 
 def match_url_with_domain_pattern(url: str, domain_pattern: str, log_warnings: bool = False) -> bool:
@@ -572,6 +576,49 @@ def get_browser_use_version() -> str:
 	except Exception as e:
 		logger.debug(f'Error detecting browser-use version: {type(e).__name__}: {e}')
 		return 'unknown'
+
+
+@cache
+def get_git_info() -> dict[str, str] | None:
+	"""Get git information if installed from git repository"""
+	try:
+		import subprocess
+
+		package_root = Path(__file__).parent.parent
+		git_dir = package_root / '.git'
+		if not git_dir.exists():
+			return None
+
+		# Get git commit hash
+		commit_hash = (
+			subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=package_root, stderr=subprocess.DEVNULL).decode().strip()
+		)
+
+		# Get git branch
+		branch = (
+			subprocess.check_output(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], cwd=package_root, stderr=subprocess.DEVNULL)
+			.decode()
+			.strip()
+		)
+
+		# Get remote URL
+		remote_url = (
+			subprocess.check_output(['git', 'config', '--get', 'remote.origin.url'], cwd=package_root, stderr=subprocess.DEVNULL)
+			.decode()
+			.strip()
+		)
+
+		# Get commit timestamp
+		commit_timestamp = (
+			subprocess.check_output(['git', 'show', '-s', '--format=%ci', 'HEAD'], cwd=package_root, stderr=subprocess.DEVNULL)
+			.decode()
+			.strip()
+		)
+
+		return {'commit_hash': commit_hash, 'branch': branch, 'remote_url': remote_url, 'commit_timestamp': commit_timestamp}
+	except Exception as e:
+		logger.debug(f'Error getting git info: {type(e).__name__}: {e}')
+		return None
 
 
 def _log_pretty_path(path: str | Path | None) -> str:
