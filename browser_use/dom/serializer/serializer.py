@@ -120,7 +120,7 @@ class DOMTreeSerializer:
 	def _create_simplified_tree(self, node: EnhancedDOMTreeNode, depth: int = 0) -> SimplifiedNode | None:
 		"""Step 1: Create a simplified tree with enhanced element detection."""
 
-		# Prevent infinite recursion by limiting depth to 30 levels (reduced for stress test pages)
+		# Prevent infinite recursion by limiting depth to 30 levels
 		if depth > 30:
 			return None
 
