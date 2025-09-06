@@ -1,4 +1,3 @@
-import logging
 import os
 import sys
 
@@ -11,11 +10,6 @@ load_dotenv()
 
 from browser_use import Agent
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-
 secret_key = os.environ.get('OTP_SECRET_KEY')
 if not secret_key:
 	# For this example copy the code from the website https://authenticationtest.com/totpChallenge/
@@ -23,12 +17,12 @@ if not secret_key:
 	secret_key = 'JBSWY3DPEHPK3PXP'
 
 
-sensitive_data: dict[str, str] = {'otp_secret': secret_key}
+sensitive_data = {'otp_secret': secret_key}
 
 
-task = """Steps:
+task = """
 1. Go to https://authenticationtest.com/totpChallenge/ and log in.
 2. Use the the secret otp_secret to generate the 2FA code."""
 
 
-Agent(task=task, sensitive_data=sensitive_data).run_sync()
+Agent(task=task, sensitive_data=sensitive_data).run_sync()  # type: ignore
