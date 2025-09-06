@@ -18,12 +18,12 @@ if not api_key:
 llm = ChatGoogle(model='gemini-2.5-flash', api_key=api_key)
 
 
-browser_session = BrowserSession(browser_profile=BrowserProfile(downloads_path='~/Downloads'))
+browser_session = BrowserSession(browser_profile=BrowserProfile(downloads_path='~/Downloads/tmp'))
 
 
 async def run_download():
 	agent = Agent(
-		task='Go to "https://file-examples.com/" and download the smallest doc file.',
+		task='Go to "https://file-examples.com/" and download the smallest doc file. then go back and get the next file.',
 		llm=llm,
 		browser_session=browser_session,
 	)

@@ -60,8 +60,9 @@ class DownloadsWatchdog(BaseWatchdog):
 		# Ensure downloads directory exists
 		downloads_path = self.browser_session.browser_profile.downloads_path
 		if downloads_path:
-			Path(downloads_path).mkdir(parents=True, exist_ok=True)
-			self.logger.debug(f'[DownloadsWatchdog] Ensured downloads directory exists: {downloads_path}')
+			expanded_path = Path(downloads_path).expanduser().resolve()
+			expanded_path.mkdir(parents=True, exist_ok=True)
+			self.logger.debug(f'[DownloadsWatchdog] Ensured downloads directory exists: {expanded_path}')
 
 	async def on_TabCreatedEvent(self, event: TabCreatedEvent) -> None:
 		"""Monitor new tabs for downloads."""
@@ -221,10 +222,12 @@ class DownloadsWatchdog(BaseWatchdog):
 
 				# Set download behavior to allow downloads and enable events
 				downloads_path = self.browser_session.browser_profile.downloads_path
+				# Ensure path is properly expanded (~ -> absolute path)
+				expanded_downloads_path = Path(downloads_path).expanduser().resolve()
 				await cdp_client.send.Browser.setDownloadBehavior(
 					params={
 						'behavior': 'allow',
-						'downloadPath': str(downloads_path),  # Convert Path to string
+						'downloadPath': str(expanded_downloads_path),  # Use expanded absolute path
 						'eventsEnabled': True,
 					}
 				)
@@ -275,10 +278,14 @@ class DownloadsWatchdog(BaseWatchdog):
 		self, event: DownloadWillBeginEvent, target_id: TargetID, session_id: SessionID | None
 	) -> None:
 		"""Handle a CDP Page.downloadWillBegin event."""
-		downloads_dir = Path(
-			self.browser_session.browser_profile.downloads_path
-			or f'{tempfile.gettempdir()}/browser_use_downloads.{str(self.browser_session.id)[-4:]}'
-		)
+		downloads_dir = (
+			Path(
+				self.browser_session.browser_profile.downloads_path
+				or f'{tempfile.gettempdir()}/browser_use_downloads.{str(self.browser_session.id)[-4:]}'
+			)
+			.expanduser()
+			.resolve()
+		)  # Ensure path is properly expanded
 
 		# Initialize variables that may be used outside try blocks
 		unique_filename = None
