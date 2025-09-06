@@ -649,8 +649,8 @@ class DomService:
 						# Check iframe dimensions
 						if dom_tree_node.snapshot_node and dom_tree_node.snapshot_node.bounds:
 							bounds = dom_tree_node.snapshot_node.bounds
-							width = bounds.get('width', 0)
-							height = bounds.get('height', 0)
+							width = bounds.width
+							height = bounds.height
 
 							# Only process if iframe is at least 200px in both dimensions
 							if width >= 200 and height >= 200:
