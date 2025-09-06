@@ -39,12 +39,10 @@ from browser_use.browser.events import (
 from browser_use.browser.profile import BrowserProfile, ProxySettings
 from browser_use.browser.views import BrowserStateSummary, TabInfo
 from browser_use.dom.views import EnhancedDOMTreeNode, TargetInfo
+from browser_use.observability import observe_debug
 from browser_use.utils import _log_pretty_url, is_new_tab_page
 
 DEFAULT_BROWSER_PROFILE = BrowserProfile()
-
-MAX_SCREENSHOT_HEIGHT = 2000
-MAX_SCREENSHOT_WIDTH = 1920
 
 _LOGGED_UNIQUE_SESSION_IDS = set()  # track unique session IDs that have been logged to make sure we always assign a unique enough id to new sessions and avoid ambiguity in logs
 red = '\033[91m'
@@ -246,6 +244,8 @@ class BrowserSession(BaseModel):
 		record_har_mode: str | None = None,
 		record_har_path: str | Path | None = None,
 		record_video_dir: str | Path | None = None,
+		record_video_framerate: int | None = None,
+		record_video_size: dict | None = None,
 		# From BrowserLaunchPersistentContextArgs
 		user_data_dir: str | Path | None = None,
 		# From BrowserNewContextArgs
@@ -264,8 +264,10 @@ class BrowserSession(BaseModel):
 		wait_for_network_idle_page_load_time: float | None = None,
 		wait_between_actions: float | None = None,
 		highlight_elements: bool | None = None,
+		filter_highlight_ids: bool | None = None,
 		auto_download_pdfs: bool | None = None,
 		profile_directory: str | None = None,
+		cookie_whitelist_domains: list[str] | None = None,
 	):
 		# Following the same pattern as AgentSettings in service.py
 		# Only pass non-None values to avoid validation errors
@@ -335,6 +337,7 @@ class BrowserSession(BaseModel):
 	_dom_watchdog: Any | None = PrivateAttr(default=None)
 	_screenshot_watchdog: Any | None = PrivateAttr(default=None)
 	_permissions_watchdog: Any | None = PrivateAttr(default=None)
+	_recording_watchdog: Any | None = PrivateAttr(default=None)
 
 	_logger: Any = PrivateAttr(default=None)
 
@@ -401,6 +404,7 @@ class BrowserSession(BaseModel):
 		self._dom_watchdog = None
 		self._screenshot_watchdog = None
 		self._permissions_watchdog = None
+		self._recording_watchdog = None
 
 	def model_post_init(self, __context) -> None:
 		"""Register event handlers after model initialization."""
@@ -422,6 +426,7 @@ class BrowserSession(BaseModel):
 		BaseWatchdog.attach_handler_to_session(self, BrowserStopEvent, self.on_BrowserStopEvent)
 		BaseWatchdog.attach_handler_to_session(self, NavigateToUrlEvent, self.on_NavigateToUrlEvent)
 		BaseWatchdog.attach_handler_to_session(self, SwitchTabEvent, self.on_SwitchTabEvent)
+		BaseWatchdog.attach_handler_to_session(self, TabCreatedEvent, self.on_TabCreatedEvent)
 		BaseWatchdog.attach_handler_to_session(self, TabClosedEvent, self.on_TabClosedEvent)
 		BaseWatchdog.attach_handler_to_session(self, AgentFocusChangedEvent, self.on_AgentFocusChangedEvent)
 		BaseWatchdog.attach_handler_to_session(self, FileDownloadedEvent, self.on_FileDownloadedEvent)
@@ -536,6 +541,18 @@ class BrowserSession(BaseModel):
 
 		target_id = None
 
+		# If new_tab=True but we're already in a new tab, set new_tab=False
+		if event.new_tab:
+			try:
+				current_url = await self.get_current_page_url()
+				from browser_use.utils import is_new_tab_page
+
+				if is_new_tab_page(current_url):
+					self.logger.debug(f'[on_NavigateToUrlEvent] Already in new tab ({current_url}), setting new_tab=False')
+					event.new_tab = False
+			except Exception as e:
+				self.logger.debug(f'[on_NavigateToUrlEvent] Could not check current URL: {e}')
+
 		# check if the url is already open in a tab somewhere that we're not currently on, if so, short-circuit and just switch to it
 		targets = await self._cdp_get_all_pages()
 		for target in targets:
@@ -584,10 +601,18 @@ class BrowserSession(BaseModel):
 				# Use current tab
 				target_id = target_id or self.agent_focus.target_id
 
-			# Activate target (bring to foreground)
-			await self.event_bus.dispatch(SwitchTabEvent(target_id=target_id))
-			# which does this for us:
-			# self.agent_focus = await self.get_or_create_cdp_session(target_id)
+			# Only switch tab if we're not already on the target tab
+			if self.agent_focus is None or self.agent_focus.target_id != target_id:
+				self.logger.debug(
+					f'[on_NavigateToUrlEvent] Switching to target tab {target_id[-4:]} (current: {self.agent_focus.target_id[-4:] if self.agent_focus else "none"})'
+				)
+				# Activate target (bring to foreground)
+				await self.event_bus.dispatch(SwitchTabEvent(target_id=target_id))
+				# which does this for us:
+				# self.agent_focus = await self.get_or_create_cdp_session(target_id)
+			else:
+				self.logger.debug(f'[on_NavigateToUrlEvent] Already on target tab {target_id[-4:]}, skipping SwitchTabEvent')
+
 			assert self.agent_focus is not None and self.agent_focus.target_id == target_id, (
 				'Agent focus not updated to new target_id after SwitchTabEvent should have switched to it'
 			)
@@ -605,8 +630,11 @@ class BrowserSession(BaseModel):
 				session_id=self.agent_focus.session_id,
 			)
 
-			# Wait a bit to ensure page starts loading
-			await asyncio.sleep(0.5)
+			# # Wait a bit to ensure page starts loading
+			# await asyncio.sleep(0.5)
+
+			# Close any extension options pages that might have opened
+			await self._close_extension_options_pages()
 
 			# Dispatch navigation complete
 			self.logger.debug(f'Dispatching NavigationCompleteEvent for {event.url} (tab #{target_id[-4:]})')
@@ -678,8 +706,24 @@ class BrowserSession(BaseModel):
 		"""Handle tab closure - update focus if needed."""
 
 		cdp_session = await self.get_or_create_cdp_session(target_id=None, focus=False)
-		await cdp_session.cdp_client.send.Target.closeTarget(params={'targetId': event.target_id})
 		await self.event_bus.dispatch(TabClosedEvent(target_id=event.target_id))
+		await cdp_session.cdp_client.send.Target.closeTarget(params={'targetId': event.target_id})
+
+	async def on_TabCreatedEvent(self, event: TabCreatedEvent) -> None:
+		"""Handle tab creation - apply viewport settings to new tab."""
+		# Apply viewport settings if configured
+		if self.browser_profile.viewport and not self.browser_profile.no_viewport:
+			try:
+				viewport_width = self.browser_profile.viewport.width
+				viewport_height = self.browser_profile.viewport.height
+				device_scale_factor = self.browser_profile.device_scale_factor or 1.0
+
+				# Use the helper method with the new tab's target_id
+				await self._cdp_set_viewport(viewport_width, viewport_height, device_scale_factor, target_id=event.target_id)
+
+				self.logger.debug(f'Applied viewport {viewport_width}x{viewport_height} to tab {event.target_id[-8:]}')
+			except Exception as e:
+				self.logger.warning(f'Failed to set viewport for new tab {event.target_id[-8:]}: {e}')
 
 	async def on_TabClosedEvent(self, event: TabClosedEvent) -> None:
 		"""Handle tab closure - update focus if needed."""
@@ -845,6 +889,8 @@ class BrowserSession(BaseModel):
 			cdp_url=self.cdp_url if should_use_new_socket else None,
 		)
 		self._cdp_session_pool[target_id] = session
+		# log length of _cdp_session_pool
+		self.logger.debug(f'[get_or_create_cdp_session] new _cdp_session_pool length: {len(self._cdp_session_pool)}')
 
 		# Only change agent focus if requested
 		if focus:
@@ -870,7 +916,7 @@ class BrowserSession(BaseModel):
 		return self.agent_focus.session_id if self.agent_focus else None
 
 	# ========== Helper Methods ==========
-
+	@observe_debug(ignore_input=True, ignore_output=True, name='get_browser_state_summary')
 	async def get_browser_state_summary(
 		self,
 		cache_clickable_elements_hashes: bool = True,
@@ -927,6 +973,7 @@ class BrowserSession(BaseModel):
 		from browser_use.browser.watchdogs.local_browser_watchdog import LocalBrowserWatchdog
 		from browser_use.browser.watchdogs.permissions_watchdog import PermissionsWatchdog
 		from browser_use.browser.watchdogs.popups_watchdog import PopupsWatchdog
+		from browser_use.browser.watchdogs.recording_watchdog import RecordingWatchdog
 		from browser_use.browser.watchdogs.screenshot_watchdog import ScreenshotWatchdog
 		from browser_use.browser.watchdogs.security_watchdog import SecurityWatchdog
 		# from browser_use.browser.storage_state_watchdog import StorageStateWatchdog
@@ -1026,6 +1073,11 @@ class BrowserSession(BaseModel):
 		# self.event_bus.on(BrowserStateRequestEvent, self._dom_watchdog.on_BrowserStateRequestEvent)
 		self._dom_watchdog.attach_to_session()
 
+		# Initialize RecordingWatchdog (handles video recording)
+		RecordingWatchdog.model_rebuild()
+		self._recording_watchdog = RecordingWatchdog(event_bus=self.event_bus, browser_session=self)
+		self._recording_watchdog.attach_to_session()
+
 		# Mark watchdogs as attached to prevent duplicate attachment
 		self._watchdogs_attached = True
 
@@ -1108,7 +1160,7 @@ class BrowserSession(BaseModel):
 						# Update the target's URL in our list for later use
 						target['url'] = 'about:blank'
 						# Small delay to ensure navigation completes
-						await asyncio.sleep(0.1)
+						await asyncio.sleep(0.05)
 					except Exception as e:
 						self.logger.warning(f'Failed to redirect {target_url} to about:blank: {e}')
 
@@ -1413,6 +1465,19 @@ class BrowserSession(BaseModel):
 			return target_info.get('title', 'Unknown page title')
 		return 'Unknown page title'
 
+	async def navigate_to(self, url: str, new_tab: bool = False) -> None:
+		"""Navigate to a URL using the standard event system.
+
+		Args:
+			url: URL to navigate to
+			new_tab: Whether to open in a new tab
+		"""
+		from browser_use.browser.events import NavigateToUrlEvent
+
+		event = self.event_bus.dispatch(NavigateToUrlEvent(url=url, new_tab=new_tab))
+		await event
+		await event.event_result(raise_if_any=True, raise_if_none=False)
+
 	# ========== DOM Helper Methods ==========
 
 	async def get_dom_element_by_index(self, index: int) -> EnhancedDOMTreeNode | None:
@@ -1519,6 +1584,9 @@ class BrowserSession(BaseModel):
 
 	async def remove_highlights(self) -> None:
 		"""Remove highlights from the page using CDP."""
+		if not self.browser_profile.highlight_elements:
+			return
+
 		try:
 			# Get cached session
 			cdp_session = await self.get_or_create_cdp_session()
@@ -1558,28 +1626,36 @@ class BrowserSession(BaseModel):
 
 		except Exception as e:
 			self.logger.warning(f'Failed to remove highlights: {e}')
-			# Try again with simpler script if the complex one fails
-			try:
-				simple_script = """
-				const highlights = document.querySelectorAll('[data-browser-use-highlight]');
-				highlights.forEach(el => el.remove());
-				const container = document.getElementById('browser-use-debug-highlights');
-				if (container) container.remove();
-				"""
-				cdp_session = await self.get_or_create_cdp_session()
-				await cdp_session.cdp_client.send.Runtime.evaluate(
-					params={'expression': simple_script}, session_id=cdp_session.session_id
-				)
-				self.logger.debug('Fallback highlight removal completed')
-			except Exception as fallback_error:
-				self.logger.error(f'Both highlight removal attempts failed: {fallback_error}')
+
+	async def _close_extension_options_pages(self) -> None:
+		"""Close any extension options/welcome pages that have opened."""
+		try:
+			# Get all open pages
+			targets = await self._cdp_get_all_pages()
+
+			for target in targets:
+				target_url = target.get('url', '')
+				target_id = target.get('targetId', '')
+
+				# Check if this is an extension options/welcome page
+				if 'chrome-extension://' in target_url and (
+					'options.html' in target_url or 'welcome.html' in target_url or 'onboarding.html' in target_url
+				):
+					self.logger.info(f'[BrowserSession] 🚫 Closing extension options page: {target_url}')
+					try:
+						await self._cdp_close_page(target_id)
+					except Exception as e:
+						self.logger.debug(f'[BrowserSession] Could not close extension page {target_id}: {e}')
+
+		except Exception as e:
+			self.logger.debug(f'[BrowserSession] Error closing extension options pages: {e}')
 
 	@property
 	def downloaded_files(self) -> list[str]:
 		"""Get list of files downloaded during this browser session.
 
 		Returns:
-		    list[str]: List of absolute file paths to downloaded files in this session
+			list[str]: List of absolute file paths to downloaded files in this session
 		"""
 		return self._downloaded_files.copy()
 
@@ -1706,22 +1782,119 @@ class BrowserSession(BaseModel):
 			params={'identifier': identifier}, session_id=cdp_session.session_id
 		)
 
-	async def _cdp_set_viewport(self, width: int, height: int, device_scale_factor: float = 1.0, mobile: bool = False) -> None:
-		"""Set viewport using CDP Emulation.setDeviceMetricsOverride."""
-		await self.cdp_client.send.Emulation.setDeviceMetricsOverride(
-			params={'width': width, 'height': height, 'deviceScaleFactor': device_scale_factor, 'mobile': mobile}
+	async def _cdp_set_viewport(
+		self, width: int, height: int, device_scale_factor: float = 1.0, mobile: bool = False, target_id: str | None = None
+	) -> None:
+		"""Set viewport using CDP Emulation.setDeviceMetricsOverride.
+
+		Args:
+			width: Viewport width
+			height: Viewport height
+			device_scale_factor: Device scale factor (default 1.0)
+			mobile: Whether to emulate mobile device (default False)
+			target_id: Optional target ID to set viewport for. If not provided, uses agent_focus.
+		"""
+		if target_id:
+			# Set viewport for specific target
+			cdp_session = await self.get_or_create_cdp_session(target_id, focus=False, new_socket=False)
+		elif self.agent_focus:
+			# Use current focus
+			cdp_session = self.agent_focus
+		else:
+			self.logger.warning('Cannot set viewport: no target_id provided and agent_focus not initialized')
+			return
+
+		await cdp_session.cdp_client.send.Emulation.setDeviceMetricsOverride(
+			params={'width': width, 'height': height, 'deviceScaleFactor': device_scale_factor, 'mobile': mobile},
+			session_id=cdp_session.session_id,
 		)
+
+	async def _cdp_get_origins(self) -> list[dict[str, Any]]:
+		"""Get origins with localStorage and sessionStorage using CDP."""
+		origins = []
+		cdp_session = await self.get_or_create_cdp_session(target_id=None, new_socket=False)
+
+		try:
+			# Enable DOMStorage domain to track storage
+			await cdp_session.cdp_client.send.DOMStorage.enable(session_id=cdp_session.session_id)
+
+			try:
+				# Get all frames to find unique origins
+				frames_result = await cdp_session.cdp_client.send.Page.getFrameTree(session_id=cdp_session.session_id)
+
+				# Extract unique origins from frames
+				unique_origins = set()
+
+				def _extract_origins(frame_tree):
+					"""Recursively extract origins from frame tree."""
+					frame = frame_tree.get('frame', {})
+					origin = frame.get('securityOrigin')
+					if origin and origin != 'null':
+						unique_origins.add(origin)
+
+					# Process child frames
+					for child in frame_tree.get('childFrames', []):
+						_extract_origins(child)
+
+				async def _get_storage_items(origin: str, is_local_storage: bool) -> list[dict[str, str]] | None:
+					"""Helper to get storage items for an origin."""
+					storage_type = 'localStorage' if is_local_storage else 'sessionStorage'
+					try:
+						result = await cdp_session.cdp_client.send.DOMStorage.getDOMStorageItems(
+							params={'storageId': {'securityOrigin': origin, 'isLocalStorage': is_local_storage}},
+							session_id=cdp_session.session_id,
+						)
+
+						items = []
+						for item in result.get('entries', []):
+							if len(item) == 2:  # Each item is [key, value]
+								items.append({'name': item[0], 'value': item[1]})
+
+						return items if items else None
+					except Exception as e:
+						self.logger.debug(f'Failed to get {storage_type} for {origin}: {e}')
+						return None
+
+				_extract_origins(frames_result.get('frameTree', {}))
+
+				# For each unique origin, get localStorage and sessionStorage
+				for origin in unique_origins:
+					origin_data = {'origin': origin}
+
+					# Get localStorage
+					local_storage = await _get_storage_items(origin, is_local_storage=True)
+					if local_storage:
+						origin_data['localStorage'] = local_storage
+
+					# Get sessionStorage
+					session_storage = await _get_storage_items(origin, is_local_storage=False)
+					if session_storage:
+						origin_data['sessionStorage'] = session_storage
+
+					# Only add origin if it has storage data
+					if 'localStorage' in origin_data or 'sessionStorage' in origin_data:
+						origins.append(origin_data)
+
+			finally:
+				# Always disable DOMStorage tracking when done
+				await cdp_session.cdp_client.send.DOMStorage.disable(session_id=cdp_session.session_id)
+
+		except Exception as e:
+			self.logger.warning(f'Failed to get origins: {e}')
+
+		return origins
 
 	async def _cdp_get_storage_state(self) -> dict:
 		"""Get storage state (cookies, localStorage, sessionStorage) using CDP."""
 		# Use the _cdp_get_cookies helper which handles session attachment
 		cookies = await self._cdp_get_cookies()
 
-		# Get localStorage and sessionStorage would require evaluating JavaScript
-		# on each origin, which is more complex. For now, return cookies only.
+		# Get origins with localStorage/sessionStorage
+		origins = await self._cdp_get_origins()
+
 		return {
 			'cookies': cookies,
-			'origins': [],  # Would need to iterate through origins for localStorage/sessionStorage
+			'origins': origins,
 		}
 
 	async def _cdp_navigate(self, url: str, target_id: TargetID | None = None) -> None:
