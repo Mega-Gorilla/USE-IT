@@ -976,7 +976,7 @@ class BrowserSession(BaseModel):
 		from browser_use.browser.watchdogs.recording_watchdog import RecordingWatchdog
 		from browser_use.browser.watchdogs.screenshot_watchdog import ScreenshotWatchdog
 		from browser_use.browser.watchdogs.security_watchdog import SecurityWatchdog
-		# from browser_use.browser.storage_state_watchdog import StorageStateWatchdog
+		from browser_use.browser.watchdogs.storage_state_watchdog import StorageStateWatchdog
 
 		# Initialize CrashWatchdog
 		# CrashWatchdog.model_rebuild()
@@ -997,14 +997,27 @@ class BrowserSession(BaseModel):
 		if self.browser_profile.auto_download_pdfs:
 			self.logger.debug('📄 PDF auto-download enabled for this session')
 
-		# # Initialize StorageStateWatchdog
-		# StorageStateWatchdog.model_rebuild()
-		# self._storage_state_watchdog = StorageStateWatchdog(event_bus=self.event_bus, browser_session=self)
-		# # self.event_bus.on(BrowserConnectedEvent, self._storage_state_watchdog.on_BrowserConnectedEvent)
-		# # self.event_bus.on(BrowserStopEvent, self._storage_state_watchdog.on_BrowserStopEvent)
-		# # self.event_bus.on(SaveStorageStateEvent, self._storage_state_watchdog.on_SaveStorageStateEvent)
-		# # self.event_bus.on(LoadStorageStateEvent, self._storage_state_watchdog.on_LoadStorageStateEvent)
-		# self._storage_state_watchdog.attach_to_session()
+		# Initialize StorageStateWatchdog conditionally
+		# Enable when user provides either storage_state or user_data_dir (indicating they want persistence)
+		should_enable_storage_state = (
+			self.browser_profile.storage_state is not None or self.browser_profile.user_data_dir is not None
+		)
+
+		if should_enable_storage_state:
+			StorageStateWatchdog.model_rebuild()
+			self._storage_state_watchdog = StorageStateWatchdog(
+				event_bus=self.event_bus,
+				browser_session=self,
+				# More conservative defaults when auto-enabled
+				auto_save_interval=60.0,  # 1 minute instead of 30 seconds
+				save_on_change=False,  # Only save on shutdown by default
+			)
+			self._storage_state_watchdog.attach_to_session()
+			self.logger.debug(
+				f'🍪 StorageStateWatchdog enabled (storage_state: {bool(self.browser_profile.storage_state)}, user_data_dir: {bool(self.browser_profile.user_data_dir)})'
+			)
+		else:
+			self.logger.debug('🍪 StorageStateWatchdog disabled (no storage_state or user_data_dir configured)')
 
 		# Initialize LocalBrowserWatchdog
 		LocalBrowserWatchdog.model_rebuild()
@@ -1655,7 +1668,7 @@ class BrowserSession(BaseModel):
 		"""Get list of files downloaded during this browser session.
 
 		Returns:
-		    list[str]: List of absolute file paths to downloaded files in this session
+			list[str]: List of absolute file paths to downloaded files in this session
 		"""
 		return self._downloaded_files.copy()
 
@@ -1809,16 +1822,92 @@ class BrowserSession(BaseModel):
 			session_id=cdp_session.session_id,
 		)
 
+	async def _cdp_get_origins(self) -> list[dict[str, Any]]:
+		"""Get origins with localStorage and sessionStorage using CDP."""
+		origins = []
+		cdp_session = await self.get_or_create_cdp_session(target_id=None, new_socket=False)
+
+		try:
+			# Enable DOMStorage domain to track storage
+			await cdp_session.cdp_client.send.DOMStorage.enable(session_id=cdp_session.session_id)
+
+			try:
+				# Get all frames to find unique origins
+				frames_result = await cdp_session.cdp_client.send.Page.getFrameTree(session_id=cdp_session.session_id)
+
+				# Extract unique origins from frames
+				unique_origins = set()
+
+				def _extract_origins(frame_tree):
+					"""Recursively extract origins from frame tree."""
+					frame = frame_tree.get('frame', {})
+					origin = frame.get('securityOrigin')
+					if origin and origin != 'null':
+						unique_origins.add(origin)
+
+					# Process child frames
+					for child in frame_tree.get('childFrames', []):
+						_extract_origins(child)
+
+				async def _get_storage_items(origin: str, is_local_storage: bool) -> list[dict[str, str]] | None:
+					"""Helper to get storage items for an origin."""
+					storage_type = 'localStorage' if is_local_storage else 'sessionStorage'
+					try:
+						result = await cdp_session.cdp_client.send.DOMStorage.getDOMStorageItems(
+							params={'storageId': {'securityOrigin': origin, 'isLocalStorage': is_local_storage}},
+							session_id=cdp_session.session_id,
+						)
+
+						items = []
+						for item in result.get('entries', []):
+							if len(item) == 2:  # Each item is [key, value]
+								items.append({'name': item[0], 'value': item[1]})
+
+						return items if items else None
+					except Exception as e:
+						self.logger.debug(f'Failed to get {storage_type} for {origin}: {e}')
+						return None
+
+				_extract_origins(frames_result.get('frameTree', {}))
+
+				# For each unique origin, get localStorage and sessionStorage
+				for origin in unique_origins:
+					origin_data = {'origin': origin}
+
+					# Get localStorage
+					local_storage = await _get_storage_items(origin, is_local_storage=True)
+					if local_storage:
+						origin_data['localStorage'] = local_storage
+
+					# Get sessionStorage
+					session_storage = await _get_storage_items(origin, is_local_storage=False)
+					if session_storage:
+						origin_data['sessionStorage'] = session_storage
+
+					# Only add origin if it has storage data
+					if 'localStorage' in origin_data or 'sessionStorage' in origin_data:
+						origins.append(origin_data)
+
+			finally:
+				# Always disable DOMStorage tracking when done
+				await cdp_session.cdp_client.send.DOMStorage.disable(session_id=cdp_session.session_id)
+
+		except Exception as e:
+			self.logger.warning(f'Failed to get origins: {e}')
+
+		return origins
+
 	async def _cdp_get_storage_state(self) -> dict:
 		"""Get storage state (cookies, localStorage, sessionStorage) using CDP."""
 		# Use the _cdp_get_cookies helper which handles session attachment
 		cookies = await self._cdp_get_cookies()
 
-		# Get localStorage and sessionStorage would require evaluating JavaScript
-		# on each origin, which is more complex. For now, return cookies only.
+		# Get origins with localStorage/sessionStorage
+		origins = await self._cdp_get_origins()
+
 		return {
 			'cookies': cookies,
-			'origins': [],  # Would need to iterate through origins for localStorage/sessionStorage
+			'origins': origins,
 		}
 
 	async def _cdp_navigate(self, url: str, target_id: TargetID | None = None) -> None:
