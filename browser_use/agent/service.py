@@ -436,6 +436,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			self._last_known_downloads: list[str] = []
 			self.logger.debug('📁 Initialized download tracking for agent')
 
+		# Event-based pause control (kept out of AgentState for serialization)
 		self._external_pause_event = asyncio.Event()
 		self._external_pause_event.set()
 
@@ -616,8 +617,10 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			if await self.register_external_agent_status_raise_error_callback():
 				raise InterruptedError
 
-		if self.state.stopped or self.state.paused:
-			# self.logger.debug('Agent paused after getting state')
+		if self.state.stopped:
+			raise InterruptedError
+
+		if self.state.paused:
 			raise InterruptedError
 
 	@observe(name='agent.step', ignore_output=True, ignore_input=True)
@@ -1447,10 +1450,10 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 			self.logger.debug(f'🔄 Starting main execution loop with max {max_steps} steps...')
 			for step in range(max_steps):
-				# Replace the polling with clean pause-wait
+				# Use the consolidated pause state management
 				if self.state.paused:
 					self.logger.debug(f'⏸️ Step {step}: Agent paused, waiting to resume...')
-					await self.wait_until_resumed()
+					await self._external_pause_event.wait()
 					signal_handler.reset()
 
 				# Check if we should stop due to too many failures, if final_response_after_failure is True, we try one last time
@@ -1466,12 +1469,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 					self.logger.info('🛑 Agent stopped')
 					agent_run_error = 'Agent stopped programmatically'
 					break
-
-				while self.state.paused:
-					await asyncio.sleep(0.5)  # Small delay to prevent CPU spinning
-					if self.state.stopped:  # Allow stopping while paused
-						agent_run_error = 'Agent stopped programmatically while paused'
-						break
 
 				if on_step_start is not None:
 					await on_step_start(self)
@@ -1912,9 +1909,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			file_path = 'AgentHistory.json'
 		self.history.save_to_file(file_path)
 
-	async def wait_until_resumed(self):
-		await self._external_pause_event.wait()
-
 	def pause(self) -> None:
 		"""Pause the agent before the next step"""
 		print(
@@ -1944,6 +1938,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		"""Stop the agent"""
 		self.logger.info('⏹️ Agent stopping')
 		self.state.stopped = True
+
+		# Signal pause event to unblock any waiting code so it can check the stopped state
+		self._external_pause_event.set()
 
 		# Task stopped
 
