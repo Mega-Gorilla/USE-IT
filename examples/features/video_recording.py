@@ -1,14 +1,13 @@
 import asyncio
 from pathlib import Path
 
-from browser_use import Agent, BrowserProfile, BrowserSession, ChatOpenAI
+from browser_use import Agent, Browser, ChatOpenAI
+
+# NOTE: To use this example, install imageio[ffmpeg], e.g. with uv pip install "browser-use[video]"
 
 
 async def main():
-	# Define a profile that enables video recording
-	video_profile = BrowserProfile(headless=False, record_video_dir=Path('./tmp/recordings'))
-
-	browser_session = BrowserSession(browser_profile=video_profile)
+	browser_session = Browser(record_video_dir=Path('./tmp/recordings'))
 
 	agent = Agent(
 		task='Go to github.com/trending then navigate to the first trending repository and report how many commits it has.',

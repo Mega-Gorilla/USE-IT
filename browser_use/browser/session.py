@@ -244,6 +244,8 @@ class BrowserSession(BaseModel):
 		record_har_mode: str | None = None,
 		record_har_path: str | Path | None = None,
 		record_video_dir: str | Path | None = None,
+		record_video_framerate: int | None = None,
+		record_video_size: dict | None = None,
 		# From BrowserLaunchPersistentContextArgs
 		user_data_dir: str | Path | None = None,
 		# From BrowserNewContextArgs
