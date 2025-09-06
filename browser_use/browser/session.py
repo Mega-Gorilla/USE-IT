@@ -44,9 +44,6 @@ from browser_use.utils import _log_pretty_url, is_new_tab_page
 
 DEFAULT_BROWSER_PROFILE = BrowserProfile()
 
-MAX_SCREENSHOT_HEIGHT = 2000
-MAX_SCREENSHOT_WIDTH = 1920
-
 _LOGGED_UNIQUE_SESSION_IDS = set()  # track unique session IDs that have been logged to make sure we always assign a unique enough id to new sessions and avoid ambiguity in logs
 red = '\033[91m'
 reset = '\033[0m'
@@ -247,6 +244,8 @@ class BrowserSession(BaseModel):
 		record_har_mode: str | None = None,
 		record_har_path: str | Path | None = None,
 		record_video_dir: str | Path | None = None,
+		record_video_framerate: int | None = None,
+		record_video_size: dict | None = None,
 		# From BrowserLaunchPersistentContextArgs
 		user_data_dir: str | Path | None = None,
 		# From BrowserNewContextArgs
@@ -338,6 +337,7 @@ class BrowserSession(BaseModel):
 	_dom_watchdog: Any | None = PrivateAttr(default=None)
 	_screenshot_watchdog: Any | None = PrivateAttr(default=None)
 	_permissions_watchdog: Any | None = PrivateAttr(default=None)
+	_recording_watchdog: Any | None = PrivateAttr(default=None)
 
 	_logger: Any = PrivateAttr(default=None)
 
@@ -404,6 +404,7 @@ class BrowserSession(BaseModel):
 		self._dom_watchdog = None
 		self._screenshot_watchdog = None
 		self._permissions_watchdog = None
+		self._recording_watchdog = None
 
 	def model_post_init(self, __context) -> None:
 		"""Register event handlers after model initialization."""
@@ -425,6 +426,7 @@ class BrowserSession(BaseModel):
 		BaseWatchdog.attach_handler_to_session(self, BrowserStopEvent, self.on_BrowserStopEvent)
 		BaseWatchdog.attach_handler_to_session(self, NavigateToUrlEvent, self.on_NavigateToUrlEvent)
 		BaseWatchdog.attach_handler_to_session(self, SwitchTabEvent, self.on_SwitchTabEvent)
+		BaseWatchdog.attach_handler_to_session(self, TabCreatedEvent, self.on_TabCreatedEvent)
 		BaseWatchdog.attach_handler_to_session(self, TabClosedEvent, self.on_TabClosedEvent)
 		BaseWatchdog.attach_handler_to_session(self, AgentFocusChangedEvent, self.on_AgentFocusChangedEvent)
 		BaseWatchdog.attach_handler_to_session(self, FileDownloadedEvent, self.on_FileDownloadedEvent)
@@ -707,6 +709,22 @@ class BrowserSession(BaseModel):
 		await self.event_bus.dispatch(TabClosedEvent(target_id=event.target_id))
 		await cdp_session.cdp_client.send.Target.closeTarget(params={'targetId': event.target_id})
 
+	async def on_TabCreatedEvent(self, event: TabCreatedEvent) -> None:
+		"""Handle tab creation - apply viewport settings to new tab."""
+		# Apply viewport settings if configured
+		if self.browser_profile.viewport and not self.browser_profile.no_viewport:
+			try:
+				viewport_width = self.browser_profile.viewport.width
+				viewport_height = self.browser_profile.viewport.height
+				device_scale_factor = self.browser_profile.device_scale_factor or 1.0
+
+				# Use the helper method with the new tab's target_id
+				await self._cdp_set_viewport(viewport_width, viewport_height, device_scale_factor, target_id=event.target_id)
+
+				self.logger.debug(f'Applied viewport {viewport_width}x{viewport_height} to tab {event.target_id[-8:]}')
+			except Exception as e:
+				self.logger.warning(f'Failed to set viewport for new tab {event.target_id[-8:]}: {e}')
+
 	async def on_TabClosedEvent(self, event: TabClosedEvent) -> None:
 		"""Handle tab closure - update focus if needed."""
 		if not self.agent_focus:
@@ -955,6 +973,7 @@ class BrowserSession(BaseModel):
 		from browser_use.browser.watchdogs.local_browser_watchdog import LocalBrowserWatchdog
 		from browser_use.browser.watchdogs.permissions_watchdog import PermissionsWatchdog
 		from browser_use.browser.watchdogs.popups_watchdog import PopupsWatchdog
+		from browser_use.browser.watchdogs.recording_watchdog import RecordingWatchdog
 		from browser_use.browser.watchdogs.screenshot_watchdog import ScreenshotWatchdog
 		from browser_use.browser.watchdogs.security_watchdog import SecurityWatchdog
 		# from browser_use.browser.storage_state_watchdog import StorageStateWatchdog
@@ -1053,6 +1072,11 @@ class BrowserSession(BaseModel):
 		# self.event_bus.on(TabCreatedEvent, self._dom_watchdog.on_TabCreatedEvent)
 		# self.event_bus.on(BrowserStateRequestEvent, self._dom_watchdog.on_BrowserStateRequestEvent)
 		self._dom_watchdog.attach_to_session()
+
+		# Initialize RecordingWatchdog (handles video recording)
+		RecordingWatchdog.model_rebuild()
+		self._recording_watchdog = RecordingWatchdog(event_bus=self.event_bus, browser_session=self)
+		self._recording_watchdog.attach_to_session()
 
 		# Mark watchdogs as attached to prevent duplicate attachment
 		self._watchdogs_attached = True
@@ -1758,10 +1782,31 @@ class BrowserSession(BaseModel):
 			params={'identifier': identifier}, session_id=cdp_session.session_id
 		)
 
-	async def _cdp_set_viewport(self, width: int, height: int, device_scale_factor: float = 1.0, mobile: bool = False) -> None:
-		"""Set viewport using CDP Emulation.setDeviceMetricsOverride."""
-		await self.cdp_client.send.Emulation.setDeviceMetricsOverride(
-			params={'width': width, 'height': height, 'deviceScaleFactor': device_scale_factor, 'mobile': mobile}
+	async def _cdp_set_viewport(
+		self, width: int, height: int, device_scale_factor: float = 1.0, mobile: bool = False, target_id: str | None = None
+	) -> None:
+		"""Set viewport using CDP Emulation.setDeviceMetricsOverride.
+
+		Args:
+			width: Viewport width
+			height: Viewport height
+			device_scale_factor: Device scale factor (default 1.0)
+			mobile: Whether to emulate mobile device (default False)
+			target_id: Optional target ID to set viewport for. If not provided, uses agent_focus.
+		"""
+		if target_id:
+			# Set viewport for specific target
+			cdp_session = await self.get_or_create_cdp_session(target_id, focus=False, new_socket=False)
+		elif self.agent_focus:
+			# Use current focus
+			cdp_session = self.agent_focus
+		else:
+			self.logger.warning('Cannot set viewport: no target_id provided and agent_focus not initialized')
+			return
+
+		await cdp_session.cdp_client.send.Emulation.setDeviceMetricsOverride(
+			params={'width': width, 'height': height, 'deviceScaleFactor': device_scale_factor, 'mobile': mobile},
+			session_id=cdp_session.session_id,
 		)
 
 	async def _cdp_get_storage_state(self) -> dict:
