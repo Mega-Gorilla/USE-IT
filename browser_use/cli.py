@@ -1115,8 +1115,8 @@ class BrowserUseApp(App):
 				window_width = None
 				window_height = None
 				if browser_session.browser_profile.viewport:
-					window_width = browser_session.browser_profile.viewport.get('width')
-					window_height = browser_session.browser_profile.viewport.get('height')
+					window_width = browser_session.browser_profile.viewport.width
+					window_height = browser_session.browser_profile.viewport.height
 
 				# Try to get browser PID
 				browser_pid = 'Unknown'
@@ -1185,9 +1185,8 @@ class BrowserUseApp(App):
 			if self.agent:
 				temp_str = f'{self.llm.temperature}ºC ' if self.llm.temperature else ''
 				vision_str = '+ vision ' if self.agent.settings.use_vision else ''
-				planner_str = '+ planner' if self.agent.settings.planner_llm else ''
 				model_info.write(
-					f'[white]LLM:[/] [blue]{self.llm.__class__.__name__} [yellow]{model_name}[/] {temp_str}{vision_str}{planner_str}'
+					f'[white]LLM:[/] [blue]{self.llm.__class__.__name__} [yellow]{model_name}[/] {temp_str}{vision_str}'
 				)
 			else:
 				model_info.write(f'[white]LLM:[/] [blue]{self.llm.__class__.__name__} [yellow]{model_name}[/]')

@@ -159,6 +159,10 @@ class OldConfig:
 	def SKIP_LLM_API_KEY_VERIFICATION(self) -> bool:
 		return os.getenv('SKIP_LLM_API_KEY_VERIFICATION', 'false').lower()[:1] in 'ty1'
 
+	@property
+	def DEFAULT_LLM(self) -> str:
+		return os.getenv('DEFAULT_LLM', '')
+
 	# Runtime hints
 	@property
 	def IN_DOCKER(self) -> bool:
@@ -181,6 +185,8 @@ class FlatEnvConfig(BaseSettings):
 	# Logging and telemetry
 	BROWSER_USE_LOGGING_LEVEL: str = Field(default='info')
 	CDP_LOGGING_LEVEL: str = Field(default='WARNING')
+	BROWSER_USE_DEBUG_LOG_FILE: str | None = Field(default=None)
+	BROWSER_USE_INFO_LOG_FILE: str | None = Field(default=None)
 	ANONYMIZED_TELEMETRY: bool = Field(default=True)
 	BROWSER_USE_CLOUD_SYNC: bool | None = Field(default=None)
 	BROWSER_USE_CLOUD_API_URL: str = Field(default='https://api.browser-use.com')
@@ -201,6 +207,7 @@ class FlatEnvConfig(BaseSettings):
 	AZURE_OPENAI_ENDPOINT: str = Field(default='')
 	AZURE_OPENAI_KEY: str = Field(default='')
 	SKIP_LLM_API_KEY_VERIFICATION: bool = Field(default=False)
+	DEFAULT_LLM: str = Field(default='')
 
 	# Runtime hints
 	IN_DOCKER: bool | None = Field(default=None)
