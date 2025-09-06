@@ -44,9 +44,6 @@ from browser_use.utils import _log_pretty_url, is_new_tab_page
 
 DEFAULT_BROWSER_PROFILE = BrowserProfile()
 
-MAX_SCREENSHOT_HEIGHT = 2000
-MAX_SCREENSHOT_WIDTH = 1920
-
 _LOGGED_UNIQUE_SESSION_IDS = set()  # track unique session IDs that have been logged to make sure we always assign a unique enough id to new sessions and avoid ambiguity in logs
 red = '\033[91m'
 reset = '\033[0m'
