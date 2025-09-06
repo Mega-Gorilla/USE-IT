@@ -1911,28 +1911,17 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 	def pause(self) -> None:
 		"""Pause the agent before the next step"""
-		print(
-			'\n\n⏸️  Got [Ctrl+C], paused the agent and left the browser open.\n\tPress [Enter] to resume or [Ctrl+C] again to quit.'
-		)
+		print('\n\n⏸️ Paused the agent and left the browser open.\n\tPress [Enter] to resume or [Ctrl+C] again to quit.')
 		self.state.paused = True
 		self._external_pause_event.clear()
 
-		# Task paused
-
-		# The signal handler will handle the asyncio pause logic for us
-		# No need to duplicate the code here
-
 	def resume(self) -> None:
 		"""Resume the agent"""
+		# TODO: Locally the browser got closed
 		print('----------------------------------------------------------------------')
-		print('▶️  Got Enter, resuming agent execution where it left off...\n')
+		print('▶️  Resuming agent execution where it left off...\n')
 		self.state.paused = False
 		self._external_pause_event.set()
-
-		# Task resumed
-
-		# The signal handler should have already reset the flags
-		# through its reset() method when called from run()
 
 	def stop(self) -> None:
 		"""Stop the agent"""
