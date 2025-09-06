@@ -1006,6 +1006,9 @@ async function initialize(checkInitialized, magic) {{
 		if self.headless is None:
 			self.headless = not has_screen_available
 
+		# Detect if user explicitly provided viewport
+		user_provided_viewport = self.viewport is not None
+
 		# set up window size and position if headful
 		if self.headless:
 			# headless mode: no window available, use viewport instead to constrain content size
@@ -1016,8 +1019,17 @@ async function initialize(checkInitialized, magic) {{
 		else:
 			# headful mode: use window, disable viewport by default, content fits to size of window
 			self.window_size = self.window_size or self.screen
-			self.no_viewport = True if self.no_viewport is None else self.no_viewport
-			self.viewport = None if self.no_viewport else self.viewport
+
+			# If user provided viewport, respect their intent by enabling viewport
+			if user_provided_viewport:
+				self.no_viewport = False  # respect user's explicit viewport setting
+			else:
+				# Default headful behavior: no viewport (content fits to window)
+				self.no_viewport = True if self.no_viewport is None else self.no_viewport
+
+			# Don't override user's viewport setting
+			if self.no_viewport and not user_provided_viewport:
+				self.viewport = None
 
 		# automatically setup viewport if any config requires it
 		use_viewport = self.headless or self.viewport or self.device_scale_factor
