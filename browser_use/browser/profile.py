@@ -1006,48 +1006,43 @@ async function initialize(checkInitialized, magic) {{
 		if self.headless is None:
 			self.headless = not has_screen_available
 
-		# Detect if user explicitly provided viewport
+		# Determine viewport behavior based on mode and user preferences
 		user_provided_viewport = self.viewport is not None
 
-		# set up window size and position if headful
 		if self.headless:
-			# headless mode: no window available, use viewport instead to constrain content size
+			# Headless mode: always use viewport for content size control
 			self.viewport = self.viewport or self.window_size or self.screen
-			self.window_position = None  # no windows to position in headless mode
+			self.window_position = None
 			self.window_size = None
-			self.no_viewport = False  # viewport is always enabled in headless mode
+			self.no_viewport = False
 		else:
-			# headful mode: use window, disable viewport by default, content fits to size of window
+			# Headful mode: respect user's viewport preference
 			self.window_size = self.window_size or self.screen
 
-			# If user provided viewport, respect their intent by enabling viewport
 			if user_provided_viewport:
-				self.no_viewport = False  # respect user's explicit viewport setting
+				# User explicitly set viewport - enable viewport mode
+				self.no_viewport = False
 			else:
-				# Default headful behavior: no viewport (content fits to window)
+				# Default headful: content fits to window (no viewport)
 				self.no_viewport = True if self.no_viewport is None else self.no_viewport
 
-			# Don't override user's viewport setting
-			if self.no_viewport and not user_provided_viewport:
-				self.viewport = None
+		# Handle special requirements (device_scale_factor forces viewport mode)
+		if self.device_scale_factor and self.no_viewport is None:
+			self.no_viewport = False
 
-		# automatically setup viewport if any config requires it
-		use_viewport = self.headless or self.viewport or self.device_scale_factor
-		self.no_viewport = not use_viewport if self.no_viewport is None else self.no_viewport
-		use_viewport = not self.no_viewport
-
-		if use_viewport:
-			# if we are using viewport, make device_scale_factor and screen are set to real values to avoid easy fingerprinting
+		# Finalize configuration
+		if self.no_viewport:
+			# No viewport mode: content adapts to window
+			self.viewport = None
+			self.device_scale_factor = None
+			self.screen = None
+			assert self.viewport is None
+			assert self.no_viewport is True
+		else:
+			# Viewport mode: ensure viewport is set
 			self.viewport = self.viewport or self.screen
 			self.device_scale_factor = self.device_scale_factor or 1.0
 			assert self.viewport is not None
 			assert self.no_viewport is False
-		else:
-			# device_scale_factor and screen are not supported non-viewport mode, the system monitor determines these
-			self.viewport = None
-			self.device_scale_factor = None  # only supported in viewport mode
-			self.screen = None  # only supported in viewport mode
-			assert self.viewport is None
-			assert self.no_viewport is True
 
 		assert not (self.headless and self.no_viewport), 'headless=True and no_viewport=True cannot both be set at the same time'
