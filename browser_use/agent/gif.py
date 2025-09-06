@@ -56,20 +56,30 @@ def create_history_gif(
 
 	images = []
 
-	# if history is empty or first screenshot is None, we can't create a gif
-	if not history.history or not history.history[0].state.screenshot:
-		logger.warning('No history or first screenshot to create GIF from')
+	# if history is empty, we can't create a gif
+	if not history.history:
+		logger.warning('No history to create GIF from')
+		return
+
+	# Get all screenshots from history (including None placeholders)
+	screenshots = history.screenshots(return_none_if_not_screenshot=True)
+
+	if not screenshots:
+		logger.warning('No screenshots found in history')
 		return
 
 	# Find the first non-placeholder screenshot
+	# A screenshot is considered a placeholder if:
+	# 1. It's the exact 4px placeholder for about:blank pages, OR
+	# 2. It comes from a new tab page (chrome://newtab/, about:blank, etc.)
 	first_real_screenshot = None
-	for item in history.history:
-		if item.state.screenshot and item.state.screenshot != PLACEHOLDER_4PX_SCREENSHOT:
-			first_real_screenshot = item.state.screenshot
+	for screenshot in screenshots:
+		if screenshot and screenshot != PLACEHOLDER_4PX_SCREENSHOT:
+			first_real_screenshot = screenshot
 			break
 
 	if not first_real_screenshot:
-		logger.warning('No valid screenshots found (all are placeholders)')
+		logger.warning('No valid screenshots found (all are placeholders or from new tab pages)')
 		return
 
 	# Try to load nicer fonts
@@ -77,6 +87,8 @@ def create_history_gif(
 		# Try different font options in order of preference
 		# ArialUni is a font that comes with Office and can render most non-alphabet characters
 		font_options = [
+			'PingFang',
+			'STHeiti Medium',
 			'Microsoft YaHei',  # 微软雅黑
 			'SimHei',  # 黑体
 			'SimSun',  # 宋体
@@ -129,8 +141,9 @@ def create_history_gif(
 		# Find the first non-placeholder screenshot for the task frame
 		first_real_screenshot = None
 		for item in history.history:
-			if item.state.screenshot and item.state.screenshot != PLACEHOLDER_4PX_SCREENSHOT:
-				first_real_screenshot = item.state.screenshot
+			screenshot_b64 = item.state.get_screenshot()
+			if screenshot_b64 and screenshot_b64 != PLACEHOLDER_4PX_SCREENSHOT:
+				first_real_screenshot = screenshot_b64
 				break
 
 		if first_real_screenshot:
@@ -146,19 +159,26 @@ def create_history_gif(
 		else:
 			logger.warning('No real screenshots found for task frame, skipping task frame')
 
-	# Process each history item
-	for i, item in enumerate(history.history, 1):
-		if not item.state.screenshot:
+	# Process each history item with its corresponding screenshot
+	for i, (item, screenshot) in enumerate(zip(history.history, screenshots), 1):
+		if not screenshot:
 			continue
 
 		# Skip placeholder screenshots from about:blank pages
 		# These are 4x4 white PNGs encoded as a specific base64 string
-		if item.state.screenshot == PLACEHOLDER_4PX_SCREENSHOT:
+		if screenshot == PLACEHOLDER_4PX_SCREENSHOT:
 			logger.debug(f'Skipping placeholder screenshot from about:blank page at step {i}')
 			continue
 
+		# Skip screenshots from new tab pages
+		from browser_use.utils import is_new_tab_page
+
+		if is_new_tab_page(item.state.url):
+			logger.debug(f'Skipping screenshot from new tab page ({item.state.url}) at step {i}')
+			continue
+
 		# Convert base64 screenshot to PIL Image
-		img_data = base64.b64decode(item.state.screenshot)
+		img_data = base64.b64decode(screenshot)
 		image = Image.open(io.BytesIO(img_data))
 
 		if show_goals and item.model_output:
@@ -227,7 +247,12 @@ def _create_task_frame(
 	else:
 		font_size = base_font_size
 
-	larger_font = ImageFont.truetype(regular_font.path, font_size)  # type: ignore
+	# Try to create a larger font, but fall back to regular font if it fails
+	try:
+		larger_font = ImageFont.truetype(regular_font.path, font_size)  # type: ignore
+	except (OSError, AttributeError):
+		# Fall back to regular font if .path is not available or font loading fails
+		larger_font = regular_font
 
 	# Generate wrapped text with the calculated font size
 	wrapped_text = _wrap_text(task, larger_font, max_width)
