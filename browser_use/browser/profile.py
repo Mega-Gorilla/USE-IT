@@ -10,7 +10,6 @@ from urllib.parse import urlparse
 from pydantic import AfterValidator, AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from browser_use.config import CONFIG
-from browser_use.observability import observe_debug
 from browser_use.utils import _log_pretty_path, logger
 
 CHROME_DEBUG_PORT = 9242  # use a non-default port to avoid conflicts with other tools / devs using 9222
@@ -194,7 +193,9 @@ def get_display_size() -> ViewportSize | None:
 		from AppKit import NSScreen  # type: ignore[import]
 
 		screen = NSScreen.mainScreen().frame()
-		return ViewportSize(width=int(screen.size.width), height=int(screen.size.height))
+		size = ViewportSize(width=int(screen.size.width), height=int(screen.size.height))
+		logger.debug(f'Display size: {size}')
+		return size
 	except Exception:
 		pass
 
@@ -204,10 +205,13 @@ def get_display_size() -> ViewportSize | None:
 
 		monitors = get_monitors()
 		monitor = monitors[0]
-		return ViewportSize(width=int(monitor.width), height=int(monitor.height))
+		size = ViewportSize(width=int(monitor.width), height=int(monitor.height))
+		logger.debug(f'Display size: {size}')
+		return size
 	except Exception:
 		pass
 
+	logger.debug('No display size found')
 	return None
 
 
@@ -413,10 +417,19 @@ class BrowserLaunchArgs(BaseModel):
 	def set_default_downloads_path(self) -> Self:
 		"""Set a unique default downloads path if none is provided."""
 		if self.downloads_path is None:
-			import tempfile
+			import uuid
 
-			# Create unique temporary directory for downloads
-			self.downloads_path = Path(tempfile.mkdtemp(prefix='browser-use-downloads-'))
+			# Create unique directory in /tmp for downloads
+			unique_id = str(uuid.uuid4())[:8]  # 8 characters
+			downloads_path = Path(f'/tmp/browser-use-downloads-{unique_id}')
+
+			# Ensure path doesn't already exist (extremely unlikely but possible)
+			while downloads_path.exists():
+				unique_id = str(uuid.uuid4())[:8]
+				downloads_path = Path(f'/tmp/browser-use-downloads-{unique_id}')
+
+			self.downloads_path = downloads_path
+			self.downloads_path.mkdir(parents=True, exist_ok=True)
 		return self
 
 	@staticmethod
@@ -558,6 +571,11 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		default=True,
 		description="Enable automation-optimized extensions: ad blocking (uBlock Origin), cookie handling (I still don't care about cookies), and URL cleaning (ClearURLs). All extensions work automatically without manual intervention. Extensions are automatically downloaded and loaded when enabled.",
 	)
+	cookie_whitelist_domains: list[str] = Field(
+		default_factory=lambda: ['nature.com', 'qatarairways.com'],
+		description='List of domains to whitelist in the "I still don\'t care about cookies" extension, preventing automatic cookie banner handling on these sites.',
+	)
+
 	window_size: ViewportSize | None = Field(
 		default=None,
 		description='Browser window size to use when headless=False.',
@@ -583,6 +601,9 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	# --- UI/viewport/DOM ---
 
 	highlight_elements: bool = Field(default=True, description='Highlight interactive elements on the page.')
+	filter_highlight_ids: bool = Field(
+		default=True, description='Only show element IDs in highlights if llm_representation is less than 10 characters.'
+	)
 
 	# --- Downloads ---
 	auto_download_pdfs: bool = Field(default=True, description='Automatically download PDFs when navigating to PDF viewer pages.')
@@ -615,11 +636,11 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		"""Copy old config window_width & window_height to window_size."""
 		if self.window_width or self.window_height:
 			logger.warning(
-				f'⚠️ BrowserProfile(window_width=..., window_height=...) are deprecated, use BrowserProfile(window_size={"width": 1280, "height": 1100}) instead.'
+				f'⚠️ BrowserProfile(window_width=..., window_height=...) are deprecated, use BrowserProfile(window_size={"width": 1920, "height": 1080}) instead.'
 			)
 			window_size = self.window_size or ViewportSize(width=0, height=0)
-			window_size['width'] = window_size['width'] or self.window_width or 1280
-			window_size['height'] = window_size['height'] or self.window_height or 1100
+			window_size['width'] = window_size['width'] or self.window_width or 1920
+			window_size['height'] = window_size['height'] or self.window_height or 1080
 			self.window_size = window_size
 
 		return self
@@ -677,6 +698,10 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 			logger.warning('BrowserProfile.proxy.bypass provided but proxy has no server; bypass will be ignored.')
 		return self
 
+	def model_post_init(self, __context: Any) -> None:
+		"""Called after model initialization to set up display configuration."""
+		self.detect_display_configuration()
+
 	def get_args(self) -> list[str]:
 		"""Get the list of all Chrome CLI launch args for this profile (compiled from defaults, user-provided, and system-specific)."""
 
@@ -721,6 +746,10 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 			if proxy_bypass:
 				pre_conversion_args.append(f'--proxy-bypass-list={proxy_bypass}')
 
+		# User agent flag
+		if self.user_agent:
+			pre_conversion_args.append(f'--user-agent={self.user_agent}')
+
 		# convert to dict and back to dedupe and merge duplicate args
 		final_args_list = BrowserLaunchArgs.args_as_list(BrowserLaunchArgs.args_as_dict(pre_conversion_args))
 		return final_args_list
@@ -748,27 +777,29 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		"""
 
 		# Extension definitions - optimized for automation and content extraction
+		# Combines uBlock Origin (ad blocking) + "I still don't care about cookies" (cookie banner handling)
 		extensions = [
 			{
 				'name': 'uBlock Origin',
 				'id': 'cjpalhdlnbpafiamejdnhcphjbkeiagm',
-				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dcjpalhdlnbpafiamejdnhcphjbkeiagm%26uc',
+				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=133&acceptformat=crx3&x=id%3Dcjpalhdlnbpafiamejdnhcphjbkeiagm%26uc',
 			},
 			{
 				'name': "I still don't care about cookies",
 				'id': 'edibdbjcniadpccecjdfdjjppcpchdlm',
-				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dedibdbjcniadpccecjdfdjjppcpchdlm%26uc',
+				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=133&acceptformat=crx3&x=id%3Dedibdbjcniadpccecjdfdjjppcpchdlm%26uc',
 			},
 			{
 				'name': 'ClearURLs',
 				'id': 'lckanjgmijmafbedllaakclkaicjfmnk',
-				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dlckanjgmijmafbedllaakclkaicjfmnk%26uc',
+				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=133&acceptformat=crx3&x=id%3Dlckanjgmijmafbedllaakclkaicjfmnk%26uc',
 			},
 			# {
 			# 	'name': 'Captcha Solver: Auto captcha solving service',
 			# 	'id': 'pgojnojmmhpofjgdmaebadhbocahppod',
 			# 	'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dpgojnojmmhpofjgdmaebadhbocahppod%26uc',
 			# },
+			# Consent-O-Matic disabled - using uBlock Origin's cookie lists instead for simplicity
 			# {
 			# 	'name': 'Consent-O-Matic',
 			# 	'id': 'mdjildafknihdffpkfmmpnpoiajfjnjd',
@@ -811,6 +842,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 				# Extract extension
 				logger.info(f'📂 Extracting {ext["name"]} extension...')
 				self._extract_extension(crx_file, ext_dir)
+
 				extension_paths.append(str(ext_dir))
 				loaded_extension_names.append(ext['name'])
 
@@ -818,12 +850,81 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 				logger.warning(f'⚠️ Failed to setup {ext["name"]} extension: {e}')
 				continue
 
+		# Apply minimal patch to cookie extension with configurable whitelist
+		for i, path in enumerate(extension_paths):
+			if loaded_extension_names[i] == "I still don't care about cookies":
+				self._apply_minimal_extension_patch(Path(path), self.cookie_whitelist_domains)
+
 		if extension_paths:
 			logger.debug(f'[BrowserProfile] 🧩 Extensions loaded ({len(extension_paths)}): [{", ".join(loaded_extension_names)}]')
 		else:
 			logger.warning('[BrowserProfile] ⚠️ No default extensions could be loaded')
 
 		return extension_paths
+
+	def _apply_minimal_extension_patch(self, ext_dir: Path, whitelist_domains: list[str]) -> None:
+		"""Minimal patch: pre-populate chrome.storage.local with configurable domain whitelist."""
+		try:
+			bg_path = ext_dir / 'data' / 'background.js'
+			if not bg_path.exists():
+				return
+
+			with open(bg_path, encoding='utf-8') as f:
+				content = f.read()
+
+			# Create the whitelisted domains object for JavaScript with proper indentation
+			whitelist_entries = [f'        "{domain}": true' for domain in whitelist_domains]
+			whitelist_js = '{\n' + ',\n'.join(whitelist_entries) + '\n      }'
+
+			# Find the initialize() function and inject storage setup before updateSettings()
+			# The actual function uses 2-space indentation, not tabs
+			old_init = """async function initialize(checkInitialized, magic) {
+  if (checkInitialized && initialized) {
+    return;
+  }
+  loadCachedRules();
+  await updateSettings();
+  await recreateTabList(magic);
+  initialized = true;
+}"""
+
+			# New function with configurable whitelist initialization
+			new_init = f"""// Pre-populate storage with configurable domain whitelist if empty
+async function ensureWhitelistStorage() {{
+  const result = await chrome.storage.local.get({{ settings: null }});
+  if (!result.settings) {{
+    const defaultSettings = {{
+      statusIndicators: true,
+      whitelistedDomains: {whitelist_js}
+    }};
+    await chrome.storage.local.set({{ settings: defaultSettings }});
+  }}
+}}
+
+async function initialize(checkInitialized, magic) {{
+  if (checkInitialized && initialized) {{
+    return;
+  }}
+  loadCachedRules();
+  await ensureWhitelistStorage(); // Add storage initialization
+  await updateSettings();
+  await recreateTabList(magic);
+  initialized = true;
+}}"""
+
+			if old_init in content:
+				content = content.replace(old_init, new_init)
+
+				with open(bg_path, 'w', encoding='utf-8') as f:
+					f.write(content)
+
+				domain_list = ', '.join(whitelist_domains)
+				logger.info(f'[BrowserProfile] ✅ Cookie extension: {domain_list} pre-populated in storage')
+			else:
+				logger.debug('[BrowserProfile] Initialize function not found for patching')
+
+		except Exception as e:
+			logger.debug(f'[BrowserProfile] Could not patch extension storage: {e}')
 
 	def _download_extension(self, url: str, output_path: Path) -> None:
 		"""Download extension .crx file."""
@@ -891,7 +992,6 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 
 				os.unlink(temp_zip.name)
 
-	@observe_debug(ignore_input=True, ignore_output=True, name='detect_display_configuration')
 	def detect_display_configuration(self) -> None:
 		"""
 		Detect the system display size and initialize the display-related config defaults:
@@ -900,42 +1000,49 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 
 		display_size = get_display_size()
 		has_screen_available = bool(display_size)
-		self.screen = self.screen or display_size or ViewportSize(width=1280, height=1100)
+		self.screen = self.screen or display_size or ViewportSize(width=1920, height=1080)
 
 		# if no headless preference specified, prefer headful if there is a display available
 		if self.headless is None:
 			self.headless = not has_screen_available
 
-		# set up window size and position if headful
+		# Determine viewport behavior based on mode and user preferences
+		user_provided_viewport = self.viewport is not None
+
 		if self.headless:
-			# headless mode: no window available, use viewport instead to constrain content size
+			# Headless mode: always use viewport for content size control
 			self.viewport = self.viewport or self.window_size or self.screen
-			self.window_position = None  # no windows to position in headless mode
+			self.window_position = None
 			self.window_size = None
-			self.no_viewport = False  # viewport is always enabled in headless mode
+			self.no_viewport = False
 		else:
-			# headful mode: use window, disable viewport by default, content fits to size of window
+			# Headful mode: respect user's viewport preference
 			self.window_size = self.window_size or self.screen
-			self.no_viewport = True if self.no_viewport is None else self.no_viewport
-			self.viewport = None if self.no_viewport else self.viewport
 
-		# automatically setup viewport if any config requires it
-		use_viewport = self.headless or self.viewport or self.device_scale_factor
-		self.no_viewport = not use_viewport if self.no_viewport is None else self.no_viewport
-		use_viewport = not self.no_viewport
+			if user_provided_viewport:
+				# User explicitly set viewport - enable viewport mode
+				self.no_viewport = False
+			else:
+				# Default headful: content fits to window (no viewport)
+				self.no_viewport = True if self.no_viewport is None else self.no_viewport
 
-		if use_viewport:
-			# if we are using viewport, make device_scale_factor and screen are set to real values to avoid easy fingerprinting
+		# Handle special requirements (device_scale_factor forces viewport mode)
+		if self.device_scale_factor and self.no_viewport is None:
+			self.no_viewport = False
+
+		# Finalize configuration
+		if self.no_viewport:
+			# No viewport mode: content adapts to window
+			self.viewport = None
+			self.device_scale_factor = None
+			self.screen = None
+			assert self.viewport is None
+			assert self.no_viewport is True
+		else:
+			# Viewport mode: ensure viewport is set
 			self.viewport = self.viewport or self.screen
 			self.device_scale_factor = self.device_scale_factor or 1.0
 			assert self.viewport is not None
 			assert self.no_viewport is False
-		else:
-			# device_scale_factor and screen are not supported non-viewport mode, the system monitor determines these
-			self.viewport = None
-			self.device_scale_factor = None  # only supported in viewport mode
-			self.screen = None  # only supported in viewport mode
-			assert self.viewport is None
-			assert self.no_viewport is True
 
 		assert not (self.headless and self.no_viewport), 'headless=True and no_viewport=True cannot both be set at the same time'
