@@ -129,6 +129,7 @@
                   "customize/examples/fast-agent",
                   "customize/examples/chain-agents",
                   "customize/examples/parallel-browser",
+                  "customize/examples/playwright-integration",
                   "customize/examples/sensitive-data",
                   "customize/examples/secure",
                   "customize/examples/more-examples",
