@@ -21,8 +21,8 @@ from pydantic import BaseModel, Field
 
 # Check for required dependencies first - before other imports
 try:
-	import aiohttp
-	from playwright.async_api import Browser, Page, async_playwright
+	import aiohttp  # type: ignore
+	from playwright.async_api import Browser, Page, async_playwright  # type: ignore
 except ImportError as e:
 	print(f'❌ Missing dependencies for this example: {e}')
 	print('This example requires: playwright aiohttp')
