@@ -17,12 +17,16 @@ if not secret_key:
 	secret_key = 'JBSWY3DPEHPK3PXP'
 
 
-sensitive_data = {'otp_secret': secret_key}
+sensitive_data = {'2fa_code': secret_key}
 
 
 task = """
-1. Go to https://authenticationtest.com/totpChallenge/ and log in.
-2. Use the the secret otp_secret to generate the 2FA code."""
+1. Go to https://authenticationtest.com/totpChallenge/ and try to log in.
+2. If prompted for 2FA code:
+Input the the secret 2fa_code.
+
+When you input 2fa_code, the 6 digit code will be generated automatically.
+"""
 
 
 Agent(task=task, sensitive_data=sensitive_data).run_sync()  # type: ignore

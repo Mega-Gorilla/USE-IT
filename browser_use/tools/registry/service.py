@@ -438,7 +438,7 @@ class Registry(Generic[Context]):
 				for placeholder in matches:
 					if placeholder in applicable_secrets:
 						# generate a totp code if secret is a 2fa secret
-						if 'otp_secret' in placeholder:
+						if '2fa_code' in placeholder:
 							totp = pyotp.TOTP(applicable_secrets[placeholder], digits=6)
 							replacement_value = totp.now()
 						else:
