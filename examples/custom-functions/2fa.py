@@ -17,15 +17,15 @@ if not secret_key:
 	secret_key = 'JBSWY3DPEHPK3PXP'
 
 
-sensitive_data = {'2fa_code': secret_key}
+sensitive_data = {'bu_2fa_code': secret_key}
 
 
 task = """
 1. Go to https://authenticationtest.com/totpChallenge/ and try to log in.
 2. If prompted for 2FA code:
-Input the the secret 2fa_code.
+Input the the secret bu_2fa_code.
 
-When you input 2fa_code, the 6 digit code will be generated automatically.
+When you input bu_2fa_code, the 6 digit code will be generated automatically.
 """
 
 
