@@ -39,12 +39,10 @@ from browser_use.browser.events import (
 from browser_use.browser.profile import BrowserProfile, ProxySettings
 from browser_use.browser.views import BrowserStateSummary, TabInfo
 from browser_use.dom.views import EnhancedDOMTreeNode, TargetInfo
+from browser_use.observability import observe_debug
 from browser_use.utils import _log_pretty_url, is_new_tab_page
 
 DEFAULT_BROWSER_PROFILE = BrowserProfile()
-
-MAX_SCREENSHOT_HEIGHT = 2000
-MAX_SCREENSHOT_WIDTH = 1920
 
 _LOGGED_UNIQUE_SESSION_IDS = set()  # track unique session IDs that have been logged to make sure we always assign a unique enough id to new sessions and avoid ambiguity in logs
 red = '\033[91m'
@@ -264,8 +262,10 @@ class BrowserSession(BaseModel):
 		wait_for_network_idle_page_load_time: float | None = None,
 		wait_between_actions: float | None = None,
 		highlight_elements: bool | None = None,
+		filter_highlight_ids: bool | None = None,
 		auto_download_pdfs: bool | None = None,
 		profile_directory: str | None = None,
+		cookie_whitelist_domains: list[str] | None = None,
 	):
 		# Following the same pattern as AgentSettings in service.py
 		# Only pass non-None values to avoid validation errors
@@ -629,6 +629,9 @@ class BrowserSession(BaseModel):
 			# # Wait a bit to ensure page starts loading
 			# await asyncio.sleep(0.5)
 
+			# Close any extension options pages that might have opened
+			await self._close_extension_options_pages()
+
 			# Dispatch navigation complete
 			self.logger.debug(f'Dispatching NavigationCompleteEvent for {event.url} (tab #{target_id[-4:]})')
 			await self.event_bus.dispatch(
@@ -909,7 +912,7 @@ class BrowserSession(BaseModel):
 		return self.agent_focus.session_id if self.agent_focus else None
 
 	# ========== Helper Methods ==========
-
+	@observe_debug(ignore_input=True, ignore_output=True, name='get_browser_state_summary')
 	async def get_browser_state_summary(
 		self,
 		cache_clickable_elements_hashes: bool = True,
@@ -1147,7 +1150,7 @@ class BrowserSession(BaseModel):
 						# Update the target's URL in our list for later use
 						target['url'] = 'about:blank'
 						# Small delay to ensure navigation completes
-						await asyncio.sleep(0.1)
+						await asyncio.sleep(0.05)
 					except Exception as e:
 						self.logger.warning(f'Failed to redirect {target_url} to about:blank: {e}')
 
@@ -1452,6 +1455,19 @@ class BrowserSession(BaseModel):
 			return target_info.get('title', 'Unknown page title')
 		return 'Unknown page title'
 
+	async def navigate_to(self, url: str, new_tab: bool = False) -> None:
+		"""Navigate to a URL using the standard event system.
+
+		Args:
+			url: URL to navigate to
+			new_tab: Whether to open in a new tab
+		"""
+		from browser_use.browser.events import NavigateToUrlEvent
+
+		event = self.event_bus.dispatch(NavigateToUrlEvent(url=url, new_tab=new_tab))
+		await event
+		await event.event_result(raise_if_any=True, raise_if_none=False)
+
 	# ========== DOM Helper Methods ==========
 
 	async def get_dom_element_by_index(self, index: int) -> EnhancedDOMTreeNode | None:
@@ -1600,21 +1616,29 @@ class BrowserSession(BaseModel):
 
 		except Exception as e:
 			self.logger.warning(f'Failed to remove highlights: {e}')
-			# Try again with simpler script if the complex one fails
-			try:
-				simple_script = """
-				const highlights = document.querySelectorAll('[data-browser-use-highlight]');
-				highlights.forEach(el => el.remove());
-				const container = document.getElementById('browser-use-debug-highlights');
-				if (container) container.remove();
-				"""
-				cdp_session = await self.get_or_create_cdp_session()
-				await cdp_session.cdp_client.send.Runtime.evaluate(
-					params={'expression': simple_script}, session_id=cdp_session.session_id
-				)
-				self.logger.debug('Fallback highlight removal completed')
-			except Exception as fallback_error:
-				self.logger.error(f'Both highlight removal attempts failed: {fallback_error}')
+
+	async def _close_extension_options_pages(self) -> None:
+		"""Close any extension options/welcome pages that have opened."""
+		try:
+			# Get all open pages
+			targets = await self._cdp_get_all_pages()
+
+			for target in targets:
+				target_url = target.get('url', '')
+				target_id = target.get('targetId', '')
+
+				# Check if this is an extension options/welcome page
+				if 'chrome-extension://' in target_url and (
+					'options.html' in target_url or 'welcome.html' in target_url or 'onboarding.html' in target_url
+				):
+					self.logger.info(f'[BrowserSession] 🚫 Closing extension options page: {target_url}')
+					try:
+						await self._cdp_close_page(target_id)
+					except Exception as e:
+						self.logger.debug(f'[BrowserSession] Could not close extension page {target_id}: {e}')
+
+		except Exception as e:
+			self.logger.debug(f'[BrowserSession] Error closing extension options pages: {e}')
 
 	@property
 	def downloaded_files(self) -> list[str]:

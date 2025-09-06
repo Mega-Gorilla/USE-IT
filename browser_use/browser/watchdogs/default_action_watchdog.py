@@ -57,7 +57,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 				msg = f'Index {index_for_logging} - has an element which opens file upload dialog. To upload files please use a specific function to upload files'
 				self.logger.info(msg)
 				raise BrowserError(
-					'Click triggered a file input element which could not be handled, use the dedicated file upload function instead'
+					message=msg,
+					long_term_memory=msg,
 				)
 
 			# Perform the actual click using internal implementation
@@ -76,7 +77,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Wait a bit for potential new tab to be created
 			# This is necessary because tab creation is async and might not be immediate
-			await asyncio.sleep(0.5)
+			await asyncio.sleep(0.1)
 
 			# Note: We don't clear cached state here - let multi_act handle DOM change detection
 			# by explicitly rebuilding and comparing when needed
@@ -88,6 +89,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 			# Check if a new tab was opened
 			after_target_ids = await self.browser_session._cdp_get_all_pages()
 			new_target_ids = {t['targetId'] for t in after_target_ids} - {t['targetId'] for t in initial_target_ids}
+			new_tab_opened = len(new_target_ids) > 0
+
 			if new_target_ids:
 				new_tab_msg = 'New tab opened - switching to it'
 				msg += f' - {new_tab_msg}'
@@ -105,8 +108,11 @@ class DefaultActionWatchdog(BaseWatchdog):
 					switch_event = await self.event_bus.dispatch(SwitchTabEvent(target_id=new_target_id))
 					await switch_event
 
-			# Return click metadata (coordinates) if available
-			return click_metadata
+			# Return click metadata including new tab information
+			result_metadata = click_metadata if isinstance(click_metadata, dict) else {}
+			result_metadata['new_tab_opened'] = new_tab_opened
+
+			return result_metadata
 		except Exception as e:
 			raise
 
@@ -188,7 +194,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 						# by explicitly rebuilding and comparing when needed
 
 						# Wait a bit for the scroll to settle and DOM to update
-						await asyncio.sleep(0.5)
+						await asyncio.sleep(0.2)
 
 					return None
 
@@ -226,16 +232,18 @@ class DefaultActionWatchdog(BaseWatchdog):
 			element_type = element_node.attributes.get('type', '').lower() if element_node.attributes else ''
 
 			if tag_name == 'select':
-				self.logger.warning(
-					f'Cannot click on <select> elements. Use get_dropdown_options(index={element_node.element_index}) action instead.'
-				)
-				raise Exception(
-					f'<llm_error_msg>Cannot click on <select> elements. Use get_dropdown_options(index={element_node.element_index}) action instead.</llm_error_msg>'
+				msg = f'Cannot click on <select> elements. Use get_dropdown_options(index={element_node.element_index}) action instead.'
+				self.logger.warning(msg)
+				raise BrowserError(
+					message=msg,
+					long_term_memory=msg,
 				)
 
 			if tag_name == 'input' and element_type == 'file':
-				raise Exception(
-					f'<llm_error_msg>Cannot click on file input element (index={element_node.element_index}). File uploads must be handled using upload_file_to_element action</llm_error_msg>'
+				msg = f'Cannot click on file input element (index={element_node.element_index}). File uploads must be handled using upload_file_to_element action.'
+				raise BrowserError(
+					message=msg,
+					long_term_memory=msg,
 				)
 
 			# Get CDP client
@@ -362,7 +370,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 						},
 						session_id=session_id,
 					)
-					await asyncio.sleep(0.5)
+					await asyncio.sleep(0.05)
 					# Navigation is handled by BrowserSession via events
 					return None
 				except Exception as js_e:
@@ -419,7 +427,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				await cdp_session.cdp_client.send.DOM.scrollIntoViewIfNeeded(
 					params={'backendNodeId': backend_node_id}, session_id=session_id
 				)
-				await asyncio.sleep(0.1)  # Wait for scroll to complete
+				await asyncio.sleep(0.05)  # Wait for scroll to complete
 			except Exception as e:
 				self.logger.debug(f'Failed to scroll element into view: {e}')
 
@@ -437,7 +445,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 					},
 					session_id=session_id,
 				)
-				await asyncio.sleep(0.123)
+				await asyncio.sleep(0.05)
 
 				# Calculate modifier bitmask for CDP
 				# CDP Modifier bits: Alt=1, Control=2, Meta/Command=4, Shift=8
@@ -468,7 +476,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 						),
 						timeout=1.0,  # 1 second timeout for mousePressed
 					)
-					await asyncio.sleep(0.145)
+					await asyncio.sleep(0.08)
 				except TimeoutError:
 					self.logger.debug('⏱️ Mouse down timed out (likely due to dialog), continuing...')
 					# Don't sleep if we timed out
@@ -516,7 +524,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 						},
 						session_id=session_id,
 					)
-					await asyncio.sleep(0.5)
+					await asyncio.sleep(0.1)
 					# Navigation is handled by BrowserSession via events
 					return None
 				except Exception as js_e:
@@ -530,14 +538,17 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 		except URLNotAllowedError as e:
 			raise e
+		except BrowserError as e:
+			raise e
 		except Exception as e:
 			# Extract key element info for error message
 			element_info = f'<{element_node.tag_name or "unknown"}'
 			if element_node.element_index:
 				element_info += f' index={element_node.element_index}'
 			element_info += '>'
-			raise Exception(
-				f'<llm_error_msg>Failed to click element {element_info}. The element may not be interactable or visible. {type(e).__name__}: {e}</llm_error_msg>'
+			raise BrowserError(
+				message=f'Failed to click element: {e}',
+				long_term_memory=f'Failed to click element {element_info}. The element may not be interactable or visible.',
 			)
 
 	async def _type_to_page(self, text: str):
@@ -581,6 +592,76 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 		except Exception as e:
 			raise Exception(f'Failed to type to page: {str(e)}')
+
+	def _get_char_modifiers_and_vk(self, char: str) -> tuple[int, int, str]:
+		"""Get modifiers, virtual key code, and base key for a character.
+
+		Returns:
+			(modifiers, windowsVirtualKeyCode, base_key)
+		"""
+		# Characters that require Shift modifier
+		shift_chars = {
+			'!': ('1', 49),
+			'@': ('2', 50),
+			'#': ('3', 51),
+			'$': ('4', 52),
+			'%': ('5', 53),
+			'^': ('6', 54),
+			'&': ('7', 55),
+			'*': ('8', 56),
+			'(': ('9', 57),
+			')': ('0', 48),
+			'_': ('-', 189),
+			'+': ('=', 187),
+			'{': ('[', 219),
+			'}': (']', 221),
+			'|': ('\\', 220),
+			':': (';', 186),
+			'"': ("'", 222),
+			'<': (',', 188),
+			'>': ('.', 190),
+			'?': ('/', 191),
+			'~': ('`', 192),
+		}
+
+		# Check if character requires Shift
+		if char in shift_chars:
+			base_key, vk_code = shift_chars[char]
+			return (8, vk_code, base_key)  # Shift=8
+
+		# Uppercase letters require Shift
+		if char.isupper():
+			return (8, ord(char), char.lower())  # Shift=8
+
+		# Lowercase letters
+		if char.islower():
+			return (0, ord(char.upper()), char)
+
+		# Numbers
+		if char.isdigit():
+			return (0, ord(char), char)
+
+		# Special characters without Shift
+		no_shift_chars = {
+			' ': 32,
+			'-': 189,
+			'=': 187,
+			'[': 219,
+			']': 221,
+			'\\': 220,
+			';': 186,
+			"'": 222,
+			',': 188,
+			'.': 190,
+			'/': 191,
+			'`': 192,
+		}
+
+		if char in no_shift_chars:
+			return (0, no_shift_chars[char], char)
+
+		# Fallback
+		return (0, ord(char.upper()) if char.isalpha() else ord(char), char)
 
 	def _get_key_code_for_char(self, char: str) -> str:
 		"""Get the proper key code for a character (like Playwright does)."""
@@ -633,17 +714,122 @@ class DefaultActionWatchdog(BaseWatchdog):
 		# Fallback for unknown characters
 		return f'Key{char.upper()}'
 
-	async def _clear_text_field(self, object_id: str, cdp_session) -> None:
-		"""Clear text field using human-like Ctrl+A + Backspace approach."""
+	async def _clear_text_field(self, object_id: str, cdp_session) -> bool:
+		"""Clear text field using multiple strategies, starting with the most reliable."""
 		try:
-			# Use Meta (Cmd) on macOS, Ctrl on other platforms
+			# Strategy 1: Direct JavaScript value setting (most reliable for modern web apps)
+			self.logger.debug('🧹 Clearing text field using JavaScript value setting')
+
+			await cdp_session.cdp_client.send.Runtime.callFunctionOn(
+				params={
+					'functionDeclaration': """
+						function() { 
+							this.value = ""; 
+							this.dispatchEvent(new Event("input", { bubbles: true })); 
+							this.dispatchEvent(new Event("change", { bubbles: true })); 
+							return this.value;
+						}
+					""",
+					'objectId': object_id,
+					'returnByValue': True,
+				},
+				session_id=cdp_session.session_id,
+			)
+
+			# Verify clearing worked by checking the value
+			verify_result = await cdp_session.cdp_client.send.Runtime.callFunctionOn(
+				params={
+					'functionDeclaration': 'function() { return this.value; }',
+					'objectId': object_id,
+					'returnByValue': True,
+				},
+				session_id=cdp_session.session_id,
+			)
+
+			current_value = verify_result.get('result', {}).get('value', '')
+			if not current_value:
+				self.logger.debug('✅ Text field cleared successfully using JavaScript')
+				return True
+			else:
+				self.logger.debug(f'⚠️ JavaScript clear partially failed, field still contains: "{current_value}"')
+
+		except Exception as e:
+			self.logger.debug(f'JavaScript clear failed: {e}')
+
+		# Strategy 2: Triple-click + Delete (fallback for stubborn fields)
+		try:
+			self.logger.debug('🧹 Fallback: Clearing using triple-click + Delete')
+
+			# Get element center coordinates for triple-click
+			bounds_result = await cdp_session.cdp_client.send.Runtime.callFunctionOn(
+				params={
+					'functionDeclaration': 'function() { return this.getBoundingClientRect(); }',
+					'objectId': object_id,
+					'returnByValue': True,
+				},
+				session_id=cdp_session.session_id,
+			)
+
+			if bounds_result.get('result', {}).get('value'):
+				bounds = bounds_result['result']['value']
+				center_x = bounds['x'] + bounds['width'] / 2
+				center_y = bounds['y'] + bounds['height'] / 2
+
+				# Triple-click to select all text
+				await cdp_session.cdp_client.send.Input.dispatchMouseEvent(
+					params={
+						'type': 'mousePressed',
+						'x': center_x,
+						'y': center_y,
+						'button': 'left',
+						'clickCount': 3,
+					},
+					session_id=cdp_session.session_id,
+				)
+				await cdp_session.cdp_client.send.Input.dispatchMouseEvent(
+					params={
+						'type': 'mouseReleased',
+						'x': center_x,
+						'y': center_y,
+						'button': 'left',
+						'clickCount': 3,
+					},
+					session_id=cdp_session.session_id,
+				)
+
+				# Delete selected text
+				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+					params={
+						'type': 'keyDown',
+						'key': 'Delete',
+						'code': 'Delete',
+					},
+					session_id=cdp_session.session_id,
+				)
+				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+					params={
+						'type': 'keyUp',
+						'key': 'Delete',
+						'code': 'Delete',
+					},
+					session_id=cdp_session.session_id,
+				)
+
+				self.logger.debug('✅ Text field cleared using triple-click + Delete')
+				return True
+
+		except Exception as e:
+			self.logger.debug(f'Triple-click clear failed: {e}')
+
+		# Strategy 3: Keyboard shortcuts (last resort)
+		try:
 			import platform
 
 			is_macos = platform.system() == 'Darwin'
 			select_all_modifier = 4 if is_macos else 2  # Meta=4 (Cmd), Ctrl=2
 			modifier_name = 'Cmd' if is_macos else 'Ctrl'
 
-			self.logger.debug(f'🧹 Clearing text field using {modifier_name}+A + Backspace')
+			self.logger.debug(f'🧹 Last resort: Clearing using {modifier_name}+A + Backspace')
 
 			# Select all text (Ctrl/Cmd+A)
 			await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
@@ -665,16 +851,12 @@ class DefaultActionWatchdog(BaseWatchdog):
 				session_id=cdp_session.session_id,
 			)
 
-			# Small delay
-			await asyncio.sleep(0.01)
-
 			# Delete selected text (Backspace)
 			await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
 				params={
 					'type': 'keyDown',
 					'key': 'Backspace',
 					'code': 'Backspace',
-					'windowsVirtualKeyCode': 8,
 				},
 				session_id=cdp_session.session_id,
 			)
@@ -683,27 +865,16 @@ class DefaultActionWatchdog(BaseWatchdog):
 					'type': 'keyUp',
 					'key': 'Backspace',
 					'code': 'Backspace',
-					'windowsVirtualKeyCode': 8,
 				},
 				session_id=cdp_session.session_id,
 			)
 
-			self.logger.debug('✅ Text field cleared successfully')
+			self.logger.debug('✅ Text field cleared using keyboard shortcuts')
+			return True
 
 		except Exception as e:
-			self.logger.debug(f'Failed to clear text field: {e}')
-			# Try JavaScript fallback
-			try:
-				await cdp_session.cdp_client.send.Runtime.callFunctionOn(
-					params={
-						'functionDeclaration': 'function() { if (this.value !== undefined) this.value = ""; }',
-						'objectId': object_id,
-					},
-					session_id=cdp_session.session_id,
-				)
-				self.logger.debug('✅ Text field cleared using JavaScript fallback')
-			except Exception as js_e:
-				self.logger.debug(f'JavaScript clear also failed: {js_e}')
+			self.logger.debug(f'All clearing strategies failed: {e}')
+			return False
 
 	async def _focus_element_simple(
 		self, backend_node_id: int, object_id: str, cdp_session, input_coordinates: dict | None = None
@@ -827,26 +998,29 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Step 2: Clear existing text if requested
 			if clear_existing and focused_successfully:
-				await self._clear_text_field(object_id=object_id, cdp_session=cdp_session)
+				cleared_successfully = await self._clear_text_field(object_id=object_id, cdp_session=cdp_session)
+				if not cleared_successfully:
+					self.logger.warning('⚠️ Text field clearing failed, typing may append to existing text')
 
 			# Step 3: Type the text character by character using proper human-like key events
 			# This emulates exactly how a human would type, which modern websites expect
 			self.logger.debug(f'🎯 Typing text character by character: "{text}"')
 
 			for i, char in enumerate(text):
-				# Get proper key code for the character
-				key_code = self._get_key_code_for_char(char)
+				# Get proper modifiers, VK code, and base key for the character
+				modifiers, vk_code, base_key = self._get_char_modifiers_and_vk(char)
+				key_code = self._get_key_code_for_char(base_key)
 
-				# self.logger.debug(f'🎯 Typing character {i + 1}/{len(text)}: "{char}" (code: {key_code})')
+				# self.logger.debug(f'🎯 Typing character {i + 1}/{len(text)}: "{char}" (base_key: {base_key}, code: {key_code}, modifiers: {modifiers}, vk: {vk_code})')
 
-				# Send keyDown event (this is what humans do when pressing a key)
+				# Step 1: Send keyDown event (NO text parameter)
 				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
 					params={
 						'type': 'keyDown',
-						'text': char,
-						'key': char,
+						'key': base_key,
 						'code': key_code,
-						# Omit windowsVirtualKeyCode for printable chars to avoid wrong VK codes
+						'modifiers': modifiers,
+						'windowsVirtualKeyCode': vk_code,
 					},
 					session_id=cdp_session.session_id,
 				)
@@ -854,13 +1028,24 @@ class DefaultActionWatchdog(BaseWatchdog):
 				# Small delay to emulate human typing speed
 				await asyncio.sleep(0.001)
 
-				# Send keyUp event (this is what humans do when releasing a key)
+				# Step 2: Send char event (WITH text parameter) - this is crucial for text input
+				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+					params={
+						'type': 'char',
+						'text': char,
+						'key': char,
+					},
+					session_id=cdp_session.session_id,
+				)
+
+				# Step 3: Send keyUp event (NO text parameter)
 				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
 					params={
 						'type': 'keyUp',
-						'key': char,
+						'key': base_key,
 						'code': key_code,
-						# Omit windowsVirtualKeyCode for printable chars to avoid wrong VK codes
+						'modifiers': modifiers,
+						'windowsVirtualKeyCode': vk_code,
 					},
 					session_id=cdp_session.session_id,
 				)
@@ -1286,7 +1471,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			# Note: We don't clear cached state on Enter; multi_act will detect DOM changes
 			# and rebuild explicitly. We still wait briefly for potential navigation.
 			if 'enter' in event.keys.lower() or 'return' in event.keys.lower():
-				await asyncio.sleep(0.5)
+				await asyncio.sleep(0.1)
 		except Exception as e:
 			raise
 
@@ -1299,9 +1484,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Check if it's a file input
 			if not self.browser_session.is_file_input(element_node):
-				raise Exception(
-					f'<llm_error_msg>Element {index_for_logging} is not a file input. Use click_element_by_index for non-file input elements.</llm_error_msg>'
-				)
+				msg = f'Upload failed - element {index_for_logging} is not a file input.'
+				raise BrowserError(message=msg, long_term_memory=msg)
 
 			# Get CDP client and session
 			cdp_client = self.browser_session.cdp_client
@@ -1438,191 +1622,203 @@ class DefaultActionWatchdog(BaseWatchdog):
 			except Exception as e:
 				raise ValueError(f'Failed to resolve node to object: {e}') from e
 
-			try:
-				# Use JavaScript to extract dropdown options
-				options_script = """
-				function() {
-					const startElement = this;
+			# Use JavaScript to extract dropdown options
+			options_script = """
+			function() {
+				const startElement = this;
+				
+				// Function to check if an element is a dropdown and extract options
+				function checkDropdownElement(element) {
+					// Check if it's a native select element
+					if (element.tagName.toLowerCase() === 'select') {
+						return {
+							type: 'select',
+							options: Array.from(element.options).map((opt, idx) => ({
+								text: opt.text.trim(),
+								value: opt.value,
+								index: idx,
+								selected: opt.selected
+							})),
+							id: element.id || '',
+							name: element.name || '',
+							source: 'target'
+						};
+					}
 					
-					// Function to check if an element is a dropdown and extract options
-					function checkDropdownElement(element) {
-						// Check if it's a native select element
-						if (element.tagName.toLowerCase() === 'select') {
-							return {
-								type: 'select',
-								options: Array.from(element.options).map((opt, idx) => ({
-									text: opt.text.trim(),
-									value: opt.value,
-									index: idx,
-									selected: opt.selected
-								})),
-								id: element.id || '',
-								name: element.name || '',
-								source: 'target'
-							};
-						}
+					// Check if it's an ARIA dropdown/menu
+					const role = element.getAttribute('role');
+					if (role === 'menu' || role === 'listbox' || role === 'combobox') {
+						// Find all menu items/options
+						const menuItems = element.querySelectorAll('[role="menuitem"], [role="option"]');
+						const options = [];
 						
-						// Check if it's an ARIA dropdown/menu
-						const role = element.getAttribute('role');
-						if (role === 'menu' || role === 'listbox' || role === 'combobox') {
-							// Find all menu items/options
-							const menuItems = element.querySelectorAll('[role="menuitem"], [role="option"]');
-							const options = [];
-							
-							menuItems.forEach((item, idx) => {
-								const text = item.textContent ? item.textContent.trim() : '';
-								if (text) {
-									options.push({
-										text: text,
-										value: item.getAttribute('data-value') || text,
-										index: idx,
-										selected: item.getAttribute('aria-selected') === 'true' || item.classList.contains('selected')
-									});
-								}
-							});
-							
+						menuItems.forEach((item, idx) => {
+							const text = item.textContent ? item.textContent.trim() : '';
+							if (text) {
+								options.push({
+									text: text,
+									value: item.getAttribute('data-value') || text,
+									index: idx,
+									selected: item.getAttribute('aria-selected') === 'true' || item.classList.contains('selected')
+								});
+							}
+						});
+						
+						return {
+							type: 'aria',
+							options: options,
+							id: element.id || '',
+							name: element.getAttribute('aria-label') || '',
+							source: 'target'
+						};
+					}
+					
+					// Check if it's a Semantic UI dropdown or similar
+					if (element.classList.contains('dropdown') || element.classList.contains('ui')) {
+						const menuItems = element.querySelectorAll('.item, .option, [data-value]');
+						const options = [];
+						
+						menuItems.forEach((item, idx) => {
+							const text = item.textContent ? item.textContent.trim() : '';
+							if (text) {
+								options.push({
+									text: text,
+									value: item.getAttribute('data-value') || text,
+									index: idx,
+									selected: item.classList.contains('selected') || item.classList.contains('active')
+								});
+							}
+						});
+						
+						if (options.length > 0) {
 							return {
-								type: 'aria',
+								type: 'custom',
 								options: options,
 								id: element.id || '',
 								name: element.getAttribute('aria-label') || '',
 								source: 'target'
 							};
 						}
-						
-						// Check if it's a Semantic UI dropdown or similar
-						if (element.classList.contains('dropdown') || element.classList.contains('ui')) {
-							const menuItems = element.querySelectorAll('.item, .option, [data-value]');
-							const options = [];
-							
-							menuItems.forEach((item, idx) => {
-								const text = item.textContent ? item.textContent.trim() : '';
-								if (text) {
-									options.push({
-										text: text,
-										value: item.getAttribute('data-value') || text,
-										index: idx,
-										selected: item.classList.contains('selected') || item.classList.contains('active')
-									});
-								}
-							});
-							
-							if (options.length > 0) {
-								return {
-									type: 'custom',
-									options: options,
-									id: element.id || '',
-									name: element.getAttribute('aria-label') || '',
-									source: 'target'
-								};
-							}
-						}
-						
-						return null;
 					}
 					
-					// Function to recursively search children up to specified depth
-					function searchChildrenForDropdowns(element, maxDepth, currentDepth = 0) {
-						if (currentDepth >= maxDepth) return null;
-						
-						// Check all direct children
-						for (let child of element.children) {
-							// Check if this child is a dropdown
-							const result = checkDropdownElement(child);
-							if (result) {
-								result.source = `child-depth-${currentDepth + 1}`;
-								return result;
-							}
-							
-							// Recursively check this child's children
-							const childResult = searchChildrenForDropdowns(child, maxDepth, currentDepth + 1);
-							if (childResult) {
-								return childResult;
-							}
-						}
-						
-						return null;
-					}
-					
-					// First check the target element itself
-					let dropdownResult = checkDropdownElement(startElement);
-					if (dropdownResult) {
-						return dropdownResult;
-					}
-					
-					// If target element is not a dropdown, search children up to depth 4
-					dropdownResult = searchChildrenForDropdowns(startElement, 4);
-					if (dropdownResult) {
-						return dropdownResult;
-					}
-					
-					return {
-						error: `Element and its children (depth 4) are not recognizable dropdown types (tag: ${startElement.tagName}, role: ${startElement.getAttribute('role')}, classes: ${startElement.className})`
-					};
+					return null;
 				}
-				"""
+				
+				// Function to recursively search children up to specified depth
+				function searchChildrenForDropdowns(element, maxDepth, currentDepth = 0) {
+					if (currentDepth >= maxDepth) return null;
+					
+					// Check all direct children
+					for (let child of element.children) {
+						// Check if this child is a dropdown
+						const result = checkDropdownElement(child);
+						if (result) {
+							result.source = `child-depth-${currentDepth + 1}`;
+							return result;
+						}
+						
+						// Recursively check this child's children
+						const childResult = searchChildrenForDropdowns(child, maxDepth, currentDepth + 1);
+						if (childResult) {
+							return childResult;
+						}
+					}
+					
+					return null;
+				}
+				
+				// First check the target element itself
+				let dropdownResult = checkDropdownElement(startElement);
+				if (dropdownResult) {
+					return dropdownResult;
+				}
+				
+				// If target element is not a dropdown, search children up to depth 4
+				dropdownResult = searchChildrenForDropdowns(startElement, 4);
+				if (dropdownResult) {
+					return dropdownResult;
+				}
+				
+				return {
+					error: `Element and its children (depth 4) are not recognizable dropdown types (tag: ${startElement.tagName}, role: ${startElement.getAttribute('role')}, classes: ${startElement.className})`
+				};
+			}
+			"""
 
-				result = await cdp_session.cdp_client.send.Runtime.callFunctionOn(
-					params={
-						'functionDeclaration': options_script,
-						'objectId': object_id,
-						'returnByValue': True,
-					},
-					session_id=cdp_session.session_id,
+			result = await cdp_session.cdp_client.send.Runtime.callFunctionOn(
+				params={
+					'functionDeclaration': options_script,
+					'objectId': object_id,
+					'returnByValue': True,
+				},
+				session_id=cdp_session.session_id,
+			)
+
+			dropdown_data = result.get('result', {}).get('value', {})
+
+			if dropdown_data.get('error'):
+				raise BrowserError(message=dropdown_data['error'], long_term_memory=dropdown_data['error'])
+
+			if not dropdown_data.get('options'):
+				msg = f'No options found in dropdown at index {index_for_logging}'
+				raise BrowserError(message=msg, long_term_memory=msg)
+
+			# Format options for display
+			formatted_options = []
+			for opt in dropdown_data['options']:
+				# Use JSON encoding to ensure exact string matching
+				encoded_text = json.dumps(opt['text'])
+				status = ' (selected)' if opt.get('selected') else ''
+				formatted_options.append(f'{opt["index"]}: text={encoded_text}, value={json.dumps(opt["value"])}{status}')
+
+			dropdown_type = dropdown_data.get('type', 'select')
+			element_info = f'Index: {index_for_logging}, Type: {dropdown_type}, ID: {dropdown_data.get("id", "none")}, Name: {dropdown_data.get("name", "none")}'
+			source_info = dropdown_data.get('source', 'unknown')
+
+			if source_info == 'target':
+				msg = f'Found {dropdown_type} dropdown ({element_info}):\n' + '\n'.join(formatted_options)
+			else:
+				msg = f'Found {dropdown_type} dropdown in {source_info} ({element_info}):\n' + '\n'.join(formatted_options)
+			msg += f'\n\nUse the exact text or value string (without quotes) in select_dropdown_option(index={index_for_logging}, text=...)'
+
+			if source_info == 'target':
+				self.logger.info(f'📋 Found {len(dropdown_data["options"])} dropdown options for index {index_for_logging}')
+			else:
+				self.logger.info(
+					f'📋 Found {len(dropdown_data["options"])} dropdown options for index {index_for_logging} in {source_info}'
 				)
 
-				dropdown_data = result.get('result', {}).get('value', {})
+			# Create structured memory for the response
+			short_term_memory = msg
+			long_term_memory = f'Got dropdown options for index {index_for_logging}'
 
-				if dropdown_data.get('error'):
-					raise ValueError(dropdown_data['error'])
+			# Return the dropdown data as a dict with structured memory
+			return {
+				'type': dropdown_type,
+				'options': json.dumps(dropdown_data['options']),  # Convert list to JSON string for dict[str, str] type
+				'element_info': element_info,
+				'source': source_info,
+				'formatted_options': '\n'.join(formatted_options),
+				'message': msg,
+				'short_term_memory': short_term_memory,
+				'long_term_memory': long_term_memory,
+				'element_index': str(index_for_logging),
+			}
 
-				if not dropdown_data.get('options'):
-					raise ValueError('No options found in dropdown')
-
-				# Format options for display
-				formatted_options = []
-				for opt in dropdown_data['options']:
-					# Use JSON encoding to ensure exact string matching
-					encoded_text = json.dumps(opt['text'])
-					status = ' (selected)' if opt.get('selected') else ''
-					formatted_options.append(f'{opt["index"]}: text={encoded_text}, value={json.dumps(opt["value"])}{status}')
-
-				dropdown_type = dropdown_data.get('type', 'select')
-				element_info = f'Index: {index_for_logging}, Type: {dropdown_type}, ID: {dropdown_data.get("id", "none")}, Name: {dropdown_data.get("name", "none")}'
-				source_info = dropdown_data.get('source', 'unknown')
-
-				if source_info == 'target':
-					msg = f'Found {dropdown_type} dropdown ({element_info}):\n' + '\n'.join(formatted_options)
-				else:
-					msg = f'Found {dropdown_type} dropdown in {source_info} ({element_info}):\n' + '\n'.join(formatted_options)
-				msg += f'\n\nUse the exact text or value string (without quotes) in select_dropdown_option(index={index_for_logging}, text=...)'
-
-				if source_info == 'target':
-					self.logger.info(f'📋 Found {len(dropdown_data["options"])} dropdown options for index {index_for_logging}')
-				else:
-					self.logger.info(
-						f'📋 Found {len(dropdown_data["options"])} dropdown options for index {index_for_logging} in {source_info}'
-					)
-
-				# Return the dropdown data as a dict
-				return {
-					'type': dropdown_type,
-					'options': json.dumps(dropdown_data['options']),  # Convert list to JSON string for dict[str, str] type
-					'element_info': element_info,
-					'source': source_info,
-					'formatted_options': '\n'.join(formatted_options),
-					'message': msg,
-				}
-
-			except Exception as e:
-				error_msg = f'Failed to get dropdown options: {str(e)}'
-				self.logger.error(error_msg)
-				raise ValueError(error_msg) from e
-
+		except BrowserError:
+			# Re-raise BrowserError as-is to preserve structured memory
+			raise
+		except TimeoutError:
+			msg = f'Failed to get dropdown options for index {index_for_logging} due to timeout.'
+			self.logger.error(msg)
+			raise BrowserError(message=msg, long_term_memory=msg)
 		except Exception as e:
-			error_msg = f'Failed to get dropdown options for element {index_for_logging}: {str(e)}'
+			msg = f'Failed to get dropdown options for element with index {index_for_logging}'
+			error_msg = f'{msg}: {str(e)}'
 			self.logger.error(error_msg)
-			raise ValueError(error_msg) from e
+			raise BrowserError(
+				message=error_msg, long_term_memory=f'Failed to get dropdown options for index {index_for_logging}.'
+			)
 
 	async def on_SelectDropdownOptionEvent(self, event: SelectDropdownOptionEvent) -> dict[str, str]:
 		"""Handle select dropdown option request with CDP."""
@@ -1681,7 +1877,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 								}
 							}
 							
-							// Show all available options for debugging
+							// Return available options as separate field
 							const availableOptions = options.map(opt => ({
 								text: opt.text.trim(),
 								value: opt.value
@@ -1689,7 +1885,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 							
 							return {
 								success: false,
-								error: `Option with text or value '${targetText}' not found in select element. Available options: ${JSON.stringify(availableOptions, null, 2)}`
+								error: `Option with text or value '${targetText}' not found in select element`,
+								availableOptions: availableOptions
 							};
 						}
 						
@@ -1729,7 +1926,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 								}
 							}
 							
-							// Show all available options for debugging
+							// Return available options as separate field
 							const availableOptions = Array.from(menuItems).map(item => ({
 								text: item.textContent ? item.textContent.trim() : '',
 								value: item.getAttribute('data-value') || ''
@@ -1737,7 +1934,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 							
 							return {
 								success: false,
-								error: `Menu item with text or value '${targetText}' not found. Available options: ${JSON.stringify(availableOptions, null, 2)}`
+								error: `Menu item with text or value '${targetText}' not found`,
+								availableOptions: availableOptions
 							};
 						}
 						
@@ -1784,7 +1982,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 								}
 							}
 							
-							// Show all available options for debugging
+							// Return available options as separate field
 							const availableOptions = Array.from(menuItems).map(item => ({
 								text: item.textContent ? item.textContent.trim() : '',
 								value: item.getAttribute('data-value') || ''
@@ -1792,7 +1990,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 							
 							return {
 								success: false,
-								error: `Custom dropdown item with text or value '${targetText}' not found. Available options: ${JSON.stringify(availableOptions, null, 2)}`
+								error: `Custom dropdown item with text or value '${targetText}' not found`,
+								availableOptions: availableOptions
 							};
 						}
 						
@@ -1867,8 +2066,46 @@ class DefaultActionWatchdog(BaseWatchdog):
 					}
 				else:
 					error_msg = selection_result.get('error', f'Failed to select option: {target_text}')
+					available_options = selection_result.get('availableOptions', [])
 					self.logger.error(f'❌ {error_msg}')
-					raise ValueError(error_msg)
+					self.logger.debug(f'Available options from JavaScript: {available_options}')
+
+					# If we have available options, return structured error data
+					if available_options:
+						# Format options for short_term_memory (simple bulleted list)
+						short_term_options = []
+						for opt in available_options:
+							if isinstance(opt, dict):
+								text = opt.get('text', '').strip()
+								value = opt.get('value', '').strip()
+								if text:
+									short_term_options.append(f'- {text}')
+								elif value:
+									short_term_options.append(f'- {value}')
+							elif isinstance(opt, str):
+								short_term_options.append(f'- {opt}')
+
+						if short_term_options:
+							short_term_memory = f'Available dropdown options at index {index_for_logging} are:\n' + '\n'.join(
+								short_term_options
+							)
+							long_term_memory = f"Couldn't select the dropdown option at index {index_for_logging} as '{target_text}' is not one of the available options."
+
+							# Return error result with structured memory instead of raising exception
+							return {
+								'success': 'false',
+								'error': error_msg,
+								'short_term_memory': short_term_memory,
+								'long_term_memory': long_term_memory,
+								'element_index': str(index_for_logging),
+							}
+
+					# Fallback to regular error result if no available options
+					return {
+						'success': 'false',
+						'error': error_msg,
+						'element_index': str(index_for_logging),
+					}
 
 			except Exception as e:
 				error_msg = f'Failed to select dropdown option: {str(e)}'
