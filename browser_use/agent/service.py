@@ -1421,6 +1421,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 				self.state.session_initialized = True
 
+				# Brief delay to ensure session is created in backend before sending task
+				await asyncio.sleep(0.2)
+
 			self.logger.debug('📡 Dispatching CreateAgentTaskEvent...')
 			# Emit CreateAgentTaskEvent at the START of run()
 			self.eventbus.dispatch(CreateAgentTaskEvent.from_agent(self))
@@ -2097,6 +2100,25 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				'complete_history': _get_complete_history_without_screenshots(self.history.model_dump()),
 			},
 		}
+
+	async def authenticate_cloud_sync(self, show_instructions: bool = True) -> bool:
+		"""
+		Authenticate with cloud service for future runs.
+
+		This is useful when users want to authenticate after a task has completed
+		so that future runs will sync to the cloud.
+
+		Args:
+			show_instructions: Whether to show authentication instructions to user
+
+		Returns:
+			bool: True if authentication was successful
+		"""
+		if not hasattr(self, 'cloud_sync') or self.cloud_sync is None:
+			self.logger.warning('Cloud sync is not available for this agent')
+			return False
+
+		return await self.cloud_sync.authenticate(show_instructions=show_instructions)
 
 	def run_sync(
 		self,
