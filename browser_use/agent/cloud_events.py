@@ -272,6 +272,7 @@ class CreateAgentSessionEvent(BaseEvent):
 
 class UpdateAgentSessionEvent(BaseEvent):
 	"""Event to update an existing agent session"""
+
 	# Model fields
 	id: str  # Session ID to update
 	user_id: str = Field(max_length=255)

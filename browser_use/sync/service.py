@@ -53,9 +53,12 @@ class CloudSync:
 				if event.event_type == 'CreateAgentSessionEvent':
 					self.auth_flow_active = True
 			elif self.auth_task and not self.auth_task.done():
-				# Authentication is in progress - send all events to preserve first-run data
-				# The backend will handle pre-auth events and upgrade them to the correct user_id once auth completes
-				await self._send_event(event)
+				# Authentication is in progress - only send session creation events
+				# to preserve session context, but don't leak other data
+				if event.event_type in ['CreateAgentSessionEvent']:
+					await self._send_event(event)
+				else:
+					logger.debug(f'Skipping event {event.event_type} during auth - not authenticated yet')
 			else:
 				# User is not authenticated and no auth in progress - don't send anything
 				logger.debug(f'Skipping event {event.event_type} - user not authenticated')
@@ -103,8 +106,6 @@ class CloudSync:
 					logger.debug(
 						f'Failed to send sync event: POST {response.request.url} {response.status_code} - {response.text}'
 					)
-					# Also log the payload for debugging
-					logger.debug(f'Event payload was: {event_data}')
 		except httpx.TimeoutException:
 			logger.warning(f'Event send timed out after 10 seconds: {event}')
 		except httpx.ConnectError as e:

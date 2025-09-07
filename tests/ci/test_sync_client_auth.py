@@ -304,10 +304,10 @@ class TestDeviceAuthClient:
 		auth.clear_auth()
 
 		assert auth.is_authenticated is False
-		# Note: clear_auth() saves an empty config, so file still exists
-		assert (temp_config_dir / 'cloud_auth.json').exists()
+		# Note: clear_auth() deletes the config file entirely for security
+		assert not (temp_config_dir / 'cloud_auth.json').exists()
 
-		# Verify the file contains empty credentials
+		# Verify a new client loads empty credentials when no file exists
 		auth2 = DeviceAuthClient(base_url=httpserver.url_for(''))
 		assert auth2.auth_config.api_token is None
 		assert auth2.auth_config.user_id is None
@@ -423,8 +423,8 @@ class TestCloudSync:
 		# Check that no requests were made
 		assert len(requests) == 0
 
-	async def test_send_event_during_auth_progress(self, httpserver: HTTPServer, temp_config_dir):
-		"""Test that task events ARE sent when authentication is in progress (fixes first-run data loss)."""
+	async def test_block_events_during_auth_progress(self, httpserver: HTTPServer, temp_config_dir):
+		"""Test that task events are BLOCKED when authentication is in progress (prevents data leak)."""
 		requests = []
 
 		def capture_request(request):
@@ -483,7 +483,7 @@ class TestCloudSync:
 		# Set session ID
 		service.session_id = 'test-session-id'
 
-		# Send task event while auth is in progress (should NOW be sent due to our fix)
+		# Send task event while auth is in progress (should be BLOCKED for security)
 		await service.handle_event(
 			CreateAgentTaskEvent(
 				agent_session_id='test-session',
@@ -498,10 +498,16 @@ class TestCloudSync:
 			)
 		)
 
-		# Check that the task event was sent (our fix allows it during auth progress)
-		assert len(requests) == 1
-		assert requests[0]['json']['events'][0]['event_type'] == 'CreateAgentTaskEvent'
-		assert requests[0]['json']['events'][0]['task'] == 'Test task during auth'
+		# Check that the task event was NOT sent (blocked for security during auth)
+		assert len(requests) == 0
+
+		# Clean up the background task to avoid test flakiness
+		if service.auth_task and not service.auth_task.done():
+			service.auth_task.cancel()
+			try:
+				await service.auth_task
+			except asyncio.CancelledError:
+				pass
 
 	async def test_authenticate_then_send(self, httpserver: HTTPServer, temp_config_dir):
 		"""Test that events are only sent after authentication."""

@@ -354,5 +354,4 @@ class DeviceAuthClient:
 
 		# Remove the config file entirely instead of saving empty values
 		config_path = CONFIG.BROWSER_USE_CONFIG_DIR / 'cloud_auth.json'
-		if config_path.exists():
-			config_path.unlink()
+		config_path.unlink(missing_ok=True)
