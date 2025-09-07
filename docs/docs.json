@@ -135,6 +135,14 @@
                   "customize/examples/more-examples",
                   "customize/examples/prompting-guide"
                 ]
+              },
+              {
+                "group": "Integration",
+                "icon": "plug",
+                "isDefaultOpen": false,
+                "pages": [
+                  "customize/mcp-server"
+                ]
               }
             ]
           },
