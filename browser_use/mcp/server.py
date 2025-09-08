@@ -37,8 +37,10 @@ import time
 from pathlib import Path
 from typing import Any
 
-# Disable all logging immediately for MCP mode
-logging.disable(logging.CRITICAL)
+# Configure logging for MCP mode - redirect to stderr but preserve critical diagnostics
+logging.basicConfig(
+	stream=sys.stderr, level=logging.WARNING, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', force=True
+)
 
 try:
 	import psutil
@@ -56,15 +58,12 @@ from browser_use.logging_config import setup_logging
 
 def _configure_mcp_server_logging():
 	"""Configure logging for MCP server mode - redirect all logs to stderr to prevent JSON RPC interference."""
-	# Completely disable all logging for MCP mode
-	logging.disable(logging.CRITICAL)
-
 	# Set environment to suppress browser-use logging during server mode
-	os.environ['BROWSER_USE_LOGGING_LEVEL'] = 'critical'
+	os.environ['BROWSER_USE_LOGGING_LEVEL'] = 'warning'
 	os.environ['BROWSER_USE_SETUP_LOGGING'] = 'false'  # Prevent automatic logging setup
 
-	# Configure logging to stderr for MCP mode - use CRITICAL to suppress almost everything
-	setup_logging(stream=sys.stderr, log_level='critical', force_setup=True)
+	# Configure logging to stderr for MCP mode - preserve warnings and above for troubleshooting
+	setup_logging(stream=sys.stderr, log_level='warning', force_setup=True)
 
 	# Also configure the root logger and all existing loggers to use stderr
 	logging.root.handlers = []
@@ -453,8 +452,18 @@ class BrowserUseServer:
 				use_vision=arguments.get('use_vision', True),
 			)
 
+		# Browser session management tools (don't require active session)
+		if tool_name == 'browser_list_sessions':
+			return await self._list_sessions()
+
+		elif tool_name == 'browser_close_session':
+			return await self._close_session(arguments['session_id'])
+
+		elif tool_name == 'browser_close_all':
+			return await self._close_all_sessions()
+
 		# Direct browser control tools (require active session)
-		if tool_name.startswith('browser_'):
+		elif tool_name.startswith('browser_'):
 			# Ensure browser session exists
 			if not self.browser_session:
 				await self._init_browser_session()
@@ -491,16 +500,6 @@ class BrowserUseServer:
 
 			elif tool_name == 'browser_close_tab':
 				return await self._close_tab(arguments['tab_id'])
-
-			# Browser session management tools (don't require active session)
-			elif tool_name == 'browser_list_sessions':
-				return await self._list_sessions()
-
-			elif tool_name == 'browser_close_session':
-				return await self._close_session(arguments['session_id'])
-
-			elif tool_name == 'browser_close_all':
-				return await self._close_all_sessions()
 
 		return f'Unknown tool: {tool_name}'
 
