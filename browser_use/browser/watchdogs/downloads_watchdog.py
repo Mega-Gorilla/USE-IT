@@ -16,6 +16,7 @@ from pydantic import PrivateAttr
 
 from browser_use.browser.events import (
 	BrowserLaunchEvent,
+	BrowserStateRequestEvent,
 	BrowserStoppedEvent,
 	FileDownloadedEvent,
 	NavigationCompleteEvent,
@@ -34,6 +35,7 @@ class DownloadsWatchdog(BaseWatchdog):
 	# Events this watchdog listens to (for documentation)
 	LISTENS_TO: ClassVar[list[type[BaseEvent[Any]]]] = [
 		BrowserLaunchEvent,
+		BrowserStateRequestEvent,
 		BrowserStoppedEvent,
 		TabCreatedEvent,
 		TabClosedEvent,
@@ -80,6 +82,26 @@ class DownloadsWatchdog(BaseWatchdog):
 	async def on_TabClosedEvent(self, event: TabClosedEvent) -> None:
 		"""Stop monitoring closed tabs."""
 		pass  # No cleanup needed, browser context handles target lifecycle
+
+	async def on_BrowserStateRequestEvent(self, event: BrowserStateRequestEvent) -> None:
+		"""Handle browser state request events."""
+		cdp_session = self.browser_session.agent_focus
+		if not cdp_session:
+			return
+
+		url = await self.browser_session.get_current_page_url()
+		if not url:
+			return
+
+		target_id = cdp_session.target_id
+		self.event_bus.dispatch(
+			NavigationCompleteEvent(
+				event_type='NavigationCompleteEvent',
+				url=url,
+				target_id=target_id,
+				event_parent_id=event.event_id,
+			)
+		)
 
 	async def on_BrowserStoppedEvent(self, event: BrowserStoppedEvent) -> None:
 		"""Clean up when browser stops."""
