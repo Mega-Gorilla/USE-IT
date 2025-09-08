@@ -163,8 +163,11 @@ class MessageManager:
 		return '\n'.join(items_to_include)
 
 	def add_new_task(self, new_task: str) -> None:
-		self.task = new_task
-		task_update_item = HistoryItem(system_message=f'User updated <user_request> to: {new_task}')
+		new_task = '<follow_up_user_request> ' + new_task.strip() + ' </follow_up_user_request>'
+		if '<initial_user_request>' not in self.task:
+			self.task = '<initial_user_request>' + self.task + '</initial_user_request>'
+		self.task += '\n' + new_task
+		task_update_item = HistoryItem(system_message=new_task)
 		self.state.agent_history_items.append(task_update_item)
 
 	def _update_agent_history_description(
