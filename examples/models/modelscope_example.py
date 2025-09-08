@@ -8,8 +8,7 @@ import asyncio
 import os
 
 from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
-from pydantic import SecretStr
+from browser_use import Agent, ChatOpenAI
 
 from browser_use import Agent
 
@@ -23,11 +22,12 @@ if not api_key:
 
 async def run_search():
 	agent = Agent(
-		task=('go to amazon.com, search for laptop'),
+		# task=('go to amazon.com, search for laptop'),
+		task=('go to google, search for modelscope'),
 		llm=ChatOpenAI(
 			base_url='https://api-inference.modelscope.cn/v1/',
-			model='Qwen/QwQ-32B-Preview',
-			api_key=SecretStr(api_key),
+			model='Qwen/Qwen2.5-VL-72B-Instruct',
+			api_key=api_key
 		),
 		use_vision=False,
 	)
