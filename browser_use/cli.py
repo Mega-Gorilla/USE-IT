@@ -1,9 +1,20 @@
 # pyright: reportMissingImports=false
+
+# Check for MCP mode early to prevent logging initialization
+import sys
+
+if '--mcp' in sys.argv:
+	import logging
+	import os
+
+	os.environ['BROWSER_USE_LOGGING_LEVEL'] = 'critical'
+	os.environ['BROWSER_USE_SETUP_LOGGING'] = 'false'
+	logging.disable(logging.CRITICAL)
+
 import asyncio
 import json
 import logging
 import os
-import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -15,6 +26,13 @@ from browser_use.llm.google.chat import ChatGoogle
 from browser_use.llm.openai.chat import ChatOpenAI
 
 load_dotenv()
+
+from browser_use import Agent, Controller
+from browser_use.agent.views import AgentSettings
+from browser_use.browser import BrowserProfile, BrowserSession
+from browser_use.logging_config import addLoggingLevel
+from browser_use.telemetry import CLITelemetryEvent, ProductTelemetry
+from browser_use.utils import get_browser_use_version
 
 try:
 	import click
@@ -39,22 +57,19 @@ except ImportError:
 
 os.environ['BROWSER_USE_LOGGING_LEVEL'] = 'result'
 
-from browser_use import Agent, Controller
-from browser_use.agent.views import AgentSettings
-from browser_use.browser import BrowserProfile, BrowserSession
 from browser_use.config import CONFIG
-from browser_use.logging_config import addLoggingLevel
-from browser_use.telemetry import CLITelemetryEvent, ProductTelemetry
-from browser_use.utils import get_browser_use_version
 
+# Set USER_DATA_DIR now that CONFIG is imported
 USER_DATA_DIR = CONFIG.BROWSER_USE_PROFILES_DIR / 'cli'
-
-# Default User settings
-MAX_HISTORY_LENGTH = 100
 
 # Ensure directories exist
 CONFIG.BROWSER_USE_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
 USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+# Default User settings
+MAX_HISTORY_LENGTH = 100
+
+# Directory setup will happen in functions that need CONFIG
 
 
 # Logo components with styling for rich panels
@@ -1871,15 +1886,19 @@ def run_main_interface(ctx: click.Context, debug: bool = False, **kwargs):
 
 	# Check if MCP server mode is activated
 	if kwargs.get('mcp'):
-		# Capture telemetry for MCP server mode via CLI
-		telemetry = ProductTelemetry()
-		telemetry.capture(
-			CLITelemetryEvent(
-				version=get_browser_use_version(),
-				action='start',
-				mode='mcp_server',
+		# Capture telemetry for MCP server mode via CLI (suppress any logging from this)
+		try:
+			telemetry = ProductTelemetry()
+			telemetry.capture(
+				CLITelemetryEvent(
+					version=get_browser_use_version(),
+					action='start',
+					mode='mcp_server',
+				)
 			)
-		)
+		except Exception:
+			# Ignore telemetry errors in MCP mode to prevent any stdout contamination
+			pass
 		# Run as MCP server
 		from browser_use.mcp.server import main as mcp_main
 
