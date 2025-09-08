@@ -114,7 +114,7 @@ The MCP server exposes these browser automation tools:
 For web-based integrations, you can run the MCP server in HTTP mode:
 
 ```bash
-uvx browser-use --mcp --http --port 3000
+uvx python -m browser_use.mcp.server --http --port 3000
 ```
 
 This starts the server on `http://localhost:3000/mcp` using Streamable HTTP transport.
