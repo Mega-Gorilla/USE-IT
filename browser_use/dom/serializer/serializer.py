@@ -74,14 +74,14 @@ class DOMTreeSerializer:
 		end_step1 = time.time()
 		self.timing_info['create_simplified_tree'] = end_step1 - start_step1
 
-		# Step 3: Remove elements based on paint order
+		# Step 2: Remove elements based on paint order
 		start_step3 = time.time()
 		if self.paint_order_filtering and simplified_tree:
 			PaintOrderRemover(simplified_tree).calculate_paint_order()
 		end_step3 = time.time()
 		self.timing_info['calculate_paint_order'] = end_step3 - start_step3
 
-		# Step 2: Optimize tree (remove unnecessary parents)
+		# Step 3: Optimize tree (remove unnecessary parents)
 		start_step2 = time.time()
 		optimized_tree = self._optimize_tree(simplified_tree)
 		end_step2 = time.time()
