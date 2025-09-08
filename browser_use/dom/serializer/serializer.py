@@ -117,13 +117,17 @@ class DOMTreeSerializer:
 
 		return self._clickable_cache[node.node_id]
 
-	def _create_simplified_tree(self, node: EnhancedDOMTreeNode) -> SimplifiedNode | None:
+	def _create_simplified_tree(self, node: EnhancedDOMTreeNode, depth: int = 0) -> SimplifiedNode | None:
 		"""Step 1: Create a simplified tree with enhanced element detection."""
+
+		# Prevent infinite recursion by limiting depth to 30 levels
+		if depth > 30:
+			return None
 
 		if node.node_type == NodeType.DOCUMENT_NODE:
 			# for all cldren including shadow roots
 			for child in node.children_and_shadow_roots:
-				simplified_child = self._create_simplified_tree(child)
+				simplified_child = self._create_simplified_tree(child, depth + 1)
 				if simplified_child:
 					return simplified_child
 
@@ -133,7 +137,7 @@ class DOMTreeSerializer:
 			# Super simple pass-through for shadow DOM elements
 			simplified = SimplifiedNode(original_node=node, children=[])
 			for child in node.children_and_shadow_roots:
-				simplified_child = self._create_simplified_tree(child)
+				simplified_child = self._create_simplified_tree(child, depth + 1)
 				if simplified_child:
 					simplified.children.append(simplified_child)
 			return simplified
@@ -147,7 +151,7 @@ class DOMTreeSerializer:
 				if node.content_document:
 					simplified = SimplifiedNode(original_node=node, children=[])
 					for child in node.content_document.children_nodes or []:
-						simplified_child = self._create_simplified_tree(child)
+						simplified_child = self._create_simplified_tree(child, depth + 1)
 						if simplified_child:
 							simplified.children.append(simplified_child)
 					return simplified
@@ -167,7 +171,7 @@ class DOMTreeSerializer:
 
 				# Process children
 				for child in node.children_and_shadow_roots:
-					simplified_child = self._create_simplified_tree(child)
+					simplified_child = self._create_simplified_tree(child, depth + 1)
 					if simplified_child:
 						simplified.children.append(simplified_child)
 
