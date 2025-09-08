@@ -2256,20 +2256,28 @@ class BrowserSession(BaseModel):
 
 		return await self.get_or_create_cdp_session()
 
-	async def take_screenshot(self, path: str | None = None, full_page: bool = False, format: str = 'png', quality: int | None = None, clip: dict | None = None) -> bytes:
+	async def take_screenshot(
+		self,
+		path: str | None = None,
+		full_page: bool = False,
+		format: str = 'png',
+		quality: int | None = None,
+		clip: dict | None = None,
+	) -> bytes:
 		"""Take a screenshot using CDP.
-		
+
 		Args:
 			path: Optional file path to save screenshot
 			full_page: Capture entire scrollable page beyond viewport
 			format: Image format ('png', 'jpeg', 'webp')
 			quality: Quality 0-100 for JPEG format
 			clip: Region to capture {'x': int, 'y': int, 'width': int, 'height': int}
-		
+
 		Returns:
 			Screenshot data as bytes
 		"""
 		import base64
+
 		from cdp_use.cdp.page import CaptureScreenshotParameters
 
 		cdp_session = await self.get_or_create_cdp_session()
@@ -2294,17 +2302,15 @@ class BrowserSession(BaseModel):
 
 		params = CaptureScreenshotParameters(**params)
 
-		result = await cdp_session.cdp_client.send.Page.captureScreenshot(
-			params=params,
-			session_id=cdp_session.session_id
-		)
+		result = await cdp_session.cdp_client.send.Page.captureScreenshot(params=params, session_id=cdp_session.session_id)
 
 		if not result or 'data' not in result:
 			raise Exception('Screenshot failed - no data returned')
 
 		screenshot_data = base64.b64decode(result['data'])
 
-		if path: Path(path).write_bytes(screenshot_data)
+		if path:
+			Path(path).write_bytes(screenshot_data)
 
 		return screenshot_data
 
@@ -2344,18 +2350,11 @@ class BrowserSession(BaseModel):
 		cdp_session = await self.get_or_create_cdp_session()
 
 		# Get document
-		doc = await cdp_session.cdp_client.send.DOM.getDocument(
-			params={'depth': 1},
-			session_id=cdp_session.session_id
-		)
+		doc = await cdp_session.cdp_client.send.DOM.getDocument(params={'depth': 1}, session_id=cdp_session.session_id)
 
 		# Query selector
 		node_result = await cdp_session.cdp_client.send.DOM.querySelector(
-			params={
-				'nodeId': doc['root']['nodeId'],
-				'selector': selector
-			},
-			session_id=cdp_session.session_id
+			params={'nodeId': doc['root']['nodeId'], 'selector': selector}, session_id=cdp_session.session_id
 		)
 
 		node_id = node_result.get('nodeId')
@@ -2364,8 +2363,7 @@ class BrowserSession(BaseModel):
 
 		# Get bounding box
 		box_result = await cdp_session.cdp_client.send.DOM.getBoxModel(
-			params={'nodeId': node_id},
-			session_id=cdp_session.session_id
+			params={'nodeId': node_id}, session_id=cdp_session.session_id
 		)
 
 		box_model = box_result.get('model')
@@ -2377,5 +2375,5 @@ class BrowserSession(BaseModel):
 			'x': min(content[0], content[2], content[4], content[6]),
 			'y': min(content[1], content[3], content[5], content[7]),
 			'width': max(content[0], content[2], content[4], content[6]) - min(content[0], content[2], content[4], content[6]),
-			'height': max(content[1], content[3], content[5], content[7]) - min(content[1], content[3], content[5], content[7])
+			'height': max(content[1], content[3], content[5], content[7]) - min(content[1], content[3], content[5], content[7]),
 		}
