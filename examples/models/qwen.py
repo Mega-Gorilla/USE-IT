@@ -23,4 +23,5 @@ async def main():
 	await agent.run()
 
 
-asyncio.run(main())
+if '__main__' == __name__:
+	asyncio.run(main())
