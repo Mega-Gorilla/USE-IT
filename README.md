@@ -41,7 +41,15 @@ To celebrate, we're launching **#nicehack69** — a Twitter-first hackathon with
 </a>
 </div>
 
-# Quickstart
+
+> **🚀 Use the latest version!** 
+> 
+> We ship every day improvements for **speed**, **accuracy**, and **UX**. 
+> ```bash
+> pip install --upgrade browser-use
+> ```
+
+# Quickstart new users
 
 With pip (Python>=3.11):
 
