@@ -10,7 +10,7 @@ mode: "wide"
 The MCP (Model Context Protocol) Server allows you to expose browser-use's browser automation capabilities to AI assistants like Claude Desktop, Cline, and other MCP-compatible clients. This enables AI assistants to perform web automation tasks directly through browser-use.
 
 <Note>
-MCP Server requires additional dependencies. Install with: `pip install 'browser-use[cli]'`
+MCP Server requires additional dependencies. Install with: `uv pip install 'browser-use'`
 </Note>
 
 ## Quick Start
@@ -18,7 +18,7 @@ MCP Server requires additional dependencies. Install with: `pip install 'browser
 ### 1. Install Dependencies
 
 ```bash
-pip install 'browser-use[cli]'
+uv pip install 'browser-use'
 ```
 
 ### 2. Start MCP Server
@@ -184,7 +184,7 @@ asyncio.run(use_browser_mcp())
 
 **"MCP SDK is required" Error**
 ```bash
-pip install 'browser-use[cli]'
+uv pip install 'browser-use'
 ```
 
 **Browser doesn't start**
