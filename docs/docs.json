@@ -70,6 +70,10 @@
     {
       "source": "/development/hooks",
       "destination": "/customize/hooks"
+    },
+    {
+      "source": "/customize/examples/chain-agents",
+      "destination": "/customize/examples/follow-up-tasks"
     }
   ],
   "navigation": {
@@ -127,7 +131,7 @@
                 "icon": "folder-open",
                 "pages": [
                   "customize/examples/fast-agent",
-                  "customize/examples/chain-agents",
+                  "customize/examples/follow-up-tasks",
                   "customize/examples/parallel-browser",
                   "customize/examples/playwright-integration",
                   "customize/examples/sensitive-data",
