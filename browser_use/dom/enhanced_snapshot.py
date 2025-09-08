@@ -26,6 +26,7 @@ REQUIRED_COMPUTED_STYLES = [
 	'cursor',  # Used in enhanced_snapshot.py cursor extraction
 	'pointer-events',  # Used for clickability logic
 	'position',  # Used for visibility logic
+	'background-color',  # Used for visibility logic
 ]
 
 
