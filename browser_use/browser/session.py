@@ -270,6 +270,9 @@ class BrowserSession(BaseModel):
 		cross_origin_iframes: bool | None = None,
 		highlight_elements: bool | None = None,
 		paint_order_filtering: bool | None = None,
+		# Iframe processing limits
+		max_iframes: int | None = None,
+		max_iframe_depth: int | None = None,
 	):
 		# Following the same pattern as AgentSettings in service.py
 		# Only pass non-None values to avoid validation errors
