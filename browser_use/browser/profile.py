@@ -594,7 +594,8 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		default=100,
 		description='Maximum number of iframe documents to process to prevent crashes.',
 	)
-	max_iframe_depth: int = Field(ge=0,
+	max_iframe_depth: int = Field(
+		ge=0,
 		default=5,
 		description='Maximum depth for cross-origin iframe recursion (default: 5 levels deep).',
 	)
