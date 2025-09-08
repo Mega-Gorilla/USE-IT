@@ -96,7 +96,7 @@ class DownloadsWatchdog(BaseWatchdog):
 		target_id = cdp_session.target_id
 		self.event_bus.dispatch(
 			NavigationCompleteEvent(
-				event_type="NavigationCompleteEvent",
+				event_type='NavigationCompleteEvent',
 				url=url,
 				target_id=target_id,
 				event_parent_id=event.event_id,
