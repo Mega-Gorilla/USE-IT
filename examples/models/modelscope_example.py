@@ -8,9 +8,8 @@ import asyncio
 import os
 
 from dotenv import load_dotenv
-from browser_use import Agent, ChatOpenAI
 
-from browser_use import Agent
+from browser_use import Agent, ChatOpenAI
 
 # dotenv
 load_dotenv()
@@ -24,11 +23,7 @@ async def run_search():
 	agent = Agent(
 		# task=('go to amazon.com, search for laptop'),
 		task=('go to google, search for modelscope'),
-		llm=ChatOpenAI(
-			base_url='https://api-inference.modelscope.cn/v1/',
-			model='Qwen/Qwen2.5-VL-72B-Instruct',
-			api_key=api_key
-		),
+		llm=ChatOpenAI(base_url='https://api-inference.modelscope.cn/v1/', model='Qwen/Qwen2.5-VL-72B-Instruct', api_key=api_key),
 		use_vision=False,
 	)
 
