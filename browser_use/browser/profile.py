@@ -604,7 +604,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	filter_highlight_ids: bool = Field(
 		default=True, description='Only show element IDs in highlights if llm_representation is less than 10 characters.'
 	)
-	paint_order_filtering: bool = Field(default=True, description='Enable paint order filtering. Experimental for now.')
+	paint_order_filtering: bool = Field(default=True, description='Enable paint order filtering. Slightly experimental.')
 
 	# --- Downloads ---
 	auto_download_pdfs: bool = Field(default=True, description='Automatically download PDFs when navigating to PDF viewer pages.')
