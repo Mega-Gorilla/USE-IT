@@ -360,6 +360,7 @@ class DOMWatchdog(BaseWatchdog):
 					browser_session=self.browser_session,
 					logger=self.logger,
 					cross_origin_iframes=self.browser_session.browser_profile.cross_origin_iframes,
+					paint_order_filtering=self.browser_session.browser_profile.paint_order_filtering,
 				)
 
 			# Get serialized DOM tree using the service

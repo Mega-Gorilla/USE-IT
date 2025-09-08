@@ -259,15 +259,17 @@ class BrowserSession(BaseModel):
 		enable_default_extensions: bool | None = None,
 		window_size: dict | None = None,
 		window_position: dict | None = None,
-		cross_origin_iframes: bool | None = None,
 		minimum_wait_page_load_time: float | None = None,
 		wait_for_network_idle_page_load_time: float | None = None,
 		wait_between_actions: float | None = None,
-		highlight_elements: bool | None = None,
 		filter_highlight_ids: bool | None = None,
 		auto_download_pdfs: bool | None = None,
 		profile_directory: str | None = None,
 		cookie_whitelist_domains: list[str] | None = None,
+		# DOM extraction layer configuration
+		cross_origin_iframes: bool | None = None,
+		highlight_elements: bool | None = None,
+		paint_order_filtering: bool | None = None,
 	):
 		# Following the same pattern as AgentSettings in service.py
 		# Only pass non-None values to avoid validation errors

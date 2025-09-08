@@ -40,11 +40,16 @@ class DomService:
 	logger: logging.Logger
 
 	def __init__(
-		self, browser_session: 'BrowserSession', logger: logging.Logger | None = None, cross_origin_iframes: bool = False
+		self,
+		browser_session: 'BrowserSession',
+		logger: logging.Logger | None = None,
+		cross_origin_iframes: bool = False,
+		paint_order_filtering: bool = True,
 	):
 		self.browser_session = browser_session
 		self.logger = logger or browser_session.logger
 		self.cross_origin_iframes = cross_origin_iframes
+		self.paint_order_filtering = paint_order_filtering
 
 	async def __aenter__(self):
 		return self
@@ -670,7 +675,7 @@ class DomService:
 
 		start = time.time()
 		serialized_dom_state, serializer_timing = DOMTreeSerializer(
-			enhanced_dom_tree, previous_cached_state
+			enhanced_dom_tree, previous_cached_state, paint_order_filtering=self.paint_order_filtering
 		).serialize_accessible_elements()
 
 		end = time.time()
