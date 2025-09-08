@@ -48,7 +48,7 @@ class DomService:
 		cross_origin_iframes: bool = False,
 		paint_order_filtering: bool = True,
 		max_iframes: int = 100,
-		max_iframe_depth: int = 1,
+		max_iframe_depth: int = 5,
 	):
 		self.browser_session = browser_session
 		self.logger = logger or browser_session.logger
