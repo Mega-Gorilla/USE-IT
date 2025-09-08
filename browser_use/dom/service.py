@@ -426,7 +426,7 @@ class DomService:
 				self.logger.warning(
 					f'⚠️ Limiting processing of {original_doc_count} iframes on page to only first {self.max_iframes} to prevent crashes!'
 				)
-				snapshot['documents'] = snapshot['documents'][:self.max_iframes]
+				snapshot['documents'] = snapshot['documents'][: self.max_iframes]
 
 			total_nodes = sum(len(doc.get('nodes', [])) for doc in snapshot['documents'])
 			self.logger.debug(f'🔍 DEBUG: Snapshot contains {len(snapshot["documents"])} frames with {total_nodes} total nodes')
