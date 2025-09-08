@@ -1,35 +1,31 @@
+import asyncio
 import os
 import sys
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import asyncio
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-import dotenv
-from langchain_openai import ChatOpenAI
+from dotenv import load_dotenv
 
-from browser_use import Agent, Browser, BrowserConfig
+load_dotenv()
 
-dotenv.load_dotenv()
+from browser_use import Agent, Browser, ChatOpenAI
 
+# Connect to your existing Chrome browser
 browser = Browser(
-	config=BrowserConfig(
-		# NOTE: you need to close your chrome browser - so that this can open your browser in debug mode
-		browser_binary_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-	)
+	executable_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+	user_data_dir='~/Library/Application Support/Google/Chrome',
+	profile_directory='Default',
 )
 
 
 async def main():
 	agent = Agent(
-		task='In docs.google.com write my Papa a quick letter',
-		llm=ChatOpenAI(model='gpt-4o'),
+		llm=ChatOpenAI(model='gpt-4.1-mini'),
+		# Google blocks this approach, so we use a different search engine
+		task='Visit https://duckduckgo.com and search for "browser-use founders"',
 		browser=browser,
 	)
-
 	await agent.run()
-	await browser.close()
-
-	input('Press Enter to close...')
 
 
 if __name__ == '__main__':

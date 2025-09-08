@@ -1,11 +1,14 @@
-from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
+import asyncio
+import os
+import sys
 
-from browser_use import Agent, Browser
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+from dotenv import load_dotenv
 
 load_dotenv()
 
-import asyncio
+from browser_use import Agent, ChatOpenAI
 
 task = """
    ### Prompt for Shopping Agent – Migros Online Grocery Order
@@ -104,19 +107,13 @@ At this stage, check the basket on the top right (indicates the price) and check
 
 **Important:** Ensure efficiency and accuracy throughout the process."""
 
-browser = Browser()
 
-agent = Agent(
-	task=task,
-	llm=ChatOpenAI(model='gpt-4o'),
-	browser=browser,
-)
+agent = Agent(task=task, llm=ChatOpenAI(model='gpt-4.1-mini'))
 
 
 async def main():
 	await agent.run()
 	input('Press Enter to close the browser...')
-	await browser.close()
 
 
 if __name__ == '__main__':
