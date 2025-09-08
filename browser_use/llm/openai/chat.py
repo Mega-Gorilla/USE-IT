@@ -1,5 +1,5 @@
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal, TypeVar, overload
 
 import httpx
@@ -55,17 +55,19 @@ class ChatOpenAI(BaseChatModel):
 	http_client: httpx.AsyncClient | None = None
 	_strict_response_validation: bool = False
 	max_completion_tokens: int | None = 4096
-	reasoning_models: list[ChatModel | str] | None = [
-		'o4-mini',
-		'o3',
-		'o3-mini',
-		'o1',
-		'o1-pro',
-		'o3-pro',
-		'gpt-5',
-		'gpt-5-mini',
-		'gpt-5-nano',
-	]
+	reasoning_models: list[ChatModel | str] | None = field(
+		default_factory=lambda: [
+			'o4-mini',
+			'o3',
+			'o3-mini',
+			'o1',
+			'o1-pro',
+			'o3-pro',
+			'gpt-5',
+			'gpt-5-mini',
+			'gpt-5-nano',
+		]
+	)
 
 	# Static
 	@property
