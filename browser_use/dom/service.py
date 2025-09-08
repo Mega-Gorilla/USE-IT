@@ -27,9 +27,7 @@ from browser_use.dom.views import (
 if TYPE_CHECKING:
 	from browser_use.browser.session import BrowserSession
 
-# Global limits to prevent iframe explosion
-MAX_TOTAL_IFRAMES = 3  # Maximum number of iframe documents to process (very conservative to prevent explosions)
-MAX_IFRAME_DEPTH = 1  # Maximum depth for cross-origin iframe recursion (only 1 level deep)
+# Note: iframe limits are now configurable via BrowserProfile.max_iframes and BrowserProfile.max_iframe_depth
 
 
 class DomService:
@@ -49,11 +47,15 @@ class DomService:
 		logger: logging.Logger | None = None,
 		cross_origin_iframes: bool = False,
 		paint_order_filtering: bool = True,
+		max_iframes: int = 100,
+		max_iframe_depth: int = 1,
 	):
 		self.browser_session = browser_session
 		self.logger = logger or browser_session.logger
 		self.cross_origin_iframes = cross_origin_iframes
 		self.paint_order_filtering = paint_order_filtering
+		self.max_iframes = max_iframes
+		self.max_iframe_depth = max_iframe_depth
 
 	async def __aenter__(self):
 		return self
@@ -419,12 +421,12 @@ class DomService:
 		# DEBUG: Log snapshot info and limit documents to prevent explosion
 		if snapshot and 'documents' in snapshot:
 			original_doc_count = len(snapshot['documents'])
-			# Limit to MAX_TOTAL_IFRAMES documents to prevent iframe explosion
-			if original_doc_count > MAX_TOTAL_IFRAMES:
+			# Limit to max_iframes documents to prevent iframe explosion
+			if original_doc_count > self.max_iframes:
 				self.logger.warning(
-					f'⚠️ Limiting processing of {original_doc_count} iframes on page to only first {MAX_TOTAL_IFRAMES} to prevent crashes!'
+					f'⚠️ Limiting processing of {original_doc_count} iframes on page to only first {self.max_iframes} to prevent crashes!'
 				)
-				snapshot['documents'] = snapshot['documents'][:MAX_TOTAL_IFRAMES]
+				snapshot['documents'] = snapshot['documents'][:self.max_iframes]
 
 			total_nodes = sum(len(doc.get('nodes', [])) for doc in snapshot['documents'])
 			self.logger.debug(f'🔍 DEBUG: Snapshot contains {len(snapshot["documents"])} frames with {total_nodes} total nodes')
@@ -641,9 +643,9 @@ class DomService:
 				self.cross_origin_iframes and node['nodeName'].upper() == 'IFRAME' and node.get('contentDocument', None) is None
 			):  # None meaning there is no content
 				# Check iframe depth to prevent infinite recursion
-				if iframe_depth >= MAX_IFRAME_DEPTH:
+				if iframe_depth >= self.max_iframe_depth:
 					self.logger.debug(
-						f'Skipping iframe at depth {iframe_depth} to prevent infinite recursion (max depth: {MAX_IFRAME_DEPTH})'
+						f'Skipping iframe at depth {iframe_depth} to prevent infinite recursion (max depth: {self.max_iframe_depth})'
 					)
 				else:
 					# Check if iframe is visible and large enough (>= 200px in both dimensions)
