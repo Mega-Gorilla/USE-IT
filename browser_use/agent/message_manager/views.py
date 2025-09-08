@@ -39,7 +39,7 @@ class HistoryItem(BaseModel):
 {self.error}
 </{step_str}>"""
 		elif self.system_message:
-			return ''  # empty string
+			return self.system_message
 		else:
 			content_parts = []
 
