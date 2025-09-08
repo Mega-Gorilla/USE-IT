@@ -2304,9 +2304,7 @@ class BrowserSession(BaseModel):
 
 		screenshot_data = base64.b64decode(result['data'])
 
-		if path:
-			with open(path, 'wb') as f:
-				f.write(screenshot_data)
+		if path: Path(path).write_bytes(screenshot_data)
 
 		return screenshot_data
 
