@@ -9,19 +9,9 @@ mode: "wide"
 
 The MCP (Model Context Protocol) Server allows you to expose browser-use's browser automation capabilities to AI assistants like Claude Desktop, Cline, and other MCP-compatible clients. This enables AI assistants to perform web automation tasks directly through browser-use.
 
-<Note>
-MCP Server requires additional dependencies. Install with: `uv pip install 'browser-use'`
-</Note>
-
 ## Quick Start
 
-### 1. Install Dependencies
-
-```bash
-uv pip install 'browser-use'
-```
-
-### 2. Start MCP Server
+### Start MCP Server
 
 ```bash
 uvx browser-use --mcp
@@ -108,24 +98,6 @@ The MCP server exposes these browser automation tools:
 - **`read_file`** - Read content from a file
 - **`write_file`** - Write content to a file
 - **`list_files`** - List files in a directory
-
-## HTTP Mode
-
-For web-based integrations, you can run the MCP server in HTTP mode:
-
-```bash
-uvx python -m browser_use.mcp.server --http --port 3000
-```
-
-This starts the server on `http://localhost:3000/mcp` using Streamable HTTP transport.
-
-### JSON Response Mode
-
-For simpler integrations, enable JSON responses instead of Server-Sent Events:
-
-```bash
-uvx python -m browser_use.mcp.server --http --port 3000 --json-response
-```
 
 ## Example Usage
 
