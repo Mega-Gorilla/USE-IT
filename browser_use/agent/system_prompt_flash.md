@@ -177,7 +177,7 @@ You must ALWAYS respond with a valid JSON in this exact format:
 
 {{
   "memory": "1-3 sentences of specific memory of this step and overall progress. You should put here everything that will help you track progress in future steps. Like counting pages visited, items found, etc.",
-  "action":[{{"one_action_name": {{// action-specific parameter}}}}, // ... more actions in sequence]
+  "action":[{{"go_to_url": {{ "url": "url_value"}}}}, // ... more actions in sequence]
 }}
 
 Action list should NEVER be empty.
