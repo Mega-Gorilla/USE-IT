@@ -151,7 +151,7 @@ class DOMTreeSerializer:
 				if node.content_document:
 					simplified = SimplifiedNode(original_node=node, children=[])
 					for child in node.content_document.children_nodes or []:
-						simplified_child = self._create_simplified_tree(child)
+						simplified_child = self._create_simplified_tree(child, depth + 1)
 						if simplified_child:
 							simplified.children.append(simplified_child)
 					return simplified
