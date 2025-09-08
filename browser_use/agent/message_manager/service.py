@@ -165,7 +165,7 @@ class MessageManager:
 	def add_new_task(self, new_task: str) -> None:
 		new_task = '<new_user_request> ' + new_task.strip() + ' </new_user_request>'
 		self.task += '\n' + new_task
-		task_update_item = HistoryItem(system_message=self.task)
+		task_update_item = HistoryItem(system_message=new_task)
 		self.state.agent_history_items.append(task_update_item)
 
 	def _update_agent_history_description(
