@@ -31,7 +31,7 @@
 We just hit **69,000 GitHub ⭐**!
 To celebrate, we're launching **#nicehack69** — a Twitter-first hackathon with a **$6,900 prize pool**. Dream big and show us the future of browser-use agents that go beyond demos!
 
-**Deadline: September 6, 2025**
+**Deadline: September 10, 2025**
 
 **[🚀 Join the hackathon →](https://github.com/browser-use/nicehack69)**
 
