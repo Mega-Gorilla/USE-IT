@@ -1007,7 +1007,7 @@ You will be given a query and the markdown of a webpage that has been filtered t
 				return ActionResult(
 					is_done=True,
 					success=params.success,
-					extracted_content=json.dumps(output_dict),
+					extracted_content=json.dumps(output_dict, ensure_ascii=False),
 					long_term_memory=f'Task completed. Success Status: {params.success}',
 				)
 
