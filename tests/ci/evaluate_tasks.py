@@ -17,11 +17,7 @@ import aiofiles
 import yaml
 from pydantic import BaseModel
 
-from browser_use.agent.service import Agent
-from browser_use.agent.views import AgentHistoryList
-from browser_use.browser.profile import BrowserProfile
-from browser_use.browser.session import BrowserSession
-from browser_use.llm import ChatOpenAI
+from browser_use import Agent, AgentHistoryList, BrowserProfile, BrowserSession, ChatOpenAI
 from browser_use.llm.messages import UserMessage
 
 # --- CONFIG ---
@@ -71,7 +67,6 @@ async def run_single_task(task_file):
 			headless=True,
 			user_data_dir=None,
 			chromium_sandbox=False,  # Disable sandbox for CI environment (GitHub Actions)
-			stealth=True,  # Use patchright+chrome
 		)
 		session = BrowserSession(browser_profile=profile)
 		print('[DEBUG] Browser session created', file=sys.stderr)
