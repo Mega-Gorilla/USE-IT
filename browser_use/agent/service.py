@@ -1312,7 +1312,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		Returns:
 		        Tuple[bool, bool]: (is_done, is_valid)
 		"""
-		if len(self.history.history) == 0:
+		if step_info is not None and step_info.step_number == 1:
 			# First step
 			self._log_first_step_startup()
 			await self._execute_initial_actions()
