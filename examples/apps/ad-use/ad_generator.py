@@ -190,7 +190,7 @@ def open_image(image_path: str):
 			subprocess.run(['open', image_path], check=True)
 		elif sys.platform.startswith('win'):
 			# Windows
-			os.startfile(image_path)
+			subprocess.run(['cmd', '/c', 'start', '', image_path], check=True)
 		else:
 			# Linux
 			subprocess.run(['xdg-open', image_path], check=True)
