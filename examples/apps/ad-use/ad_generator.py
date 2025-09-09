@@ -6,6 +6,7 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 
 def setup_environment(debug: bool):
@@ -44,7 +45,6 @@ class LandingPageAnalyzer:
 	async def analyze_landing_page(self, url: str) -> dict:
 		browser_session = BrowserSession(
 			headless=not self.debug,  # headless=False only when debug=True
-			disable_security=True,
 		)
 
 		agent = Agent(
@@ -128,8 +128,8 @@ Create a vibrant, eye-catching Instagram ad image with:
 Style: Modern Instagram advertisement, (1:1), scroll-stopping, professional but playful, conversion-focused"""
 		return prompt
 
-	async def generate_ad_image(self, prompt: str, screenshot_path: Path | None = None) -> bytes:
-		"""Generate ad image bytes using Gemini. Returns *empty bytes* on failure."""
+	async def generate_ad_image(self, prompt: str, screenshot_path: Path | None = None) -> Optional[bytes]:
+		"""Generate ad image bytes using Gemini. Returns None on failure."""
 
 		try:
 			from typing import Any
@@ -149,7 +149,7 @@ Style: Modern Instagram advertisement, (1:1), scroll-stopping, professional but 
 
 				contents = [prompt + screenshot_prompt, img]
 
-			response = self.client.models.generate_content(
+			response = await self.client.aio.models.generate_content(
 				model='gemini-2.5-flash-image-preview',
 				contents=contents,
 			)
@@ -164,7 +164,7 @@ Style: Modern Instagram advertisement, (1:1), scroll-stopping, professional but 
 		except Exception as e:
 			print(f'❌ Image generation failed: {e}')
 
-		return b''
+		return None
 
 	async def save_results(self, ad_image: bytes, prompt: str, analysis: str, url: str, timestamp: str) -> str:
 		image_path = self.output_dir / f'ad_{timestamp}.png'
@@ -208,6 +208,8 @@ async def create_ad_from_landing_page(url: str, debug: bool = False):
 
 		prompt = generator.create_ad_prompt(page_data['analysis'])
 		ad_image = await generator.generate_ad_image(prompt, page_data.get('screenshot_path'))
+		if ad_image is None:
+			raise RuntimeError('Ad image generation failed')
 		result_path = await generator.save_results(ad_image, prompt, page_data['analysis'], url, page_data['timestamp'])
 
 		print(f'🎨 Generated ad: {result_path}')
