@@ -110,6 +110,10 @@
     {
       "source": "/customize/examples/vibetest-use",
       "destination": "/examples/apps/vibetest-use"
+    },
+    {
+      "source": "/customize/examples/prompting-guide",
+      "destination": "/customize/agent/prompting-guide"
     }
   ],
   "navigation": {
