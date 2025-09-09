@@ -6,7 +6,6 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 
 def setup_environment(debug: bool):
@@ -128,7 +127,7 @@ Create a vibrant, eye-catching Instagram ad image with:
 Style: Modern Instagram advertisement, (1:1), scroll-stopping, professional but playful, conversion-focused"""
 		return prompt
 
-	async def generate_ad_image(self, prompt: str, screenshot_path: Path | None = None) -> Optional[bytes]:
+	async def generate_ad_image(self, prompt: str, screenshot_path: Path | None = None) -> bytes | None:
 		"""Generate ad image bytes using Gemini. Returns None on failure."""
 
 		try:
