@@ -72,7 +72,6 @@ Return ONLY the key brand info, not page structure details.""",
         screenshot_path = None
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
-        # Take screenshot after page fully loads
         async def screenshot_callback(agent_instance):
             nonlocal screenshot_path
             import asyncio
@@ -103,7 +102,10 @@ Return ONLY the key brand info, not page structure details.""",
         }
 
 class AdGenerator:
-    def __init__(self, api_key: str = GOOGLE_API_KEY):
+    def __init__(self, api_key: str | None = GOOGLE_API_KEY):
+        if not api_key:
+            raise ValueError("GOOGLE_API_KEY is missing or empty – set the environment variable or pass api_key explicitly")
+
         self.client = genai.Client(api_key=api_key)
         self.output_dir = Path("output")
         self.output_dir.mkdir(exist_ok=True)
@@ -128,30 +130,44 @@ Create a vibrant, eye-catching Instagram ad image with:
 Style: Modern Instagram advertisement, (1:1), scroll-stopping, professional but playful, conversion-focused"""
         return prompt
 
-    async def generate_ad_image(self, prompt: str, screenshot_path: Path = None) -> bytes:
+    async def generate_ad_image(self, prompt: str, screenshot_path: Path | None = None) -> bytes:
+        """Generate ad image bytes using Gemini. Returns *empty bytes* on failure."""
+
         try:
-            contents = [prompt]
-            
+            from typing import Any, List
+
+            contents: List[Any] = [prompt]
+
             if screenshot_path and screenshot_path.exists():
-                screenshot_prompt = f"\n\nHere is the actual landing page screenshot to reference for design inspiration, colors, layout, and visual style:"
-                text_part=prompt+screenshot_prompt
-                img=Image.open(screenshot_path)
-                w,h=img.size
-                img=img.crop(((w-min(w,h))//2,(h-min(w,h))//2,(w+min(w,h))//2,(h+min(w,h))//2))
-                contents=[text_part,img]
-            
+                screenshot_prompt = (
+                    "\n\nHere is the actual landing page screenshot to reference for design inspiration, "
+                    "colors, layout, and visual style:"
+                )
+
+                img = Image.open(screenshot_path)
+                w, h = img.size
+                side = min(w, h)
+                img = img.crop(((w - side) // 2, (h - side) // 2, (w + side) // 2, (h + side) // 2))
+
+                contents = [prompt + screenshot_prompt, img]
+
             response = self.client.models.generate_content(
                 model="gemini-2.5-flash-image-preview",
-                contents=contents
+                contents=contents,  
             )
-            
-            for part in response.candidates[0].content.parts:
-                if hasattr(part, 'inline_data') and part.inline_data:
-                    return part.inline_data.data
-                    
+
+            cand = getattr(response, "candidates", None)
+            if cand:
+                for part in getattr(cand[0].content, "parts", []):
+                    inline = getattr(part, "inline_data", None)
+                    if inline:
+                        return inline.data
+
         except Exception as e:
             print(f"❌ Image generation failed: {e}")
-            
+
+        return b""
+
     async def save_results(self, ad_image: bytes, prompt: str, analysis: str, url: str, timestamp: str) -> str:
         image_path = self.output_dir / f"ad_{timestamp}.png"
         with open(image_path, 'wb') as f:
