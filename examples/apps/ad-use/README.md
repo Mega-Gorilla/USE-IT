@@ -5,6 +5,8 @@ Automatically generate Instagram ads from any landing page using browser agents 
 [!CAUTION]
 This demo requires browser-use v0.7.4+.
 
+https://github.com/user-attachments/assets/7fab54a9-b36b-4fba-ab98-a438f2b86b7e
+
 ## Features
 
 1. Agent visits your target website
