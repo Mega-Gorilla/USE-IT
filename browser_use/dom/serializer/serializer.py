@@ -127,10 +127,6 @@ class DOMTreeSerializer:
 	def _create_simplified_tree(self, node: EnhancedDOMTreeNode, depth: int = 0) -> SimplifiedNode | None:
 		"""Step 1: Create a simplified tree with enhanced element detection."""
 
-		# Prevent infinite recursion by limiting depth to 30 levels
-		if depth > 30:
-			return None
-
 		if node.node_type == NodeType.DOCUMENT_NODE:
 			# for all cldren including shadow roots
 			for child in node.children_and_shadow_roots:
