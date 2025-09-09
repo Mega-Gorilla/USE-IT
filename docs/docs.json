@@ -99,6 +99,7 @@
                 "pages": [
                   "customize/agent/basics",
                   "customize/agent/supported-models",
+                  "customize/agent/prompting-guide",
                   "customize/agent/output-format",
                   "customize/agent/all-parameters"
                 ]
@@ -127,25 +128,37 @@
                 ]
               },
               {
-                "group": "Examples",
-                "icon": "folder-open",
-                "pages": [
-                  "customize/examples/fast-agent",
-                  "customize/examples/follow-up-tasks",
-                  "customize/examples/parallel-browser",
-                  "customize/examples/playwright-integration",
-                  "customize/examples/sensitive-data",
-                  "customize/examples/secure",
-                  "customize/examples/more-examples",
-                  "customize/examples/prompting-guide"
-                ]
-              },
-              {
                 "group": "Integration",
                 "icon": "plug",
                 "isDefaultOpen": false,
                 "pages": [
                   "customize/mcp-server"
+                ]
+              }
+            ]
+          },
+          {
+            "group": "Examples",
+            "pages": [
+              {
+                "group": "Templates",
+                "icon": "folder",
+                "pages": [
+                  "examples/templates/fast-agent",
+                  "examples/templates/follow-up-tasks",
+                  "examples/templates/parallel-browser",
+                  "examples/templates/playwright-integration",
+                  "examples/templates/sensitive-data",
+                  "examples/templates/secure",
+                  "examples/templates/more-examples"
+                ]
+              },
+              {
+                "group": "Apps",
+                "icon": "box-open",
+                "pages": [
+                  "examples/apps/ad-use",
+                  "examples/apps/vibetest-use"
                 ]
               }
             ]
