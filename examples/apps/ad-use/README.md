@@ -58,6 +58,10 @@ Generated ads are saved in the `output/` directory with:
 - **Prompt files** (ad_style_timestamp_prompt.txt) - The prompts used for generation  
 - **Landing page screenshots** for reference
 
-## Source Code
+## License
 
-Full implementation: [https://github.com/browser-use/browser-use/tree/main/examples/apps/ad-use](https://github.com/browser-use/browser-use/tree/main/examples/apps/ad-use) 
+MIT
+
+---
+
+Powered by [Browser Use](https://github.com/browser-use/browser-use) 
