@@ -198,7 +198,8 @@
                 "icon": "box-open",
                 "pages": [
                   "examples/apps/ad-use",
-                  "examples/apps/vibetest-use"
+                  "examples/apps/vibetest-use",
+                  "examples/apps/news-use"
                 ]
               }
             ]
