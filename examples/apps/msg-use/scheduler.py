@@ -50,7 +50,7 @@ async def parse_messages():
 	
 	llm = ChatGoogle(
 		model='gemini-2.0-flash-exp',
-		temperature=0.7,
+		temperature=0.1,
 		api_key=GOOGLE_API_KEY
 	)
 	
@@ -71,12 +71,17 @@ async def parse_messages():
 	Return ONLY a JSON array with format:
 	[{{"contact": "name", "message": "text", "datetime": "YYYY-MM-DD HH:MM"}}]
 	
-	CRITICAL Message Content Rules:
-	- Text in quotes: Use the exact quoted text as the message
-	- Text NOT in quotes: This is an instruction - write what should actually be sent, not the instruction itself
-	- If it says "write X" or "send X", create the actual content, not "write X"
-	- If it says "tell them Y", write what you would tell them, not "tell them Y"
-	- If it says "remind about Z", write the actual reminder, not "remind about Z"
+	CRITICAL: Transform instructions into actual messages:
+	
+	QUOTED TEXT → Use exactly as-is:
+	- Text in "quotes" becomes the exact message
+	
+	UNQUOTED INSTRUCTIONS → Generate actual content:
+	- If it's an instruction to write something → write the actual thing
+	- If it's an instruction to tell someone something → write what to tell them
+	- If it's an instruction to remind someone → write the actual reminder
+	
+	DO NOT copy the instruction - create the actual message content!
 	
 	Time Rules:
 	- If only time given (like "at 15:30"), use TODAY 
