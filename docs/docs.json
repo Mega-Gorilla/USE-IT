@@ -198,6 +198,7 @@
                 "icon": "box-open",
                 "pages": [
                   "examples/apps/ad-use",
+                  "examples/apps/msg-use",
                   "examples/apps/vibetest-use"
                 ]
               }
