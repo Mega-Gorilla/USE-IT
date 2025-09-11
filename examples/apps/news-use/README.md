@@ -5,7 +5,7 @@ Automatically monitor news websites and extract the latest articles with sentime
 > [!CAUTION]
 > This demo requires browser-use v0.7.7+.
 
-https://github.com/user-attachments/assets/650843ee-0b4d-431a-983f-6c1af3d0ffd8
+https://github.com/user-attachments/assets/698757ca-8827-41f3-98e5-c235d6eef69f
 
 ## Features
 
