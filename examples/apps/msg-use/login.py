@@ -5,7 +5,7 @@ from pathlib import Path
 from browser_use import Agent, BrowserSession
 from browser_use.llm.google import ChatGoogle
 
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
 
 # Browser profile directory for persistence (same as main script)
 USER_DATA_DIR = Path.home() / '.config' / 'whatsapp_scheduler' / 'browser_profile'
@@ -16,9 +16,9 @@ STORAGE_STATE_FILE = USER_DATA_DIR / 'storage_state.json'
 
 async def login_to_whatsapp():
     """Open WhatsApp Web and wait for user to scan QR code"""
-    if not GEMINI_API_KEY:
-        print("❌ Error: GEMINI_API_KEY environment variable is required")
-        print("Please set it with: export GEMINI_API_KEY='your-api-key-here'")
+    if not GOOGLE_API_KEY:
+        print("❌ Error: GOOGLE_API_KEY environment variable is required")
+        print("Please set it with: export GOOGLE_API_KEY='your-api-key-here'")
         return
         
     print("WhatsApp Login Setup")
@@ -28,14 +28,12 @@ async def login_to_whatsapp():
     print("=" * 50)
     
     try:
-        # Initialize Gemini LLM using browser-use's ChatGoogle
         llm = ChatGoogle(
             model="gemini-2.0-flash-exp",
             temperature=0.3,
-            api_key=GEMINI_API_KEY
+            api_key=GOOGLE_API_KEY
         )
         
-        # Define the task for the agent
         task = """
         You are helping a user log into WhatsApp Web. Follow these steps:
         
@@ -51,14 +49,12 @@ async def login_to_whatsapp():
         print("\nOpening WhatsApp Web...")
         print("Please scan the QR code when it appears.\n")
         
-        # Initialize browser session with persistent storage
         browser_session = BrowserSession(
             headless=False,  # Show browser
             user_data_dir=str(USER_DATA_DIR),  # Use persistent profile directory
             storage_state=str(STORAGE_STATE_FILE) if STORAGE_STATE_FILE.exists() else None  # Use saved cookies/session
         )
         
-        # Create and run agent
         agent = Agent(
             task=task,
             llm=llm,
@@ -70,8 +66,6 @@ async def login_to_whatsapp():
         print("\n✅ Login completed!")
         print("Note: For now, you'll need to scan the QR code each time.")
         print("We'll improve session persistence in a future update.")
-        
-        # Keep browser open for a moment
         print("\nPress Enter to close the browser...")
         input()
         
