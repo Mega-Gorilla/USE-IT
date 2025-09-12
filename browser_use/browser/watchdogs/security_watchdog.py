@@ -90,6 +90,24 @@ class SecurityWatchdog(BaseWatchdog):
 			except Exception as e:
 				self.logger.error(f'⛔️ Failed to close new tab with non-allowed URL: {type(e).__name__} {e}')
 
+	def _is_root_domain(self, domain: str) -> bool:
+		"""Check if a domain is a root domain (no subdomain present).
+
+		Simple heuristic: only add www for domains with exactly 1 dot (domain.tld).
+		For complex cases like country TLDs or subdomains, users should configure explicitly.
+
+		Args:
+			domain: The domain to check
+
+		Returns:
+			True if it's a simple root domain, False otherwise
+		"""
+		# Skip if it contains wildcards or protocol
+		if '*' in domain or '://' in domain:
+			return False
+
+		return domain.count('.') == 1
+
 	def _log_glob_warning(self) -> None:
 		"""Log a warning about glob patterns in allowed_domains."""
 		global _GLOB_WARNING_SHOWN
@@ -170,6 +188,9 @@ class SecurityWatchdog(BaseWatchdog):
 				else:
 					# Domain-only pattern
 					if host == pattern:
+						return True
+					# If pattern is a root domain, also check www subdomain
+					if self._is_root_domain(pattern) and host == f'www.{pattern}':
 						return True
 
 		return False
