@@ -80,6 +80,7 @@ async def parse_messages():
 	- If it's an instruction to write something → write the actual thing
 	- If it's an instruction to tell someone something → write what to tell them
 	- If it's an instruction to remind someone → write the actual reminder
+	- For multi-line content like poems: use single line with spacing, not line breaks
 	
 	DO NOT copy the instruction - create the actual message content!
 	
@@ -101,7 +102,12 @@ async def parse_messages():
 	json_match = re.search(r'\[.*?\]', response_text, re.DOTALL)
 	if json_match:
 		try:
-			return json.loads(json_match.group())
+			messages = json.loads(json_match.group())
+			for msg in messages:
+				if 'message' in msg:
+					msg['message'] = re.sub(r'\n+', ' • ', msg['message'])
+					msg['message'] = re.sub(r'\s+', ' ', msg['message']).strip()
+			return messages
 		except:
 			pass
 	return []
@@ -159,7 +165,6 @@ async def main():
 	for msg in messages:
 		print(f"  • {msg['datetime']}: {msg['message'][:30]}... to {msg['contact']}")
 	
-	# Separate past and future messages
 	now = datetime.now()
 	immediate = []
 	future = []
@@ -171,7 +176,6 @@ async def main():
 		else:
 			future.append(msg)
 	
-	# Test mode - just show what would be sent
 	if args.test:
 		print(f"\n=== TEST MODE - Preview ===")
 		if immediate:
@@ -185,16 +189,16 @@ async def main():
 		print("\nTest mode complete. No messages sent.")
 		return
 	
-	# Send immediate messages
 	if immediate:
 		print(f"\nSending {len(immediate)} past-due messages NOW...")
 		for msg in immediate:
 			await send_message(msg['contact'], msg['message'])
 	
-	# Monitor future messages
 	if future:
 		print(f"\n⏰ Monitoring {len(future)} future messages...")
 		print("Press Ctrl+C to stop.\n")
+		
+		last_status = None
 		
 		while future:
 			now = datetime.now()
@@ -208,7 +212,6 @@ async def main():
 				else:
 					remaining.append(msg)
 			
-			# Send due messages
 			for msg in due:
 				print(f"\n⏰ Time reached for {msg['contact']}")
 				await send_message(msg['contact'], msg['message'])
@@ -216,9 +219,13 @@ async def main():
 			future = remaining
 			
 			if future:
-				# Show next message
 				next_msg = min(future, key=lambda x: datetime.strptime(x['datetime'], '%Y-%m-%d %H:%M'))
-				print(f"Next: {next_msg['datetime']} to {next_msg['contact']}")
+				current_status = f"Next: {next_msg['datetime']} to {next_msg['contact']}"
+				
+				if current_status != last_status:
+					print(current_status)
+					last_status = current_status
+				
 				await asyncio.sleep(30)  # Check every 30 seconds
 	
 	print("\n✅ All messages processed!")
