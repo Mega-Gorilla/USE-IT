@@ -2,8 +2,10 @@
 
 AI-powered message scheduler using browser agents and Gemini. Schedule personalized messages in natural language and let AI compose them intelligently.
 
-[!CAUTION]
+[!WARNING]
 This demo requires browser-use v0.7.7+.
+
+https://browser-use.github.io/media/demos/msg_use.mp4
 
 ## Features
 
@@ -25,6 +27,12 @@ Export your Gemini API key, get it from: [Google AI Studio](https://makersuite.g
 export GEMINI_API_KEY='your-gemini-api-key-here'
 ```
 
+Clone the repo and cd into the app folder
+```bash
+git clone https://github.com/browser-use/browser-use.git
+cd browser-use/examples/apps/msg-use
+```
+
 ## Initial Login
 
 First-time setup requires QR code scanning:
@@ -38,9 +46,8 @@ python whatsapp_login.py
 
 1. **Edit your schedule** in `schedule.txt`:
 ```
-- Send "Hi" to Magnus on the 13.06 at 18:15
+- Send "Hi" to Magnus on the 09.09 at 18:15
 - Tell hinge date (Camila) at 20:00 that I miss her
-- Send happy birthday message to sister on the 15.06
 - Remind mom to pick up the car next tuesday
 ```
 
