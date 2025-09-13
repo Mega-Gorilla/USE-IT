@@ -24,7 +24,7 @@ pip install -U browser-use
 
 Export your Gemini API key, get it from: [Google AI Studio](https://makersuite.google.com/app/apikey)
 ```
-export GEMINI_API_KEY='your-gemini-api-key-here'
+export GOOGLE_API_KEY='your-gemini-api-key-here'
 ```
 
 Clone the repo and cd into the app folder
@@ -37,14 +37,14 @@ cd browser-use/examples/apps/msg-use
 
 First-time setup requires QR code scanning:
 ```bash
-python whatsapp_login.py
+python login.py
 ```
 - Scan QR code when browser opens
 - Session will be saved for future use
 
 ## Normal Usage
 
-1. **Edit your schedule** in `schedule.txt`:
+1. **Edit your schedule** in `messages.txt`:
 ```
 - Send "Hi" to Magnus on the 09.09 at 18:15
 - Tell hinge date (Camila) at 20:00 that I miss her
@@ -53,19 +53,19 @@ python whatsapp_login.py
 
 2. **Test mode** - See what will be sent:
 ```bash
-python whatsapp_scheduler.py --test
+python scheduler.py --test
 ```
 
 3. **Run scheduler**:
 ```bash
-python whatsapp_scheduler.py
+python scheduler.py
 ```
 
 ## Programmatic Usage
 
 ```python
 import asyncio
-from whatsapp_scheduler import schedule_messages
+from scheduler import schedule_messages
 
 async def main():
     messages = [
@@ -99,9 +99,9 @@ Example scheduling output:
 
 ## Files
 
-- `whatsapp_scheduler.py` - Main scheduler script
-- `whatsapp_login.py` - One-time login setup  
-- `schedule.txt` - Your message schedule in natural language
+- `scheduler.py` - Main scheduler script
+- `login.py` - One-time login setup  
+- `messages.txt` - Your message schedule in natural language
 
 ## License
 
