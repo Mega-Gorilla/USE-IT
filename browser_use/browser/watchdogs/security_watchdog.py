@@ -186,11 +186,11 @@ class SecurityWatchdog(BaseWatchdog):
 					if url.startswith(pattern):
 						return True
 				else:
-					# Domain-only pattern
-					if host == pattern:
+					# Domain-only pattern (case-insensitive comparison)
+					if host.lower() == pattern.lower():
 						return True
 					# If pattern is a root domain, also check www subdomain
-					if self._is_root_domain(pattern) and host == f'www.{pattern}':
+					if self._is_root_domain(pattern) and host.lower() == f'www.{pattern.lower()}':
 						return True
 
 		return False
