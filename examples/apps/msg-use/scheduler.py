@@ -145,9 +145,9 @@ async def send_message(contact, message):
 async def auto_respond_to_unread():
 	"""Click unread tab and respond to messages"""
 	print('\nAuto-responding to unread messages...')
-	
+
 	llm = ChatGoogle(model='gemini-2.0-flash-exp', temperature=0.3, api_key=GOOGLE_API_KEY)
-	
+
 	task = """
 	1. Go to https://web.whatsapp.com
 	2. Wait for page to load
@@ -159,13 +159,13 @@ async def auto_respond_to_unread():
 	   - Move to next unread chat
 	5. Report how many messages were responded to
 	"""
-	
+
 	browser = BrowserSession(
 		headless=not args.debug,
 		user_data_dir=str(USER_DATA_DIR),
 		storage_state=str(STORAGE_STATE_FILE) if STORAGE_STATE_FILE.exists() else None,
 	)
-	
+
 	agent = Agent(task=task, llm=llm, browser_session=browser)
 	result = await agent.run()
 	print('✅ Auto-response complete')
@@ -185,16 +185,16 @@ async def main():
 	if args.auto:
 		print('AUTO MODE - Responding to unread messages every ~30 minutes')
 		print('Press Ctrl+C to stop.\n')
-		
+
 		while True:
 			try:
 				await auto_respond_to_unread()
-				
+
 				# Wait 30 minutes +/- 5 minutes randomly
 				wait_minutes = 30 + random.randint(-5, 5)
 				print(f'\n⏰ Next check in {wait_minutes} minutes...')
 				await asyncio.sleep(wait_minutes * 60)
-				
+
 			except KeyboardInterrupt:
 				print('\n\nAuto mode stopped by user')
 				break
