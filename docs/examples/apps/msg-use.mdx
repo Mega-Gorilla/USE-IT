@@ -45,7 +45,7 @@ cd browser-use/examples/apps/msg-use
 
 First-time setup requires QR code scanning:
 ```bash
-python whatsapp_login.py
+python login.py
 ```
 - Scan QR code when browser opens
 - Session will be saved for future use
@@ -62,22 +62,22 @@ python whatsapp_login.py
 
 2. **Test mode** - See what will be sent:
 ```bash
-python whatsapp_scheduler.py --test
+python scheduler.py --test
 ```
 
 3. **Run scheduler**:
 ```bash
-python whatsapp_scheduler.py
+python scheduler.py
 
 # Debug Mode - See the browser in action
-python whatsapp_scheduler.py --debug
+python scheduler.py --debug
 ```
 
 ## Programmatic Usage
 
 ```python
 import asyncio
-from whatsapp_scheduler import schedule_messages
+from scheduler import schedule_messages
 
 async def main():
     messages = [
@@ -114,30 +114,6 @@ The scheduler processes natural language and outputs structured results:
     "scheduled_time": "2025-06-15 09:00"
   }
 ]
-```
-
-## Advanced Configuration
-
-```python
-import asyncio
-from whatsapp_scheduler import WhatsAppScheduler
-
-async def advanced_scheduling():
-    scheduler = WhatsAppScheduler(
-        debug=True,
-        compose_messages=True,  # Enable AI message composition
-        session_persist=True    # Save login session
-    )
-    
-    # Custom scheduling with time zones
-    await scheduler.schedule_message(
-        contact="John",
-        message="Meeting reminder",
-        time="2025-01-15 14:30",
-        timezone="US/Pacific"
-    )
-
-asyncio.run(advanced_scheduling())
 ```
 
 ## Source Code
