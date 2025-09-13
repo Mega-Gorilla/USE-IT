@@ -2,6 +2,7 @@
 """
 WhatsApp Message Scheduler - Send scheduled messages via WhatsApp Web
 """
+
 import argparse
 import asyncio
 import json
@@ -42,18 +43,16 @@ async def parse_messages():
 	"""Parse messages.txt and extract scheduling info"""
 	messages_file = Path('messages.txt')
 	if not messages_file.exists():
-		print("❌ messages.txt not found!")
+		print('❌ messages.txt not found!')
 		return []
-	
-	with open(messages_file, 'r') as f:
-		content = f.read()
-	
-	llm = ChatGoogle(
-		model='gemini-2.0-flash-exp',
-		temperature=0.1,
-		api_key=GOOGLE_API_KEY
-	)
-	
+
+	import aiofiles
+
+	async with aiofiles.open(messages_file) as f:
+		content = await f.read()
+
+	llm = ChatGoogle(model='gemini-2.0-flash-exp', temperature=0.1, api_key=GOOGLE_API_KEY)
+
 	now = datetime.now()
 	prompt = f"""
 	Parse these WhatsApp message instructions and extract:
@@ -93,11 +92,12 @@ async def parse_messages():
 	- "tomorrow" means {(now + timedelta(days=1)).strftime('%Y-%m-%d')}
 	- "next tuesday" or similar means the next occurrence of that day
 	"""
-	
+
 	from browser_use.llm.messages import UserMessage
+
 	response = await llm.ainvoke([UserMessage(content=prompt)])
 	response_text = response.completion if hasattr(response, 'completion') else str(response)
-	
+
 	# Extract JSON
 	json_match = re.search(r'\[.*?\]', response_text, re.DOTALL)
 	if json_match:
@@ -108,21 +108,17 @@ async def parse_messages():
 					msg['message'] = re.sub(r'\n+', ' • ', msg['message'])
 					msg['message'] = re.sub(r'\s+', ' ', msg['message']).strip()
 			return messages
-		except:
+		except json.JSONDecodeError:
 			pass
 	return []
 
 
 async def send_message(contact, message):
 	"""Send a WhatsApp message"""
-	print(f"\n📱 Sending to {contact}: {message}")
-	
-	llm = ChatGoogle(
-		model='gemini-2.0-flash-exp',
-		temperature=0.3,
-		api_key=GOOGLE_API_KEY
-	)
-	
+	print(f'\n📱 Sending to {contact}: {message}')
+
+	llm = ChatGoogle(model='gemini-2.0-flash-exp', temperature=0.3, api_key=GOOGLE_API_KEY)
+
 	task = f"""
 	Send WhatsApp message:
 	1. Go to https://web.whatsapp.com
@@ -132,103 +128,103 @@ async def send_message(contact, message):
 	5. Press Enter to send
 	6. Confirm sent
 	"""
-	
+
 	browser = BrowserSession(
 		headless=not args.debug,  # headless=False only when debug=True
 		user_data_dir=str(USER_DATA_DIR),
-		storage_state=str(STORAGE_STATE_FILE) if STORAGE_STATE_FILE.exists() else None
+		storage_state=str(STORAGE_STATE_FILE) if STORAGE_STATE_FILE.exists() else None,
 	)
-	
+
 	agent = Agent(task=task, llm=llm, browser_session=browser)
 	await agent.run()
-	print(f"✅ Sent to {contact}")
+	print(f'✅ Sent to {contact}')
 
 
 async def main():
 	if not GOOGLE_API_KEY:
-		print("❌ Set GOOGLE_API_KEY or GEMINI_API_KEY environment variable")
+		print('❌ Set GOOGLE_API_KEY or GEMINI_API_KEY environment variable')
 		return
-	
-	print("WhatsApp Scheduler")
-	print(f"Profile: {USER_DATA_DIR}")
+
+	print('WhatsApp Scheduler')
+	print(f'Profile: {USER_DATA_DIR}')
 	print()
-	
+
 	# Parse messages
-	print("Parsing messages.txt...")
+	print('Parsing messages.txt...')
 	messages = await parse_messages()
-	
+
 	if not messages:
-		print("No messages found")
+		print('No messages found')
 		return
-	
-	print(f"\nFound {len(messages)} messages:")
+
+	print(f'\nFound {len(messages)} messages:')
 	for msg in messages:
-		print(f"  • {msg['datetime']}: {msg['message'][:30]}... to {msg['contact']}")
-	
+		print(f'  • {msg["datetime"]}: {msg["message"][:30]}... to {msg["contact"]}')
+
 	now = datetime.now()
 	immediate = []
 	future = []
-	
+
 	for msg in messages:
 		msg_time = datetime.strptime(msg['datetime'], '%Y-%m-%d %H:%M')
 		if msg_time <= now:
 			immediate.append(msg)
 		else:
 			future.append(msg)
-	
+
 	if args.test:
-		print(f"\n=== TEST MODE - Preview ===")
+		print('\n=== TEST MODE - Preview ===')
 		if immediate:
-			print(f"\nWould send {len(immediate)} past-due messages NOW:")
+			print(f'\nWould send {len(immediate)} past-due messages NOW:')
 			for msg in immediate:
-				print(f"  📱 To {msg['contact']}: {msg['message']}")
+				print(f'  📱 To {msg["contact"]}: {msg["message"]}')
 		if future:
-			print(f"\nWould monitor {len(future)} future messages:")
+			print(f'\nWould monitor {len(future)} future messages:')
 			for msg in future:
-				print(f"  ⏰ {msg['datetime']}: To {msg['contact']}: {msg['message']}")
-		print("\nTest mode complete. No messages sent.")
+				print(f'  ⏰ {msg["datetime"]}: To {msg["contact"]}: {msg["message"]}')
+		print('\nTest mode complete. No messages sent.')
 		return
-	
+
 	if immediate:
-		print(f"\nSending {len(immediate)} past-due messages NOW...")
+		print(f'\nSending {len(immediate)} past-due messages NOW...')
 		for msg in immediate:
 			await send_message(msg['contact'], msg['message'])
-	
+
 	if future:
-		print(f"\n⏰ Monitoring {len(future)} future messages...")
-		print("Press Ctrl+C to stop.\n")
-		
+		print(f'\n⏰ Monitoring {len(future)} future messages...')
+		print('Press Ctrl+C to stop.\n')
+
 		last_status = None
-		
+
 		while future:
 			now = datetime.now()
 			due = []
 			remaining = []
-			
+
 			for msg in future:
 				msg_time = datetime.strptime(msg['datetime'], '%Y-%m-%d %H:%M')
 				if msg_time <= now:
 					due.append(msg)
 				else:
 					remaining.append(msg)
-			
+
 			for msg in due:
-				print(f"\n⏰ Time reached for {msg['contact']}")
+				print(f'\n⏰ Time reached for {msg["contact"]}')
 				await send_message(msg['contact'], msg['message'])
-			
+
 			future = remaining
-			
+
 			if future:
 				next_msg = min(future, key=lambda x: datetime.strptime(x['datetime'], '%Y-%m-%d %H:%M'))
-				current_status = f"Next: {next_msg['datetime']} to {next_msg['contact']}"
-				
+				current_status = f'Next: {next_msg["datetime"]} to {next_msg["contact"]}'
+
 				if current_status != last_status:
 					print(current_status)
 					last_status = current_status
-				
+
 				await asyncio.sleep(30)  # Check every 30 seconds
-	
-	print("\n✅ All messages processed!")
+
+	print('\n✅ All messages processed!')
 
 
 if __name__ == '__main__':
