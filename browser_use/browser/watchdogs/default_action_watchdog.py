@@ -71,7 +71,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				msg = f'Downloaded file to {download_path}'
 				self.logger.info(f'💾 {msg}')
 			else:
-				msg = f'Clicked button with index {index_for_logging}: {element_node.get_all_children_text(max_depth=2)}'
+				msg = f'Clicked button {element_node.node_name}: {element_node.get_all_children_text(max_depth=2)}'
 				self.logger.debug(f'🖱️ {msg}')
 			self.logger.debug(f'Element xpath: {element_node.xpath}')
 
