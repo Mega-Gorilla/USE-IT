@@ -128,6 +128,13 @@ class SecurityWatchdog(BaseWatchdog):
 			True if the URL is allowed, False otherwise
 		"""
 
+		# If no allowed_domains specified, allow all URLs
+		if (
+			not self.browser_session.browser_profile.allowed_domains
+			and not self.browser_session.browser_profile.prohibited_domains
+		):
+			return True
+
 		# Always allow internal browser targets
 		if url in ['about:blank', 'chrome://new-tab-page/', 'chrome://new-tab-page', 'chrome://newtab/']:
 			return True
