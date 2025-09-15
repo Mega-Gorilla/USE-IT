@@ -30,7 +30,7 @@ class ChatAWSBedrock(BaseChatModel):
 	1. Set the following environment variables:
 	   - AWS_ACCESS_KEY_ID
 	   - AWS_SECRET_ACCESS_KEY
-	   - AWS_SESSION_TOKEN
+	   - AWS_SESSION_TOKEN (only required when using temporary credentials)
 	   - AWS_REGION
 	2. Or provide a boto3 Session object
 	3. Or use AWS SSO authentication
