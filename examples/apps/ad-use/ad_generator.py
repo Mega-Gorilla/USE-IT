@@ -30,7 +30,6 @@ if not args.instagram and not args.tiktok:
 	args.instagram = True
 setup_environment(args.debug)
 
-import time
 from typing import Any, cast
 
 import aiofiles
@@ -107,7 +106,30 @@ class AdGenerator:
 		self.output_dir.mkdir(exist_ok=True)
 		self.mode = mode
 
-	def create_ad_prompt(self, browser_analysis: str) -> str:
+	async def create_video_concept(self, browser_analysis: str, ad_id: int) -> str:
+		"""Generate a unique creative concept for each video ad"""
+		if self.mode != 'tiktok':
+			return ''
+
+		concept_prompt = f"""Based on this brand analysis:
+{browser_analysis}
+
+Create a UNIQUE and SPECIFIC TikTok video concept #{ad_id}.
+
+Be creative and different! Consider various approaches like:
+- Different visual metaphors and storytelling angles
+- Various trending TikTok formats (transitions, reveals, transformations)
+- Different emotional appeals (funny, inspiring, surprising, relatable)
+- Unique visual styles (neon, retro, minimalist, maximalist, surreal)
+- Different perspectives (first-person, aerial, macro, time-lapse)
+
+Return a 2-3 sentence description of a specific, unique video concept that would work for this brand.
+Make it visually interesting and different from typical ads. Be specific about visual elements, transitions, and mood."""
+
+		response = self.client.models.generate_content(model='gemini-2.0-flash-exp', contents=concept_prompt)
+		return response.text if response else ''
+
+	def create_ad_prompt(self, browser_analysis: str, video_concept: str = '') -> str:
 		if self.mode == 'instagram':
 			prompt = f"""Create an Instagram ad for this brand:
 
@@ -127,7 +149,20 @@ Create a vibrant, eye-catching Instagram ad image with:
 
 Style: Modern Instagram advertisement, (1:1), scroll-stopping, professional but playful, conversion-focused"""
 		else:  # tiktok
-			prompt = f"""Create a viral TikTok video ad for this brand:
+			if video_concept:
+				prompt = f"""Create a TikTok video ad based on this specific concept:
+
+{video_concept}
+
+Brand context: {browser_analysis}
+
+Requirements:
+- Vertical 9:16 format
+- High quality, professional execution
+- Bring the concept to life exactly as described
+- No text overlays, pure visual storytelling"""
+			else:
+				prompt = f"""Create a viral TikTok video ad for this brand:
 
 {browser_analysis}
 
@@ -201,14 +236,9 @@ Style: Modern TikTok advertisement, viral potential, authentic energy, minimal t
 			config=cast(Any, {'aspectRatio': '9:16', 'resolution': '720p'}),
 		)
 
-		if ad_id == 1:
-			print('⏳ Generating video (this may take 1-2 minutes)...')
-		start_time = time.time()
 		while not operation.done:
 			await asyncio.sleep(10)
 			operation = sync_client.operations.get(operation)
-			if ad_id == 1:
-				elapsed = int(time.time() - start_time)
 
 		if not operation.response or not operation.response.generated_videos:
 			raise RuntimeError('No videos generated')
@@ -268,13 +298,15 @@ async def create_ad_from_landing_page(url: str, debug: bool = False, mode: str =
 			page_data = await analyzer_temp.analyze_landing_page(url, mode=mode)
 
 		generator = AdGenerator(mode=mode)
-		prompt = generator.create_ad_prompt(page_data['analysis'])
 
 		if mode == 'instagram':
+			prompt = generator.create_ad_prompt(page_data['analysis'])
 			ad_content = await generator.generate_ad_image(prompt, page_data.get('screenshot_path'))
 			if ad_content is None:
 				raise RuntimeError(f'Ad image generation failed for ad #{ad_id}')
 		else:  # tiktok
+			video_concept = await generator.create_video_concept(page_data['analysis'], ad_id)
+			prompt = generator.create_ad_prompt(page_data['analysis'], video_concept)
 			ad_content = await generator.generate_ad_video(prompt, page_data.get('screenshot_path'), ad_id)
 
 		result_path = await generator.save_results(ad_content, prompt, page_data['analysis'], url, page_data['timestamp'])
@@ -301,13 +333,14 @@ async def generate_single_ad(page_data: dict, mode: str, ad_id: int):
 	generator = AdGenerator(mode=mode)
 
 	try:
-		prompt = generator.create_ad_prompt(page_data['analysis'])
-
 		if mode == 'instagram':
+			prompt = generator.create_ad_prompt(page_data['analysis'])
 			ad_content = await generator.generate_ad_image(prompt, page_data.get('screenshot_path'))
 			if ad_content is None:
 				raise RuntimeError(f'Ad image generation failed for ad #{ad_id}')
 		else:  # tiktok
+			video_concept = await generator.create_video_concept(page_data['analysis'], ad_id)
+			prompt = generator.create_ad_prompt(page_data['analysis'], video_concept)
 			ad_content = await generator.generate_ad_video(prompt, page_data.get('screenshot_path'), ad_id)
 
 		# Create unique timestamp for each ad
