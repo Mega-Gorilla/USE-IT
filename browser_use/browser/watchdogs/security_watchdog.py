@@ -161,6 +161,7 @@ class SecurityWatchdog(BaseWatchdog):
 
 			return False
 
+		# Check each prohibited domain pattern
 		if self.browser_session.browser_profile.prohibited_domains:
 			for pattern in self.browser_session.browser_profile.prohibited_domains:
 				if self._is_url_match(url, host, parsed.scheme, pattern):
