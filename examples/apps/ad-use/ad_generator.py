@@ -209,7 +209,6 @@ Style: Modern TikTok advertisement, viral potential, authentic energy, minimal t
 			operation = sync_client.operations.get(operation)
 			if ad_id == 1:
 				elapsed = int(time.time() - start_time)
-				print(f'⏳ Still generating... ({elapsed}s elapsed)')
 
 		if not operation.response or not operation.response.generated_videos:
 			raise RuntimeError('No videos generated')
