@@ -83,7 +83,7 @@ class ChatAWSBedrock(BaseChatModel):
 		else:
 			if not access_key or not secret_key:
 				raise ModelProviderError(
-					message='AWS credentials not found. Please set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_SESSION_TOKEN environment variables or provide a boto3 session.',
+					message='AWS credentials not found. Please set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables (and AWS_SESSION_TOKEN if using temporary credentials) or provide a boto3 session.',
 					model=self.name,
 				)
 
