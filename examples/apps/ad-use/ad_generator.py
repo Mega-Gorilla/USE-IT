@@ -127,7 +127,7 @@ Return a 2-3 sentence description of a specific, unique video concept that would
 Make it visually interesting and different from typical ads. Be specific about visual elements, transitions, and mood."""
 
 		response = self.client.models.generate_content(model='gemini-2.0-flash-exp', contents=concept_prompt)
-		return response.text if response else ''
+		return response.text if response and response.text else ''
 
 	def create_ad_prompt(self, browser_analysis: str, video_concept: str = '') -> str:
 		if self.mode == 'instagram':
