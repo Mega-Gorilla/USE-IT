@@ -22,7 +22,8 @@ if TYPE_CHECKING:
 	from cdp_use.cdp.input.types import MouseButton
 	from cdp_use.cdp.page.commands import CaptureScreenshotParameters
 	from cdp_use.cdp.page.types import Viewport
-	from cdp_use.client import CDPClient
+
+	from browser_use.browser.session import BrowserSession
 
 # Type definitions for element operations
 ModifierType = Literal['Alt', 'Control', 'Meta', 'Shift']
@@ -62,11 +63,12 @@ class Element:
 
 	def __init__(
 		self,
-		client: 'CDPClient',
+		browser_session: 'BrowserSession',
 		backend_node_id: int,
 		session_id: str | None = None,
 	):
-		self._client = client
+		self._browser_session = browser_session
+		self._client = browser_session.cdp_client
 		self._backend_node_id = backend_node_id
 		self._session_id = session_id
 
@@ -442,7 +444,7 @@ class Element:
 						option_backend_id = option_backend_result['node']['backendNodeId']
 
 						# Create an Element for the option and click it
-						option_element = Element(self._client, option_backend_id, self._session_id)
+						option_element = Element(self._browser_session, option_backend_id, self._session_id)
 						await option_element.click()
 
 	async def dragTo(

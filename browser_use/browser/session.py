@@ -856,7 +856,7 @@ class BrowserSession(BaseModel):
 		# Import here to avoid circular import
 		from browser_use.actor.target import Target
 
-		return Target(self.cdp_client, target_id)
+		return Target(self, target_id)
 
 	async def get_current_target(self) -> 'Target | None':
 		"""Get the current target as an actor Target."""
@@ -867,7 +867,7 @@ class BrowserSession(BaseModel):
 
 		from browser_use.actor.target import Target
 
-		return Target(self.cdp_client, target_info['targetId'])
+		return Target(self, target_info['targetId'])
 
 	async def getTargets(self) -> list['Target']:
 		"""Get all available targets."""
@@ -879,7 +879,7 @@ class BrowserSession(BaseModel):
 
 		for target_info in result['targetInfos']:
 			if target_info['type'] in ['page', 'iframe']:
-				targets.append(Target(self.cdp_client, target_info['targetId']))
+				targets.append(Target(self, target_info['targetId']))
 
 		return targets
 

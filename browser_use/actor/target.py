@@ -18,7 +18,9 @@ if TYPE_CHECKING:
 		GetTargetInfoParameters,
 	)
 	from cdp_use.cdp.target.types import TargetInfo
-	from cdp_use.client import CDPClient
+
+	from browser_use.browser.session import BrowserSession
+	from browser_use.llm.base import BaseChatModel
 
 	from .element import Element
 	from .mouse import Mouse
@@ -27,8 +29,11 @@ if TYPE_CHECKING:
 class Target:
 	"""Target operations (tab or iframe)."""
 
-	def __init__(self, client: 'CDPClient', target_id: str, session_id: str | None = None):
-		self._client = client
+	def __init__(
+		self, browser_session: 'BrowserSession', target_id: str, session_id: str | None = None, llm: 'BaseChatModel | None' = None
+	):
+		self._browser_session = browser_session
+		self._client = browser_session.cdp_client
 		self._target_id = target_id
 		self._session_id: str | None = session_id
 		self._mouse: 'Mouse | None' = None
@@ -67,7 +72,7 @@ class Target:
 			session_id = await self._ensure_session()
 			from .mouse import Mouse
 
-			self._mouse = Mouse(self._client, session_id, self._target_id)
+			self._mouse = Mouse(self._browser_session, session_id, self._target_id)
 		return self._mouse
 
 	async def reload(self) -> None:
@@ -81,7 +86,7 @@ class Target:
 
 		from .element import Element
 
-		return Element(self._client, backend_node_id, session_id)
+		return Element(self._browser_session, backend_node_id, session_id)
 
 	async def evaluate(self, page_function: str, *args) -> str:
 		"""Execute JavaScript in the target.
@@ -332,6 +337,6 @@ class Target:
 			describe_params: 'DescribeNodeParameters' = {'nodeId': node_id}
 			node_result = await self._client.send.DOM.describeNode(describe_params, session_id=session_id)
 			backend_node_id = node_result['node']['backendNodeId']
-			elements.append(Element(self._client, backend_node_id, session_id))
+			elements.append(Element(self._browser_session, backend_node_id, session_id))
 
 		return elements

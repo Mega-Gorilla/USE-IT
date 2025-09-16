@@ -5,14 +5,16 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
 	from cdp_use.cdp.input.commands import DispatchMouseEventParameters, SynthesizeScrollGestureParameters
 	from cdp_use.cdp.input.types import MouseButton
-	from cdp_use.client import CDPClient
+
+	from browser_use.browser.session import BrowserSession
 
 
 class Mouse:
 	"""Mouse operations for a target."""
 
-	def __init__(self, client: 'CDPClient', session_id: str | None = None, target_id: str | None = None):
-		self._client = client
+	def __init__(self, browser_session: 'BrowserSession', session_id: str | None = None, target_id: str | None = None):
+		self._browser_session = browser_session
+		self._client = browser_session.cdp_client
 		self._session_id = session_id
 		self._target_id = target_id
 
