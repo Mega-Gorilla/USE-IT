@@ -1913,10 +1913,10 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		return await self.rerun_history(history, **kwargs)
 
 	def save_history(self, file_path: str | Path | None = None) -> None:
-		"""Save the history to a file"""
+		"""Save the history to a file with sensitive data filtering"""
 		if not file_path:
 			file_path = 'AgentHistory.json'
-		self.history.save_to_file(file_path)
+		self.history.save_to_file(file_path, sensitive_data=self.sensitive_data)
 
 	def pause(self) -> None:
 		"""Pause the agent before the next step"""
@@ -2103,7 +2103,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				# AgentHistoryList methods
 				'structured_output': structured_output_json,
 				'final_result_response': final_result,
-				'complete_history': _get_complete_history_without_screenshots(self.history.model_dump()),
+				'complete_history': _get_complete_history_without_screenshots(
+					self.history.model_dump(sensitive_data=self.sensitive_data)
+				),
 			},
 		}
 
