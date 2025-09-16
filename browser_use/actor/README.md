@@ -4,17 +4,31 @@ Browser Actor is a web automation library built directly on CDP.
 
 ## Usage
 
+### Option 1: Direct CDP Usage
 ```python
 from cdp_use import CDPClient
-from browser_use.actor import Browser, Target, Element, Mouse
+from browser_use.actor import Target, Element, Mouse
 
-# Create client and browser
+# Create client directly - no Browser class needed
 client = CDPClient(ws_url)
-browser = Browser(client)
+```
+
+### Option 2: Integrated with Browser (Recommended)
+```python
+from browser_use import Browser
+
+# Create and start browser session
+browser = Browser()
+await browser.start()`
+
+# Use integrated browser methods directly
+target = await browser.newTarget("https://example.com")
+targets = await browser.getTargets()
+current_target = await browser.get_current_target()
 ```
 
 ```python
-# Get targets (multiple ways)
+# Get targets (multiple ways) - using browser methods
 target = await browser.newTarget()  # Create blank tab
 target = await browser.newTarget("https://example.com")  # Create tab with URL
 targets = await browser.getTargets()  # Get all existing tabs
@@ -69,19 +83,21 @@ await target.reload()
 page_screenshot = await target.screenshot()  # JPEG by default
 page_png = await target.screenshot(format="png")
 ```
-Ø
+
 ## Core Classes
 
-- **Browser**, **Target**, **Element**, **Mouse**: Core classes for browser operations
+- **Browser**: Main browser session with integrated browser methods
+- **Target**, **Element**, **Mouse**: Core classes for browser operations
 
 ## API Reference
 
-### Browser Methods
+### Browser Methods (Browser Operations)
 - `newTarget(url=None)` → `Target` - Create blank tab or navigate to URL
 - `getTargets()` → `list[Target]` - Get all page/iframe targets
 - `closeTarget(target: Target | str)` - Close target by object or ID
 - `cookies(urls=None)` → `list[Cookie]` - Get cookies for specified URLs (or all if None)
 - `clearCookies()` - Clear all cookies
+- `get_current_target()` → `Target | None` - Get the current target
 
 ### Target Methods
 - `getElementsByCSSSelector(selector: str)` → `list[Element]` - Find elements by CSS selector

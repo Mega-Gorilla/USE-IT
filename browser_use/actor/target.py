@@ -53,6 +53,14 @@ class Target:
 		return self._session_id
 
 	@property
+	async def session_id(self) -> str:
+		"""Get the session ID for this target.
+
+		@dev Pass this to an arbitrary CDP call
+		"""
+		return await self._ensure_session()
+
+	@property
 	async def mouse(self) -> 'Mouse':
 		"""Get the mouse interface for this target."""
 		if not self._mouse:

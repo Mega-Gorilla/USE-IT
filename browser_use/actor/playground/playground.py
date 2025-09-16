@@ -13,8 +13,7 @@ import asyncio
 import json
 import logging
 
-from browser_use.actor import Browser
-from browser_use.browser.session import BrowserSession
+from browser_use import Browser
 
 # Configure logging to see what's happening
 logging.basicConfig(level=logging.INFO)
@@ -26,20 +25,14 @@ async def main():
 	logger.info('🚀 Starting browser actor playground')
 
 	# Create browser session
-	browser_session = BrowserSession()
+	browser = Browser()
 
 	try:
 		# Start the browser
-		await browser_session.start()
+		await browser.start()
 		logger.info('✅ Browser session started')
 
-		# Get the CDP client from the session
-		cdp_client = browser_session.cdp_client
-
-		# Create the actor browser interface
-		browser = Browser(cdp_client)
-
-		# Navigate to Wikipedia
+		# Navigate to Wikipedia using integrated methods
 		logger.info('📖 Navigating to Wikipedia...')
 		target = await browser.newTarget('https://en.wikipedia.org')
 
@@ -233,7 +226,7 @@ async def main():
 		# Clean up
 		logger.info('🧹 Cleaning up...')
 		try:
-			await browser_session.stop()
+			await browser.stop()
 			logger.info('✅ Browser session stopped')
 		except Exception as e:
 			logger.error(f'❌ Error stopping browser: {e}')

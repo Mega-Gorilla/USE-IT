@@ -4,7 +4,7 @@ import asyncio
 import logging
 from functools import cached_property
 from pathlib import Path
-from typing import Any, Literal, Self, cast
+from typing import TYPE_CHECKING, Any, Literal, Self, Union, cast
 
 import httpx
 from bubus import EventBus
@@ -41,6 +41,9 @@ from browser_use.browser.views import BrowserStateSummary, TabInfo
 from browser_use.dom.views import EnhancedDOMTreeNode, TargetInfo
 from browser_use.observability import observe_debug
 from browser_use.utils import _log_pretty_url, is_new_tab_page
+
+if TYPE_CHECKING:
+	from browser_use.actor.target import Target
 
 DEFAULT_BROWSER_PROFILE = BrowserProfile()
 
@@ -834,11 +837,81 @@ class BrowserSession(BaseModel):
 				)
 			)
 
+	# region - ========== CDP-based replacements for browser_context operations ==========
 	@property
 	def cdp_client(self) -> CDPClient:
 		"""Get the cached root CDP cdp_session.cdp_client. The client is created and started in self.connect()."""
 		assert self._cdp_client_root is not None, 'CDP client not initialized - browser may not be connected yet'
 		return self._cdp_client_root
+
+	async def newTarget(self, url: str | None = None) -> 'Target':
+		"""Create a new target (tab)."""
+		from cdp_use.cdp.target.commands import CreateTargetParameters
+
+		params: CreateTargetParameters = {'url': url or 'about:blank'}
+		result = await self.cdp_client.send.Target.createTarget(params)
+
+		target_id = result['targetId']
+
+		# Import here to avoid circular import
+		from browser_use.actor.target import Target
+
+		return Target(self.cdp_client, target_id)
+
+	async def get_current_target(self) -> 'Target | None':
+		"""Get the current target as an actor Target."""
+		target_info = await self.get_current_target_info()
+
+		if not target_info:
+			return None
+
+		from browser_use.actor.target import Target
+
+		return Target(self.cdp_client, target_info['targetId'])
+
+	async def getTargets(self) -> list['Target']:
+		"""Get all available targets."""
+		result = await self.cdp_client.send.Target.getTargets()
+
+		targets = []
+		# Import here to avoid circular import
+		from browser_use.actor.target import Target
+
+		for target_info in result['targetInfos']:
+			if target_info['type'] in ['page', 'iframe']:
+				targets.append(Target(self.cdp_client, target_info['targetId']))
+
+		return targets
+
+	async def closeTarget(self, target: 'Union[Target, str]') -> None:
+		"""Close a target by Target object or target ID."""
+		from cdp_use.cdp.target.commands import CloseTargetParameters
+
+		# Import here to avoid circular import
+		from browser_use.actor.target import Target
+
+		if isinstance(target, Target):
+			target_id = target._target_id
+		else:
+			target_id = str(target)
+
+		params: CloseTargetParameters = {'targetId': target_id}
+		await self.cdp_client.send.Target.closeTarget(params)
+
+	async def cookies(self, urls: list[str] | None = None) -> list['Cookie']:
+		"""Get cookies, optionally filtered by URLs."""
+		from cdp_use.cdp.network.library import GetCookiesParameters
+
+		params: GetCookiesParameters = {}
+		if urls:
+			params['urls'] = urls
+
+		result = await self.cdp_client.send.Network.getCookies(params)
+		return result['cookies']
+
+	async def clearCookies(self) -> None:
+		"""Clear all cookies."""
+		await self.cdp_client.send.Network.clearBrowserCookies()
 
 	async def get_or_create_cdp_session(
 		self, target_id: TargetID | None = None, focus: bool = True, new_socket: bool | None = None
@@ -920,7 +993,9 @@ class BrowserSession(BaseModel):
 	def current_session_id(self) -> str | None:
 		return self.agent_focus.session_id if self.agent_focus else None
 
-	# ========== Helper Methods ==========
+	# endregion - ========== CDP-based ... ==========
+
+	# region - ========== Helper Methods ==========
 	@observe_debug(ignore_input=True, ignore_output=True, name='get_browser_state_summary')
 	async def get_browser_state_summary(
 		self,
@@ -1455,8 +1530,9 @@ class BrowserSession(BaseModel):
 
 		return tabs
 
-	# ========== ID Lookup Methods ==========
+	# endregion - ========== Helper Methods ==========
 
+	# region - ========== ID Lookup Methods ==========
 	async def get_current_target_info(self) -> TargetInfo | None:
 		"""Get info about the current active target using CDP."""
 		if not self.agent_focus or not self.agent_focus.target_id:
@@ -1496,7 +1572,9 @@ class BrowserSession(BaseModel):
 		await event
 		await event.event_result(raise_if_any=True, raise_if_none=False)
 
-	# ========== DOM Helper Methods ==========
+	# endregion - ========== ID Lookup Methods ==========
+
+	# region - ========== DOM Helper Methods ==========
 
 	async def get_dom_element_by_index(self, index: int) -> EnhancedDOMTreeNode | None:
 		"""Get DOM element by index.
@@ -1677,7 +1755,9 @@ class BrowserSession(BaseModel):
 		"""
 		return self._downloaded_files.copy()
 
-	# ========== CDP-based replacements for browser_context operations ==========
+	# endregion - ========== Helper Methods ==========
+
+	# region - ========== CDP-based replacements for browser_context operations ==========
 
 	async def _cdp_get_all_pages(
 		self,
