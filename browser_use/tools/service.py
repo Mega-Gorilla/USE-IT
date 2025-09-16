@@ -926,7 +926,7 @@ JSON.stringify(Array.from(document.querySelectorAll('a')).map(el => el.textConte
 					params={'expression': code, 'returnByValue': True}, session_id=cdp_session.session_id
 				)
 				result_text = result.get('result', {}).get('value', '')
-
+				result_text = str(result_text)
 				if len(result_text) > 20000:
 					result_text = result_text[:20000] + ' Truncated after 20000 characters ...'
 				# Return the result (could be empty string, which is valid)
