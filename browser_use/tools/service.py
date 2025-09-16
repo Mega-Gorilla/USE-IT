@@ -913,7 +913,6 @@ Return:
 JSON.stringify(Array.from(document.querySelectorAll('a')).map(el => el.textContent.trim()))
 - execute_js can only return strings/numbers/booleans that are readable
 - Objects return "Executed successfully (returned object)" - useless!
-- If you get `{}` or `[]` results, your selectors are WRONG. Use shadow DOM detection (#5) first.
 
 """,
 		)
@@ -927,15 +926,15 @@ JSON.stringify(Array.from(document.querySelectorAll('a')).map(el => el.textConte
 					params={'expression': code, 'returnByValue': True}, session_id=cdp_session.session_id
 				)
 				result_text = result.get('result', {}).get('value', '')
-				description = result.get('result', {}).get('description', '')
+
 				if len(result_text) > 20000:
 					result_text = result_text[:20000] + ' Truncated after 20000 characters ...'
 				# Return the result (could be empty string, which is valid)
 				return ActionResult(extracted_content=f'Code: {code}\n\nResult: {result_text}')
 
 			except Exception as e:
-				result = f'Failed to execute JavaScript {code}: {e} '
-				return ActionResult(error=result)
+				result_text = f'Failed to execute JavaScript {code}: {e} '
+				return ActionResult(error=result_text)
 
 	# Custom done action for structured output
 	async def extract_clean_markdown(
