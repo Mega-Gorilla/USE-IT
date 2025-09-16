@@ -65,6 +65,25 @@ Context = TypeVar('Context')
 T = TypeVar('T', bound=BaseModel)
 
 
+def _detect_sensitive_key_name(text: str, sensitive_data: dict[str, str | dict[str, str]] | None) -> str | None:
+	"""Detect which sensitive key name corresponds to the given text value."""
+	if not sensitive_data or not text:
+		return None
+
+	# Collect all sensitive values and their keys
+	for domain_or_key, content in sensitive_data.items():
+		if isinstance(content, dict):
+			# New format: {domain: {key: value}}
+			for key, value in content.items():
+				if value and value == text:
+					return key
+		elif content:  # Old format: {key: value}
+			if content == text:
+				return domain_or_key
+
+	return None
+
+
 def handle_browser_error(e: BrowserError) -> ActionResult:
 	if e.long_term_memory is not None:
 		if e.short_term_memory is not None:
@@ -311,7 +330,12 @@ class Tools(Generic[Context]):
 			'Input text into an input interactive element. Only input text into indices that are inside your current browser_state. Never input text into indices that are not inside your current browser_state.',
 			param_model=InputTextAction,
 		)
-		async def input_text(params: InputTextAction, browser_session: BrowserSession, has_sensitive_data: bool = False):
+		async def input_text(
+			params: InputTextAction,
+			browser_session: BrowserSession,
+			has_sensitive_data: bool = False,
+			sensitive_data: dict[str, str | dict[str, str]] | None = None,
+		):
 			# Look up the node from the selector map
 			node = await browser_session.get_element_by_index(params.index)
 			if node is None:
@@ -319,18 +343,41 @@ class Tools(Generic[Context]):
 
 			# Dispatch type text event with node
 			try:
+				# Detect which sensitive key is being used
+				sensitive_key_name = None
+				if has_sensitive_data and sensitive_data:
+					sensitive_key_name = _detect_sensitive_key_name(params.text, sensitive_data)
+
 				event = browser_session.event_bus.dispatch(
-					TypeTextEvent(node=node, text=params.text, clear_existing=params.clear_existing)
+					TypeTextEvent(
+						node=node,
+						text=params.text,
+						clear_existing=params.clear_existing,
+						is_sensitive=has_sensitive_data,
+						sensitive_key_name=sensitive_key_name,
+					)
 				)
 				await event
 				input_metadata = await event.event_result(raise_if_any=True, raise_if_none=False)
-				msg = f"Input '{params.text}' into element {params.index}."
-				logger.debug(msg)
+
+				# Create message with sensitive data handling
+				if has_sensitive_data:
+					if sensitive_key_name:
+						msg = f'Input {sensitive_key_name} into element {params.index}.'
+						log_msg = f'Input <{sensitive_key_name}> into element {params.index}.'
+					else:
+						msg = f'Input sensitive data into element {params.index}.'
+						log_msg = f'Input <sensitive> into element {params.index}.'
+				else:
+					msg = f"Input '{params.text}' into element {params.index}."
+					log_msg = msg
+
+				logger.debug(log_msg)
 
 				# Include input coordinates in metadata if available
 				return ActionResult(
 					extracted_content=msg,
-					long_term_memory=f"Input '{params.text}' into element {params.index}.",
+					long_term_memory=msg,
 					metadata=input_metadata if isinstance(input_metadata, dict) else None,
 				)
 			except BrowserError as e:

@@ -127,15 +127,32 @@ class DefaultActionWatchdog(BaseWatchdog):
 			if not element_node.element_index or element_node.element_index == 0:
 				# Type to the page without focusing any specific element
 				await self._type_to_page(event.text)
-				self.logger.info(f'⌨️ Typed "{event.text}" to the page (current focus)')
+				# Log with sensitive data protection
+				if event.is_sensitive:
+					if event.sensitive_key_name:
+						self.logger.info(f'⌨️ Typed <{event.sensitive_key_name}> to the page (current focus)')
+					else:
+						self.logger.info('⌨️ Typed <sensitive> to the page (current focus)')
+				else:
+					self.logger.info(f'⌨️ Typed "{event.text}" to the page (current focus)')
 				return None  # No coordinates available for page typing
 			else:
 				try:
 					# Try to type to the specific element
 					input_metadata = await self._input_text_element_node_impl(
-						element_node, event.text, clear_existing=event.clear_existing or (not event.text)
+						element_node,
+						event.text,
+						clear_existing=event.clear_existing or (not event.text),
+						is_sensitive=event.is_sensitive,
 					)
-					self.logger.info(f'⌨️ Typed "{event.text}" into element with index {index_for_logging}')
+					# Log with sensitive data protection
+					if event.is_sensitive:
+						if event.sensitive_key_name:
+							self.logger.info(f'⌨️ Typed <{event.sensitive_key_name}> into element with index {index_for_logging}')
+						else:
+							self.logger.info(f'⌨️ Typed <sensitive> into element with index {index_for_logging}')
+					else:
+						self.logger.info(f'⌨️ Typed "{event.text}" into element with index {index_for_logging}')
 					self.logger.debug(f'Element xpath: {element_node.xpath}')
 					return input_metadata  # Return coordinates if available
 				except Exception as e:
@@ -146,7 +163,14 @@ class DefaultActionWatchdog(BaseWatchdog):
 					except Exception as e:
 						pass
 					await self._type_to_page(event.text)
-					self.logger.info(f'⌨️ Typed "{event.text}" to the page as fallback')
+					# Log with sensitive data protection
+					if event.is_sensitive:
+						if event.sensitive_key_name:
+							self.logger.info(f'⌨️ Typed <{event.sensitive_key_name}> to the page as fallback')
+						else:
+							self.logger.info('⌨️ Typed <sensitive> to the page as fallback')
+					else:
+						self.logger.info(f'⌨️ Typed "{event.text}" to the page as fallback')
 					return None  # No coordinates available for fallback typing
 
 			# Note: We don't clear cached state here - let multi_act handle DOM change detection
@@ -966,7 +990,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 		return False
 
 	async def _input_text_element_node_impl(
-		self, element_node: EnhancedDOMTreeNode, text: str, clear_existing: bool = True
+		self, element_node: EnhancedDOMTreeNode, text: str, clear_existing: bool = True, is_sensitive: bool = False
 	) -> dict | None:
 		"""
 		Input text into an element using pure CDP with improved focus fallbacks.
@@ -1036,7 +1060,12 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Step 3: Type the text character by character using proper human-like key events
 			# This emulates exactly how a human would type, which modern websites expect
-			self.logger.debug(f'🎯 Typing text character by character: "{text}"')
+			if is_sensitive:
+				# Note: sensitive_key_name is not passed to this low-level method,
+				# but we could extend the signature if needed for more granular logging
+				self.logger.debug('🎯 Typing <sensitive> character by character')
+			else:
+				self.logger.debug(f'🎯 Typing text character by character: "{text}"')
 
 			for i, char in enumerate(text):
 				# Handle newline characters as Enter key
