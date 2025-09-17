@@ -1,12 +1,14 @@
 """Target class for target-level operations."""
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeVar
 
 from pydantic import BaseModel
 
 from browser_use.dom.serializer.serializer import DOMTreeSerializer
 from browser_use.dom.service import DomService
 from browser_use.llm.messages import SystemMessage, UserMessage
+
+T = TypeVar('T', bound=BaseModel)
 
 if TYPE_CHECKING:
 	from cdp_use.cdp.dom.commands import (
@@ -445,3 +447,104 @@ Before you return the element index, reason about the state and elements for a s
 			raise ValueError(f'No element found for prompt: {prompt}')
 
 		return element
+
+	async def extract_content(self, prompt: str, structured_output: type[T], llm: 'BaseChatModel | None' = None) -> T:
+		"""Extract structured content from the current page using LLM.
+
+		Extracts clean markdown from the page and sends it to LLM for structured data extraction.
+
+		Args:
+			prompt: Description of what content to extract
+			structured_output: Pydantic BaseModel class defining the expected output structure
+			llm: Language model to use for extraction
+
+		Returns:
+			The structured BaseModel instance with extracted content
+		"""
+		llm = llm or self._llm
+
+		if not llm:
+			raise ValueError('LLM not provided')
+
+		# Extract clean markdown from the page
+		session_id = await self._ensure_session()
+		try:
+			body_id = await self._client.send.DOM.getDocument(session_id=session_id)
+			page_html_result = await self._client.send.DOM.getOuterHTML(
+				params={'backendNodeId': body_id['root']['backendNodeId']}, session_id=session_id
+			)
+			page_html = page_html_result['outerHTML']
+		except Exception as e:
+			raise RuntimeError(f"Couldn't extract page content: {e}")
+
+		# Convert HTML to clean markdown
+		import html2text
+
+		h = html2text.HTML2Text()
+		h.ignore_links = False
+		h.ignore_images = True
+		h.ignore_emphasis = False
+		h.body_width = 0  # Don't wrap lines
+		h.unicode_snob = True
+		h.skip_internal_links = True
+		markdown_content = h.handle(page_html)
+
+		# Clean up the markdown
+		import re
+
+		# Remove URL encoding artifacts
+		markdown_content = re.sub(r'%[0-9A-Fa-f]{2}', '', markdown_content)
+
+		# Compress excessive newlines
+		markdown_content = re.sub(r'\n{4,}', '\n\n\n', markdown_content)
+
+		# Remove very short lines (likely artifacts)
+		lines = markdown_content.split('\n')
+		filtered_lines = []
+		for line in lines:
+			stripped = line.strip()
+			if len(stripped) > 2:  # Keep lines with substantial content
+				filtered_lines.append(line)
+
+		markdown_content = '\n'.join(filtered_lines).strip()
+
+		# System prompt for structured extraction
+		system_prompt = """
+You are an expert at extracting structured data from the markdown of a webpage.
+
+<input>
+You will be given a query and the markdown of a webpage that has been filtered to remove noise and advertising content.
+</input>
+
+<instructions>
+- You are tasked to extract information from the webpage that is relevant to the query.
+- You should ONLY use the information available in the webpage to answer the query. Do not make up information or provide guess from your own knowledge.
+- If the information relevant to the query is not available in the page, your response should mention that.
+- If the query asks for all items, products, etc., make sure to directly list all of them.
+- Return the extracted content in the exact structured format specified.
+</instructions>
+
+<output>
+- Your output should present ALL the information relevant to the query in the specified structured format.
+- Do not answer in conversational format - directly output the relevant information in the structured format.
+</output>
+""".strip()
+
+		# Build prompt with just query and content
+		prompt_content = f'<query>\n{prompt}\n</query>\n\n<webpage_content>\n{markdown_content}\n</webpage_content>'
+
+		# Send to LLM with structured output
+		import asyncio
+
+		try:
+			response = await asyncio.wait_for(
+				llm.ainvoke(
+					[SystemMessage(content=system_prompt), UserMessage(content=prompt_content)], output_format=structured_output
+				),
+				timeout=120.0,
+			)
+
+			# Return the structured output BaseModel instance
+			return response.completion
+		except Exception as e:
+			raise RuntimeError(str(e))
