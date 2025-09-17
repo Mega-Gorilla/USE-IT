@@ -51,6 +51,53 @@ DEFAULT_INCLUDE_ATTRIBUTES = [
 	'ax_name',
 ]
 
+STATIC_ATTRIBUTES = set(
+	[
+		'class',
+		'id',
+		'name',
+		'type',
+		'placeholder',
+		'aria-label',
+		'title',
+		# 'aria-expanded',
+		'role',
+		'data-testid',
+		'data-test',
+		'data-cy',
+		'data-selenium',
+		'for',
+		'required',
+		'disabled',
+		'readonly',
+		'checked',
+		'selected',
+		'multiple',
+		'href',
+		'target',
+		'rel',
+		'aria-describedby',
+		'aria-labelledby',
+		'aria-controls',
+		'aria-owns',
+		'aria-live',
+		'aria-atomic',
+		'aria-busy',
+		'aria-disabled',
+		'aria-hidden',
+		'aria-pressed',
+		'aria-checked',
+		'aria-selected',
+		'tabindex',
+		'alt',
+		'src',
+		'lang',
+		'itemscope',
+		'itemtype',
+		'itemprop',
+	]
+)
+
 
 @dataclass
 class CurrentPageTargets:
@@ -683,54 +730,9 @@ class EnhancedDOMTreeNode:
 		parent_branch_path = self._get_parent_branch_path()
 		parent_branch_path_string = '/'.join(parent_branch_path)
 
-		# Get attributes hash
-		static_attributes = set(
-			[
-				'class',
-				'id',
-				'name',
-				'type',
-				'placeholder',
-				'aria-label',
-				'title',
-				# 'aria-expanded',
-				'role',
-				'data-testid',
-				'data-test',
-				'data-cy',
-				'data-selenium',
-				'for',
-				'required',
-				'disabled',
-				'readonly',
-				'checked',
-				'selected',
-				'multiple',
-				'href',
-				'target',
-				'rel',
-				'aria-describedby',
-				'aria-labelledby',
-				'aria-controls',
-				'aria-owns',
-				'aria-live',
-				'aria-atomic',
-				'aria-busy',
-				'aria-disabled',
-				'aria-hidden',
-				'aria-pressed',
-				'aria-checked',
-				'aria-selected',
-				'tabindex',
-				'alt',
-				'src',
-				'lang',
-				'itemscope',
-				'itemtype',
-				'itemprop',
-			]
+		attributes_string = ''.join(
+			f'{k}={v}' for k, v in sorted((k, v) for k, v in self.attributes.items() if k in STATIC_ATTRIBUTES)
 		)
-		attributes_string = ''.join(f"{k}={v}" for k, v in sorted((k, v) for k, v in self.attributes.items() if k in static_attributes))
 
 		# Combine both for final hash
 		combined_string = f'{parent_branch_path_string}|{attributes_string}'
