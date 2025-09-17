@@ -2,7 +2,7 @@ import asyncio
 
 from pydantic import BaseModel
 
-from browser_use import Agent, Browser
+from browser_use import Browser, ChatOpenAI
 
 TASK = """
 On the current wikipedia page, find the latest huge edit and tell me what is was about.
@@ -19,6 +19,9 @@ class LatestEditFinder(BaseModel):
 	edit_url: str
 
 
+llm = ChatOpenAI('gpt-4.1-mini')
+
+
 async def main():
 	"""
 	Main function demonstrating mixed automation with Browser-Use and Playwright.
@@ -28,30 +31,21 @@ async def main():
 	browser = Browser(keep_alive=True)
 	await browser.start()
 
-	apple_target = await browser.get_current_target() or await browser.newTarget()
+	target = await browser.get_current_target() or await browser.newTarget()
 
 	# Go to apple wikipedia page
-	await apple_target.goto('https://en.wikipedia.org/wiki/Apple_Inc.')
+	await target.goto('https://browser-use.github.io/stress-tests/challenges/angularjs-form.html')
 
 	await asyncio.sleep(1)
 
-	element = await apple_target.getElementsByCSSSelector(
-		'#mw-content-text > div.mw-content-ltr.mw-parser-output > p:nth-child(8) > a:nth-child(3)'
-	)
+	element = await target.getElementByPrompt('zip code input', llm)
 
-	if first_element := element[0]:
-		print('Element found', first_element)
-		await first_element.click()
+	print('Element found', element)
+
+	if element:
+		await element.click()
 	else:
 		print('No element found')
-
-	agent = Agent(
-		task='clic on the button that says "technology company"',
-		browser=browser,
-	)
-	output = await agent.run(max_steps=1)
-
-	await asyncio.sleep(10)
 
 	await browser.stop()
 

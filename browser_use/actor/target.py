@@ -2,6 +2,12 @@
 
 from typing import TYPE_CHECKING
 
+from pydantic import BaseModel
+
+from browser_use.dom.serializer.serializer import DOMTreeSerializer
+from browser_use.dom.service import DomService
+from browser_use.llm.messages import SystemMessage, UserMessage
+
 if TYPE_CHECKING:
 	from cdp_use.cdp.dom.commands import (
 		DescribeNodeParameters,
@@ -37,6 +43,8 @@ class Target:
 		self._target_id = target_id
 		self._session_id: str | None = session_id
 		self._mouse: 'Mouse | None' = None
+
+		self._llm = llm
 
 	async def _ensure_session(self) -> str:
 		"""Ensure we have a session ID for this target."""
@@ -340,3 +348,100 @@ class Target:
 			elements.append(Element(self._browser_session, backend_node_id, session_id))
 
 		return elements
+
+	# AI METHODS
+
+	@property
+	def dom_service(self) -> 'DomService':
+		"""Get the DOM service for this target."""
+		return DomService(self._browser_session)
+
+	async def getElementByPrompt(self, prompt: str, llm: 'BaseChatModel | None' = None) -> 'Element | None':
+		"""Get an element by a prompt."""
+		await self._ensure_session()
+		llm = llm or self._llm
+
+		if not llm:
+			raise ValueError('LLM not provided')
+
+		dom_service = self.dom_service
+
+		enhanced_dom_tree = await dom_service.get_dom_tree(target_id=self._target_id)
+
+		serialized_dom_state, _ = DOMTreeSerializer(
+			enhanced_dom_tree, None, paint_order_filtering=True
+		).serialize_accessible_elements()
+
+		llm_representation = serialized_dom_state.llm_representation()
+
+		system_message = SystemMessage(
+			content="""You are an AI created to find an element on a page by a prompt.
+
+<browser_state>
+Interactive Elements: All interactive elements will be provided in format as [index]<type>text</type> where
+- index: Numeric identifier for interaction
+- type: HTML element type (button, input, etc.)
+- text: Element description
+
+Examples:
+[33]<div>User form</div>
+[35]<button aria-label='Submit form'>Submit</button>
+
+Note that:
+- Only elements with numeric indexes in [] are interactive
+- (stacked) indentation (with \t) is important and means that the element is a (html) child of the element above (with a lower index)
+- Pure text elements without [] are not interactive.
+</browser_state>
+
+Your task is to find an element index (if any) that matches the prompt (written in <prompt> tag).
+
+If non of the elements matches the, return None.
+
+Before you return the element index, reason about the state and elements for a sentence or two."""
+		)
+
+		state_message = UserMessage(
+			content=f"""
+			<browser_state>
+			{llm_representation}
+			</browser_state>
+
+			<prompt>
+			{prompt}
+			</prompt>
+			"""
+		)
+
+		class ElementResponse(BaseModel):
+			# thinking: str
+			element_highlight_index: int | None
+
+		llm_response = await llm.ainvoke(
+			[
+				system_message,
+				state_message,
+			],
+			output_format=ElementResponse,
+		)
+
+		element_highlight_index = llm_response.completion.element_highlight_index
+
+		if element_highlight_index is None or element_highlight_index not in serialized_dom_state.selector_map:
+			return None
+
+		element = serialized_dom_state.selector_map[element_highlight_index]
+
+		from .element import Element
+
+		return Element(self._browser_session, element.backend_node_id, self._session_id)
+
+	async def mustGetElementByPrompt(self, prompt: str, llm: 'BaseChatModel | None' = None) -> 'Element':
+		"""Get an element by a prompt.
+
+		@dev LLM can still return None, this just raises an error if the element is not found.
+		"""
+		element = await self.getElementByPrompt(prompt, llm)
+		if element is None:
+			raise ValueError(f'No element found for prompt: {prompt}')
+
+		return element
