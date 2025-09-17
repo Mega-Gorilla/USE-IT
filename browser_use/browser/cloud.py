@@ -73,7 +73,7 @@ class CloudBrowserClient:
 
 		if not api_token:
 			raise CloudBrowserAuthError(
-				'No authentication token found. Please set BROWSER_USE_API_KEY environment variable authenticate with the cloud service.'
+                'No authentication token found. Please set BROWSER_USE_API_KEY environment variable to authenticate with the cloud service.'
 			)
 
 		headers = {'X-Browser-Use-API-Key': api_token, 'Content-Type': 'application/json'}
