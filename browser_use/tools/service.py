@@ -948,7 +948,7 @@ You can also use it to explore the website.
 - Don't write comments in here, no human reads that.
 - Write only valid js code. 
 - use this to e.g. extract + filter links, convert the page to json into the format you need etc...
-- wrap your code in a function(){{ ... }})() or (async function(){{ ... }})() for async code
+- wrap your code in (function(){ ... })() or (async function(){ ... })() for async code
 - wrap your code in a try catch block
 - limit the output otherwise your context will explode
 - think if you deal with special elements like iframes / shadow roots etc
