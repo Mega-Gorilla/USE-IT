@@ -293,7 +293,7 @@ class Tools(Generic[Context]):
 				await event
 				# Wait for handler to complete and get any exception or metadata
 				click_metadata = await event.event_result(raise_if_any=True, raise_if_none=False)
-				memory = f'Clicked element with index {params.index}'
+				memory = 'Clicked element'
 
 				if params.while_holding_ctrl:
 					memory += ' and opened in new tab'
