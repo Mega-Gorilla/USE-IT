@@ -1434,23 +1434,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				self.eventbus.dispatch(CreateAgentTaskEvent.from_agent(self))
 
 			# Start browser session and attach watchdogs
-			assert self.browser_session is not None, 'Browser session must be initialized before starting'
-			self.logger.debug('🌐 Starting browser session...')
-
-			from browser_use.browser.events import BrowserStartEvent
-
-			event = self.browser_session.event_bus.dispatch(BrowserStartEvent())
-			await event
-			# Check if browser startup actually succeeded by getting the result
-			await event.event_result(raise_if_any=True, raise_if_none=False)
-
-			self.logger.debug('🔧 Browser session started with watchdogs attached')
-
-			# Ensure browser focus is properly established before executing initial actions
-			if self.browser_session and self.browser_session.agent_focus:
-				self.logger.debug(f'🎯 Browser focus established on target: {self.browser_session.agent_focus.target_id[-4:]}')
-			else:
-				self.logger.warning('⚠️ No browser focus established, may cause navigation issues')
+			await self.browser_session.start()
 
 			await self._execute_initial_actions()
 			# Log startup message on first step (only if we haven't already done steps)
@@ -1788,6 +1772,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		Returns:
 		                List of action results
 		"""
+		# Initialize browser session first (same as run function)
+		await self.browser_session.start()
+
 		# Execute initial actions if provided
 		if self.initial_actions:
 			result = await self.multi_act(self.initial_actions)
