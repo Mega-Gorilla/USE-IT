@@ -998,8 +998,6 @@ You can also use it to explore the website.
 					result_text = str(value) if 'value' in result_data else 'undefined'
 				elif isinstance(value, (dict, list)):
 					# Complex objects - should be serialized by returnByValue
-					import json
-
 					try:
 						result_text = json.dumps(value, ensure_ascii=False)
 					except (TypeError, ValueError):
