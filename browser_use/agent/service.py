@@ -1434,23 +1434,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				self.eventbus.dispatch(CreateAgentTaskEvent.from_agent(self))
 
 			# Start browser session and attach watchdogs
-			assert self.browser_session is not None, 'Browser session must be initialized before starting'
-			self.logger.debug('🌐 Starting browser session...')
-
-			from browser_use.browser.events import BrowserStartEvent
-
-			event = self.browser_session.event_bus.dispatch(BrowserStartEvent())
-			await event
-			# Check if browser startup actually succeeded by getting the result
-			await event.event_result(raise_if_any=True, raise_if_none=False)
-
-			self.logger.debug('🔧 Browser session started with watchdogs attached')
-
-			# Ensure browser focus is properly established before executing initial actions
-			if self.browser_session and self.browser_session.agent_focus:
-				self.logger.debug(f'🎯 Browser focus established on target: {self.browser_session.agent_focus.target_id[-4:]}')
-			else:
-				self.logger.warning('⚠️ No browser focus established, may cause navigation issues')
+			await self.browser_session.start()
 
 			await self._execute_initial_actions()
 			# Log startup message on first step (only if we haven't already done steps)
@@ -1788,23 +1772,26 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		Returns:
 		                List of action results
 		"""
-		# Execute initial actions if provided
-		if self.initial_actions:
-			result = await self.multi_act(self.initial_actions)
-			self.state.last_result = result
+		# Skip cloud sync session events for rerunning (we're replaying, not starting new)
+		self.state.session_initialized = True
+
+		# Initialize browser session
+		await self.browser_session.start()
 
 		results = []
 
 		for i, history_item in enumerate(history.history):
 			goal = history_item.model_output.current_state.next_goal if history_item.model_output else ''
-			self.logger.info(f'Replaying step {i + 1}/{len(history.history)}: goal: {goal}')
+			step_num = history_item.metadata.step_number if history_item.metadata else i
+			step_name = 'Initial actions' if step_num == 0 else f'Step {step_num}'
+			self.logger.info(f'Replaying {step_name} ({i + 1}/{len(history.history)}): {goal}')
 
 			if (
 				not history_item.model_output
 				or not history_item.model_output.action
 				or history_item.model_output.action == [None]
 			):
-				self.logger.warning(f'Step {i + 1}: No action to replay, skipping')
+				self.logger.warning(f'{step_name}: No action to replay, skipping')
 				results.append(ActionResult(error='No action to replay'))
 				continue
 
@@ -1818,15 +1805,16 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				except Exception as e:
 					retry_count += 1
 					if retry_count == max_retries:
-						error_msg = f'Step {i + 1} failed after {max_retries} attempts: {str(e)}'
+						error_msg = f'{step_name} failed after {max_retries} attempts: {str(e)}'
 						self.logger.error(error_msg)
 						if not skip_failures:
 							results.append(ActionResult(error=error_msg))
 							raise RuntimeError(error_msg)
 					else:
-						self.logger.warning(f'Step {i + 1} failed (attempt {retry_count}/{max_retries}), retrying...')
+						self.logger.warning(f'{step_name} failed (attempt {retry_count}/{max_retries}), retrying...')
 						await asyncio.sleep(delay_between_actions)
 
+		await self.close()
 		return results
 
 	async def _execute_initial_actions(self) -> None:
@@ -1838,6 +1826,40 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			if result and self.initial_url and result[0].long_term_memory:
 				result[0].long_term_memory = f'Found initial url and automatically loaded it. {result[0].long_term_memory}'
 			self.state.last_result = result
+
+			# Save initial actions to history as step 0 for rerun capability
+			# Skip browser state capture for initial actions (usually just URL navigation)
+			model_output = self.AgentOutput(
+				evaluation_previous_goal='Starting agent with initial actions',
+				memory='',
+				next_goal='Execute initial navigation or setup actions',
+				action=self.initial_actions,
+			)
+
+			metadata = StepMetadata(
+				step_number=0,
+				step_start_time=time.time(),
+				step_end_time=time.time(),
+			)
+
+			# Create minimal browser state history for initial actions
+			state_history = BrowserStateHistory(
+				url=self.initial_url or '',
+				title='Initial Actions',
+				tabs=[],
+				interacted_element=[None] * len(self.initial_actions),  # No DOM elements needed
+				screenshot_path=None,
+			)
+
+			history_item = AgentHistory(
+				model_output=model_output,
+				result=result,
+				state=state_history,
+				metadata=metadata,
+			)
+
+			self.history.add_item(history_item)
+			self.logger.debug('📝 Saved initial actions to history as step 0')
 			self.logger.debug('Initial actions completed')
 
 	async def _execute_history_step(self, history_item: AgentHistory, delay: float) -> list[ActionResult]:
