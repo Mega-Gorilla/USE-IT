@@ -684,7 +684,20 @@ class EnhancedDOMTreeNode:
 		parent_branch_path_string = '/'.join(parent_branch_path)
 
 		# Get attributes hash
-		attributes_string = ''.join(f'{key}={value}' for key, value in self.attributes.items())
+		static_attributes = set(
+			[
+				'class',
+				'id',
+				'name',
+				'type',
+				'placeholder',
+				'aria-label',
+				'title',
+				'value',
+				'aria-expanded',
+			]
+		)
+		attributes_string = ''.join(f'{key}={value}' for key, value in self.attributes.items() if key in static_attributes)
 
 		# Combine both for final hash
 		combined_string = f'{parent_branch_path_string}|{attributes_string}'
