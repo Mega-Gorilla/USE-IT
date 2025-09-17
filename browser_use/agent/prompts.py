@@ -135,7 +135,6 @@ class AgentMessagePrompt:
 			total_pages = pi.page_height / pi.viewport_height if pi.viewport_height > 0 else 0
 			current_page_position = pi.scroll_y / max(pi.page_height - pi.viewport_height, 1)
 			page_info_text = '<page_info>'
-			page_info_text += f'Viewport size: {pi.viewport_width}x{pi.viewport_height}px, Total page size: {pi.page_width}x{pi.page_height}px, '
 			page_info_text += f'{pages_above:.1f} pages above, '
 			page_info_text += f'{pages_below:.1f} pages below, '
 			page_info_text += f'{total_pages:.1f} total pages'
@@ -204,9 +203,6 @@ Available tabs:
 			step_info_description = f'Step {self.step_info.step_number + 1}. Maximum steps: {self.step_info.max_steps}\n'
 		else:
 			step_info_description = ''
-
-		time_str = datetime.now().strftime('%Y-%m-%d %H:%M')
-		step_info_description += f'Current date and time: {time_str}'
 
 		time_str = datetime.now().strftime('%Y-%m-%d')
 		step_info_description += f'Current date: {time_str}'
