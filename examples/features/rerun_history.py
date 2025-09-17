@@ -25,23 +25,16 @@ from browser_use.llm.openai.chat import ChatOpenAI
 async def main():
 	# Example task to demonstrate history saving and rerunning
 	history_file = Path('agent_history.json')
-	task = 'Go to GitHub and find the browser-use repository'
+	task = 'Go to https://browser-use.github.io/stress-tests/challenges/ember-form.html and fill the form with example data.'
 	llm = ChatOpenAI(model='gpt-4.1-mini')
 
-	agent = Agent(task=task, llm=llm)
-
+	agent = Agent(task=task, llm=llm, max_actions_per_step=1)
 	await agent.run(max_steps=5)
-
 	agent.save_history(history_file)
 
 	rerun_agent = Agent(task='', llm=llm)
 
-	results = await rerun_agent.load_and_rerun(
-		history_file=history_file,
-		max_retries=3,
-		skip_failures=True,
-		delay_between_actions=1.0,
-	)
+	await rerun_agent.load_and_rerun(history_file)
 
 
 if __name__ == '__main__':
