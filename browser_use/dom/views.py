@@ -693,7 +693,7 @@ class EnhancedDOMTreeNode:
 				'placeholder',
 				'aria-label',
 				'title',
-				'aria-expanded',
+				# 'aria-expanded',
 				'role',
 				'data-testid',
 				'data-test',
