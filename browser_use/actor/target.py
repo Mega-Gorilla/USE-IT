@@ -281,6 +281,10 @@ class Target:
 		params: 'NavigateParameters' = {'url': url}
 		await self._client.send.Page.navigate(params, session_id=session_id)
 
+	async def navigate(self, url: str) -> None:
+		"""Alias for goto."""
+		await self.goto(url)
+
 	async def go_back(self) -> None:
 		"""Navigate back in history."""
 		session_id = await self._ensure_session()
@@ -433,9 +437,9 @@ Before you return the element index, reason about the state and elements for a s
 
 		element = serialized_dom_state.selector_map[element_highlight_index]
 
-		from .element import Element
+		from .element import Element as Element_
 
-		return Element(self._browser_session, element.backend_node_id, self._session_id)
+		return Element_(self._browser_session, element.backend_node_id, self._session_id)
 
 	async def must_get_element_by_prompt(self, prompt: str, llm: 'BaseChatModel | None' = None) -> 'Element':
 		"""Get an element by a prompt.

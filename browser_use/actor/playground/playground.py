@@ -34,7 +34,7 @@ async def main():
 
 		# Navigate to Wikipedia using integrated methods
 		logger.info('📖 Navigating to Wikipedia...')
-		target = await browser.newTarget('https://en.wikipedia.org')
+		target = await browser.new_target('https://en.wikipedia.org')
 
 		# Get basic page info
 		url = await target.get_url()
@@ -181,12 +181,12 @@ async def main():
 
 		# Test creating new target
 		logger.info('🆕 Creating new blank target...')
-		new_target = await browser.newTarget()
+		new_target = await browser.new_target()
 		new_target_url = await new_target.get_url()
 		logger.info(f'🆕 New target created with URL: {new_target_url}')
 
 		# Get all targets
-		all_targets = await browser.getTargets()
+		all_targets = await browser.get_targets()
 		logger.info(f'📑 Total targets: {len(all_targets)}')
 
 		# Test form interaction if we can find a form
@@ -213,7 +213,7 @@ async def main():
 		logger.info('🕒 Waiting 2 seconds before closing the new target...')
 		await asyncio.sleep(2)
 		logger.info('🗑️ Closing new target...')
-		await browser.closeTarget(new_target)
+		await browser.close_target(new_target)
 
 		logger.info('✅ Playground completed successfully!')
 

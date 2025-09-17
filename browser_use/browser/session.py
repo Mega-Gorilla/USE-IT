@@ -844,7 +844,7 @@ class BrowserSession(BaseModel):
 		assert self._cdp_client_root is not None, 'CDP client not initialized - browser may not be connected yet'
 		return self._cdp_client_root
 
-	async def newTarget(self, url: str | None = None) -> 'Target':
+	async def new_target(self, url: str | None = None) -> 'Target':
 		"""Create a new target (tab)."""
 		from cdp_use.cdp.target.commands import CreateTargetParameters
 
@@ -869,7 +869,7 @@ class BrowserSession(BaseModel):
 
 		return Target(self, target_info['targetId'])
 
-	async def getTargets(self) -> list['Target']:
+	async def get_targets(self) -> list['Target']:
 		"""Get all available targets."""
 		result = await self.cdp_client.send.Target.getTargets()
 
@@ -883,7 +883,7 @@ class BrowserSession(BaseModel):
 
 		return targets
 
-	async def closeTarget(self, target: 'Union[Target, str]') -> None:
+	async def close_target(self, target: 'Union[Target, str]') -> None:
 		"""Close a target by Target object or target ID."""
 		from cdp_use.cdp.target.commands import CloseTargetParameters
 
@@ -909,7 +909,7 @@ class BrowserSession(BaseModel):
 		result = await self.cdp_client.send.Network.getCookies(params)
 		return result['cookies']
 
-	async def clearCookies(self) -> None:
+	async def clear_cookies(self) -> None:
 		"""Clear all cookies."""
 		await self.cdp_client.send.Network.clearBrowserCookies()
 

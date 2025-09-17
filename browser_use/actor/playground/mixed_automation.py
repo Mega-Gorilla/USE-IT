@@ -31,7 +31,7 @@ async def main():
 	browser = Browser(keep_alive=True)
 	await browser.start()
 
-	target = await browser.get_current_target() or await browser.newTarget()
+	target = await browser.get_current_target() or await browser.new_target()
 
 	# Go to apple wikipedia page
 	await target.goto('https://browser-use.github.io/stress-tests/challenges/angularjs-form.html')
