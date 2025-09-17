@@ -24,43 +24,17 @@ from browser_use.llm.openai.chat import ChatOpenAI
 
 async def main():
 	# Example task to demonstrate history saving and rerunning
-	task = 'Go to GitHub and find the browser-use repository'
 	history_file = Path('agent_history.json')
+	task = 'Go to https://browser-use.github.io/stress-tests/challenges/ember-form.html and fill the form with example data.'
 	llm = ChatOpenAI(model='gpt-4.1-mini')
 
-	# Step 1: Run agent and save history
-	print('🚀 Running agent and saving history...')
-
-	agent = Agent(
-		task=task,
-		llm=llm,
-	)
-
-	# Run the agent
-	history = await agent.run(max_steps=5)
-
-	# Save the history for later rerun
+	agent = Agent(task=task, llm=llm, max_actions_per_step=1)
+	await agent.run(max_steps=5)
 	agent.save_history(history_file)
 
-	print(f'✅ History saved to {history_file}')
-	print(f'📊 Completed {len(history.history)} steps')
+	rerun_agent = Agent(task='', llm=llm)
 
-	# Step 2: Load and rerun the history
-	print('\n🔄 Loading and rerunning history...')
-
-	# Create new agent for rerunning (task can be empty since we're replaying)
-	rerun_agent = Agent(
-		task='',
-		llm=llm,
-	)
-
-	# Load and rerun the saved history
-	results = await rerun_agent.load_and_rerun(
-		history_file=history_file,
-		max_retries=3,  # Retry failed actions up to 3 times
-		skip_failures=True,  # Continue even if some actions fail
-		delay_between_actions=1.0,  # Wait 1 second between actions
-	)
+	await rerun_agent.load_and_rerun(history_file)
 
 
 if __name__ == '__main__':
