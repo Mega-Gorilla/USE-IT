@@ -28,11 +28,11 @@ async def main():
 	task = 'Go to GitHub and find the browser-use repository'
 	llm = ChatOpenAI(model='gpt-4.1-mini')
 
-	# agent = Agent(task=task, llm=llm)
+	agent = Agent(task=task, llm=llm)
 
-	# await agent.run(max_steps=5)
+	await agent.run(max_steps=5)
 
-	# agent.save_history(history_file)
+	agent.save_history(history_file)
 
 	rerun_agent = Agent(task='', llm=llm)
 
