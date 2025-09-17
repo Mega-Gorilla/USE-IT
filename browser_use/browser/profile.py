@@ -550,6 +550,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	# Session/connection configuration
 	cdp_url: str | None = Field(default=None, description='CDP URL for connecting to existing browser instance')
 	is_local: bool = Field(default=False, description='Whether this is a local browser instance')
+	cloud_browser: bool = Field(default=False, description='Use browser-use cloud browser service instead of local browser')
 	# label: str = 'default'
 
 	# custom options we provide that aren't native playwright kwargs
