@@ -730,7 +730,7 @@ class EnhancedDOMTreeNode:
 				'itemprop',
 			]
 		)
-		attributes_string = ''.join(f'{key}={value}' for key, value in self.attributes.items() if key in static_attributes)
+		attributes_string = ''.join(f"{k}={v}" for k, v in sorted((k, v) for k, v in self.attributes.items() if k in static_attributes))
 
 		# Combine both for final hash
 		combined_string = f'{parent_branch_path_string}|{attributes_string}'
