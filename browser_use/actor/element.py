@@ -95,74 +95,110 @@ class Element:
 		click_count: int = 1,
 		modifiers: list[ModifierType] | None = None,
 	) -> None:
-		"""Click the element using robust fallback strategies."""
-		# Try multiple methods to get element geometry
-		quads = []
+		"""Click the element using the advanced watchdog implementation."""
 
-		# Method 1: Try DOM.getContentQuads first (best for inline elements)
 		try:
-			content_quads_result = await self._client.send.DOM.getContentQuads(
-				params={'backendNodeId': self._backend_node_id}, session_id=self._session_id
-			)
-			if 'quads' in content_quads_result and content_quads_result['quads']:
-				quads = content_quads_result['quads']
-		except Exception:
-			pass
+			# Get viewport dimensions for visibility checks
+			layout_metrics = await self._client.send.Page.getLayoutMetrics(session_id=self._session_id)
+			viewport_width = layout_metrics['layoutViewport']['clientWidth']
+			viewport_height = layout_metrics['layoutViewport']['clientHeight']
 
-		# Method 2: Fall back to DOM.getBoxModel
-		if not quads:
+			# Try multiple methods to get element geometry
+			quads = []
+
+			# Method 1: Try DOM.getContentQuads first (best for inline elements and complex layouts)
 			try:
-				box_model = await self._client.send.DOM.getBoxModel(
+				content_quads_result = await self._client.send.DOM.getContentQuads(
 					params={'backendNodeId': self._backend_node_id}, session_id=self._session_id
 				)
-				if 'model' in box_model and 'content' in box_model['model']:
-					content_quad = box_model['model']['content']
-					if len(content_quad) >= 8:
-						quads = [content_quad]
+				if 'quads' in content_quads_result and content_quads_result['quads']:
+					quads = content_quads_result['quads']
 			except Exception:
 				pass
 
-		# Method 3: Fall back to JavaScript getBoundingClientRect
-		if not quads:
-			try:
-				result = await self._client.send.DOM.resolveNode(
-					params={'backendNodeId': self._backend_node_id}, session_id=self._session_id
-				)
-				if 'object' in result and 'objectId' in result['object']:
-					object_id = result['object']['objectId']
-
-					bounds_result = await self._client.send.Runtime.callFunctionOn(
-						params={
-							'functionDeclaration': """
-								function() {
-									const rect = this.getBoundingClientRect();
-									return {
-										x: rect.left, y: rect.top,
-										width: rect.width, height: rect.height
-									};
-								}
-							""",
-							'objectId': object_id,
-							'returnByValue': True,
-						},
-						session_id=self._session_id,
+			# Method 2: Fall back to DOM.getBoxModel
+			if not quads:
+				try:
+					box_model = await self._client.send.DOM.getBoxModel(
+						params={'backendNodeId': self._backend_node_id}, session_id=self._session_id
 					)
+					if 'model' in box_model and 'content' in box_model['model']:
+						content_quad = box_model['model']['content']
+						if len(content_quad) >= 8:
+							# Convert box model format to quad format
+							quads = [
+								[
+									content_quad[0],
+									content_quad[1],  # x1, y1
+									content_quad[2],
+									content_quad[3],  # x2, y2
+									content_quad[4],
+									content_quad[5],  # x3, y3
+									content_quad[6],
+									content_quad[7],  # x4, y4
+								]
+							]
+				except Exception:
+					pass
 
-					if 'result' in bounds_result and 'value' in bounds_result['result']:
-						rect = bounds_result['result']['value']
-						x, y, w, h = rect['x'], rect['y'], rect['width'], rect['height']
-						quads = [[x, y, x + w, y, x + w, y + h, x, y + h]]
-			except Exception:
-				pass
+			# Method 3: Fall back to JavaScript getBoundingClientRect
+			if not quads:
+				try:
+					result = await self._client.send.DOM.resolveNode(
+						params={'backendNodeId': self._backend_node_id}, session_id=self._session_id
+					)
+					if 'object' in result and 'objectId' in result['object']:
+						object_id = result['object']['objectId']
 
-		# If we still don't have quads, fall back to JS click
-		if not quads:
-			try:
-				result = await self._client.send.DOM.resolveNode(
-					params={'backendNodeId': self._backend_node_id}, session_id=self._session_id
-				)
-				if 'object' in result and 'objectId' in result['object']:
+						# Get bounding rect via JavaScript
+						bounds_result = await self._client.send.Runtime.callFunctionOn(
+							params={
+								'functionDeclaration': """
+									function() {
+										const rect = this.getBoundingClientRect();
+										return {
+											x: rect.left,
+											y: rect.top,
+											width: rect.width,
+											height: rect.height
+										};
+									}
+								""",
+								'objectId': object_id,
+								'returnByValue': True,
+							},
+							session_id=self._session_id,
+						)
+
+						if 'result' in bounds_result and 'value' in bounds_result['result']:
+							rect = bounds_result['result']['value']
+							# Convert rect to quad format
+							x, y, w, h = rect['x'], rect['y'], rect['width'], rect['height']
+							quads = [
+								[
+									x,
+									y,  # top-left
+									x + w,
+									y,  # top-right
+									x + w,
+									y + h,  # bottom-right
+									x,
+									y + h,  # bottom-left
+								]
+							]
+				except Exception:
+					pass
+
+			# If we still don't have quads, fall back to JS click
+			if not quads:
+				try:
+					result = await self._client.send.DOM.resolveNode(
+						params={'backendNodeId': self._backend_node_id}, session_id=self._session_id
+					)
+					if 'object' not in result or 'objectId' not in result['object']:
+						raise Exception('Failed to find DOM element based on backendNodeId, maybe page content changed?')
 					object_id = result['object']['objectId']
+
 					await self._client.send.Runtime.callFunctionOn(
 						params={
 							'functionDeclaration': 'function() { this.click(); }',
@@ -170,203 +206,304 @@ class Element:
 						},
 						session_id=self._session_id,
 					)
+					await asyncio.sleep(0.05)
 					return
-			except Exception as e:
-				raise RuntimeError(f'Failed to click element: {e}')
+				except Exception as js_e:
+					raise Exception(f'Failed to click element: {js_e}')
 
-		# Calculate click coordinates from the best quad
-		best_quad = quads[0]
-		center_x = sum(best_quad[i] for i in range(0, 8, 2)) / 4
-		center_y = sum(best_quad[i] for i in range(1, 8, 2)) / 4
+			# Find the largest visible quad within the viewport
+			best_quad = None
+			best_area = 0
 
-		# Convert modifiers to CDP format
-		modifier_value = 0
-		if modifiers:
-			modifier_map = {'Alt': 1, 'Control': 2, 'Meta': 4, 'Shift': 8}
-			for mod in modifiers:
-				modifier_value |= modifier_map.get(mod, 0)
+			for quad in quads:
+				if len(quad) < 8:
+					continue
 
-		# Scroll element into view
-		try:
-			await self._client.send.DOM.scrollIntoViewIfNeeded(
-				params={'backendNodeId': self._backend_node_id}, session_id=self._session_id
-			)
-			await asyncio.sleep(0.05)  # Wait for scroll to complete
-		except Exception:
-			pass  # Continue even if scroll fails
+				# Calculate quad bounds
+				xs = [quad[i] for i in range(0, 8, 2)]
+				ys = [quad[i] for i in range(1, 8, 2)]
+				min_x, max_x = min(xs), max(xs)
+				min_y, max_y = min(ys), max(ys)
 
-		# Move mouse to element first
-		try:
-			await self._client.send.Input.dispatchMouseEvent(
-				{
-					'type': 'mouseMoved',
-					'x': center_x,
-					'y': center_y,
-				},
-				session_id=self._session_id,
-			)
-			await asyncio.sleep(0.05)
-		except Exception:
-			pass
+				# Check if quad intersects with viewport
+				if max_x < 0 or max_y < 0 or min_x > viewport_width or min_y > viewport_height:
+					continue  # Quad is completely outside viewport
 
-		# Perform the click with timeout handling
-		try:
-			# Mouse press
-			await asyncio.wait_for(
-				self._client.send.Input.dispatchMouseEvent(
-					{
-						'type': 'mousePressed',
-						'x': center_x,
-						'y': center_y,
-						'button': button,
-						'clickCount': click_count,
-						'modifiers': modifier_value,
-					},
-					session_id=self._session_id,
-				),
-				timeout=1.0,
-			)
-			await asyncio.sleep(0.08)
-		except TimeoutError:
-			pass  # Continue with mouse release
+				# Calculate visible area (intersection with viewport)
+				visible_min_x = max(0, min_x)
+				visible_max_x = min(viewport_width, max_x)
+				visible_min_y = max(0, min_y)
+				visible_max_y = min(viewport_height, max_y)
 
-		# Mouse release
-		try:
-			await asyncio.wait_for(
-				self._client.send.Input.dispatchMouseEvent(
-					{
-						'type': 'mouseReleased',
-						'x': center_x,
-						'y': center_y,
-						'button': button,
-						'clickCount': click_count,
-						'modifiers': modifier_value,
-					},
-					session_id=self._session_id,
-				),
-				timeout=3.0,
-			)
-		except TimeoutError:
-			pass  # Click may have succeeded even if release timed out
+				visible_width = visible_max_x - visible_min_x
+				visible_height = visible_max_y - visible_min_y
+				visible_area = visible_width * visible_height
 
-	async def fill(self, value: str) -> None:
-		"""Fill the input element with text using robust clearing and typing."""
-		# Focus the element first
-		try:
-			await self.focus()
-		except Exception:
-			logger.warning('Failed to focus element')
+				if visible_area > best_area:
+					best_area = visible_area
+					best_quad = quad
 
-		# Get object ID for advanced operations
-		result = await self._client.send.DOM.resolveNode(
-			params={'backendNodeId': self._backend_node_id}, session_id=self._session_id
-		)
-		if 'object' not in result or 'objectId' not in result['object']:
-			raise RuntimeError('Cannot resolve element for text input')
+			if not best_quad:
+				# No visible quad found, use the first quad anyway
+				best_quad = quads[0]
 
-		object_id = result['object']['objectId']
+			# Calculate center point of the best quad
+			center_x = sum(best_quad[i] for i in range(0, 8, 2)) / 4
+			center_y = sum(best_quad[i] for i in range(1, 8, 2)) / 4
 
-		# Strategy 1: Direct JavaScript value setting (most reliable)
-		try:
-			await self._client.send.Runtime.callFunctionOn(
-				params={
-					'functionDeclaration': """
-						function() { 
-							this.value = ""; 
-							this.dispatchEvent(new Event("input", { bubbles: true })); 
-							this.dispatchEvent(new Event("change", { bubbles: true })); 
-							return this.value;
-						}
-					""",
-					'objectId': object_id,
-					'returnByValue': True,
-				},
-				session_id=self._session_id,
-			)
-		except Exception:
-			# Strategy 2: Triple-click + Delete fallback
+			# Ensure click point is within viewport bounds
+			center_x = max(0, min(viewport_width - 1, center_x))
+			center_y = max(0, min(viewport_height - 1, center_y))
+
+			# Scroll element into view
 			try:
-				# Get element bounds for triple-click
-				bounds_result = await self._client.send.Runtime.callFunctionOn(
+				await self._client.send.DOM.scrollIntoViewIfNeeded(
+					params={'backendNodeId': self._backend_node_id}, session_id=self._session_id
+				)
+				await asyncio.sleep(0.05)  # Wait for scroll to complete
+			except Exception:
+				pass
+
+			# Calculate modifier bitmask for CDP
+			modifier_value = 0
+			if modifiers:
+				modifier_map = {'Alt': 1, 'Control': 2, 'Meta': 4, 'Shift': 8}
+				for mod in modifiers:
+					modifier_value |= modifier_map.get(mod, 0)
+
+			# Perform the click using CDP
+			try:
+				# Move mouse to element
+				await self._client.send.Input.dispatchMouseEvent(
+					params={
+						'type': 'mouseMoved',
+						'x': center_x,
+						'y': center_y,
+					},
+					session_id=self._session_id,
+				)
+				await asyncio.sleep(0.05)
+
+				# Mouse down
+				try:
+					await asyncio.wait_for(
+						self._client.send.Input.dispatchMouseEvent(
+							params={
+								'type': 'mousePressed',
+								'x': center_x,
+								'y': center_y,
+								'button': button,
+								'clickCount': click_count,
+								'modifiers': modifier_value,
+							},
+							session_id=self._session_id,
+						),
+						timeout=1.0,  # 1 second timeout for mousePressed
+					)
+					await asyncio.sleep(0.08)
+				except TimeoutError:
+					pass  # Don't sleep if we timed out
+
+				# Mouse up
+				try:
+					await asyncio.wait_for(
+						self._client.send.Input.dispatchMouseEvent(
+							params={
+								'type': 'mouseReleased',
+								'x': center_x,
+								'y': center_y,
+								'button': button,
+								'clickCount': click_count,
+								'modifiers': modifier_value,
+							},
+							session_id=self._session_id,
+						),
+						timeout=3.0,  # 3 second timeout for mouseReleased
+					)
+				except TimeoutError:
+					pass
+
+			except Exception as e:
+				# Fall back to JavaScript click via CDP
+				try:
+					result = await self._client.send.DOM.resolveNode(
+						params={'backendNodeId': self._backend_node_id}, session_id=self._session_id
+					)
+					if 'object' not in result or 'objectId' not in result['object']:
+						raise Exception('Failed to find DOM element based on backendNodeId, maybe page content changed?')
+					object_id = result['object']['objectId']
+
+					await self._client.send.Runtime.callFunctionOn(
+						params={
+							'functionDeclaration': 'function() { this.click(); }',
+							'objectId': object_id,
+						},
+						session_id=self._session_id,
+					)
+					await asyncio.sleep(0.1)
+					return
+				except Exception as js_e:
+					raise Exception(f'Failed to click element: {e}')
+
+		except Exception as e:
+			# Extract key element info for error message
+			raise RuntimeError(f'Failed to click element: {e}')
+
+	async def fill(self, value: str, clear_existing: bool = True) -> None:
+		"""Fill the input element using proper CDP methods with improved focus handling."""
+		try:
+			# Use the existing CDP client and session
+			cdp_client = self._client
+			session_id = self._session_id
+			backend_node_id = self._backend_node_id
+
+			# Track coordinates for metadata
+			input_coordinates = None
+
+			# Scroll element into view
+			try:
+				await cdp_client.send.DOM.scrollIntoViewIfNeeded(params={'backendNodeId': backend_node_id}, session_id=session_id)
+				await asyncio.sleep(0.01)
+			except Exception as e:
+				logger.warning(f'Failed to scroll element into view: {e}')
+
+			# Get object ID for the element
+			result = await cdp_client.send.DOM.resolveNode(
+				params={'backendNodeId': backend_node_id},
+				session_id=session_id,
+			)
+			if 'object' not in result or 'objectId' not in result['object']:
+				raise RuntimeError('Failed to get object ID for element')
+			object_id = result['object']['objectId']
+
+			# Get element coordinates for focus
+			try:
+				bounds_result = await cdp_client.send.Runtime.callFunctionOn(
 					params={
 						'functionDeclaration': 'function() { return this.getBoundingClientRect(); }',
 						'objectId': object_id,
 						'returnByValue': True,
 					},
-					session_id=self._session_id,
+					session_id=session_id,
 				)
-
 				if bounds_result.get('result', {}).get('value'):
-					bounds = bounds_result['result'].get('value')
-
-					if not bounds:
-						raise RuntimeError('Element bounds not found')
-
+					bounds = bounds_result['result']['value']  # type: ignore
 					center_x = bounds['x'] + bounds['width'] / 2
 					center_y = bounds['y'] + bounds['height'] / 2
+					input_coordinates = {'input_x': center_x, 'input_y': center_y}
+					logger.debug(f'Using element coordinates: x={center_x:.1f}, y={center_y:.1f}')
+			except Exception as e:
+				logger.debug(f'Could not get element coordinates: {e}')
 
-					# Triple-click to select all
-					await self._client.send.Input.dispatchMouseEvent(
-						{'type': 'mousePressed', 'x': center_x, 'y': center_y, 'button': 'left', 'clickCount': 3},
-						session_id=self._session_id,
-					)
-					await self._client.send.Input.dispatchMouseEvent(
-						{'type': 'mouseReleased', 'x': center_x, 'y': center_y, 'button': 'left', 'clickCount': 3},
-						session_id=self._session_id,
-					)
+			# Ensure session_id is not None
+			if session_id is None:
+				raise RuntimeError('Session ID is required for fill operation')
 
-					# Delete selected text
-					await self._client.send.Input.dispatchKeyEvent(
-						{'type': 'keyDown', 'key': 'Delete', 'code': 'Delete'},
-						session_id=self._session_id,
-					)
-					await self._client.send.Input.dispatchKeyEvent(
-						{'type': 'keyUp', 'key': 'Delete', 'code': 'Delete'},
-						session_id=self._session_id,
-					)
-			except Exception:
-				# Strategy 3: Ctrl/Cmd+A + Backspace
-				import platform
-
-				is_macos = platform.system() == 'Darwin'
-				modifier = 4 if is_macos else 2  # Meta=4 (Cmd), Ctrl=2
-
-				# Select all
-				await self._client.send.Input.dispatchKeyEvent(
-					{'type': 'keyDown', 'key': 'a', 'code': 'KeyA', 'modifiers': modifier},
-					session_id=self._session_id,
-				)
-				await self._client.send.Input.dispatchKeyEvent(
-					{'type': 'keyUp', 'key': 'a', 'code': 'KeyA', 'modifiers': modifier},
-					session_id=self._session_id,
-				)
-
-				# Delete with Backspace
-				await self._client.send.Input.dispatchKeyEvent(
-					{'type': 'keyDown', 'key': 'Backspace', 'code': 'Backspace'},
-					session_id=self._session_id,
-				)
-				await self._client.send.Input.dispatchKeyEvent(
-					{'type': 'keyUp', 'key': 'Backspace', 'code': 'Backspace'},
-					session_id=self._session_id,
-				)
-
-		# Type the new value character by character for better compatibility
-		for char in value:
-			# Send proper key events for each character
-			await self._client.send.Input.dispatchKeyEvent(
-				{'type': 'keyDown', 'key': char},
-				session_id=self._session_id,
+			# Step 1: Focus the element
+			focused_successfully = await self._focus_element_simple(
+				backend_node_id=backend_node_id,
+				object_id=object_id,
+				cdp_client=cdp_client,
+				session_id=session_id,
+				input_coordinates=input_coordinates,
 			)
-			await self._client.send.Input.dispatchKeyEvent(
-				{'type': 'char', 'text': char},
-				session_id=self._session_id,
-			)
-			await self._client.send.Input.dispatchKeyEvent(
-				{'type': 'keyUp', 'key': char},
-				session_id=self._session_id,
-			)
-			await asyncio.sleep(0.001)  # Small delay for natural typing
+
+			# Step 2: Clear existing text if requested
+			if clear_existing and focused_successfully:
+				cleared_successfully = await self._clear_text_field(
+					object_id=object_id, cdp_client=cdp_client, session_id=session_id
+				)
+				if not cleared_successfully:
+					logger.warning('Text field clearing failed, typing may append to existing text')
+
+			# Step 3: Type the text character by character using proper human-like key events
+			logger.debug(f'Typing text character by character: "{value}"')
+
+			for i, char in enumerate(value):
+				# Handle newline characters as Enter key
+				if char == '\n':
+					# Send proper Enter key sequence
+					await cdp_client.send.Input.dispatchKeyEvent(
+						params={
+							'type': 'keyDown',
+							'key': 'Enter',
+							'code': 'Enter',
+							'windowsVirtualKeyCode': 13,
+						},
+						session_id=session_id,
+					)
+
+					# Small delay to emulate human typing speed
+					await asyncio.sleep(0.001)
+
+					# Send char event with carriage return
+					await cdp_client.send.Input.dispatchKeyEvent(
+						params={
+							'type': 'char',
+							'text': '\r',
+							'key': 'Enter',
+						},
+						session_id=session_id,
+					)
+
+					# Send keyUp event
+					await cdp_client.send.Input.dispatchKeyEvent(
+						params={
+							'type': 'keyUp',
+							'key': 'Enter',
+							'code': 'Enter',
+							'windowsVirtualKeyCode': 13,
+						},
+						session_id=session_id,
+					)
+				else:
+					# Handle regular characters
+					# Get proper modifiers, VK code, and base key for the character
+					modifiers, vk_code, base_key = self._get_char_modifiers_and_vk(char)
+					key_code = self._get_key_code_for_char(base_key)
+
+					# Step 1: Send keyDown event (NO text parameter)
+					await cdp_client.send.Input.dispatchKeyEvent(
+						params={
+							'type': 'keyDown',
+							'key': base_key,
+							'code': key_code,
+							'modifiers': modifiers,
+							'windowsVirtualKeyCode': vk_code,
+						},
+						session_id=session_id,
+					)
+
+					# Small delay to emulate human typing speed
+					await asyncio.sleep(0.001)
+
+					# Step 2: Send char event (WITH text parameter) - this is crucial for text input
+					await cdp_client.send.Input.dispatchKeyEvent(
+						params={
+							'type': 'char',
+							'text': char,
+							'key': char,
+						},
+						session_id=session_id,
+					)
+
+					# Step 3: Send keyUp event (NO text parameter)
+					await cdp_client.send.Input.dispatchKeyEvent(
+						params={
+							'type': 'keyUp',
+							'key': base_key,
+							'code': key_code,
+							'modifiers': modifiers,
+							'windowsVirtualKeyCode': vk_code,
+						},
+						session_id=session_id,
+					)
+
+				# Add 18ms delay between keystrokes
+				await asyncio.sleep(0.018)
+
+		except Exception as e:
+			raise Exception(f'Failed to fill element: {str(e)}')
 
 	async def hover(self) -> None:
 		"""Hover over the element."""
@@ -569,6 +706,301 @@ class Element:
 		result = await self._client.send.Page.captureScreenshot(params, session_id=self._session_id)
 
 		return result['data']
+
+	# Helpers for modifiers etc
+	def _get_char_modifiers_and_vk(self, char: str) -> tuple[int, int, str]:
+		"""Get modifiers, virtual key code, and base key for a character.
+
+		Returns:
+			(modifiers, windowsVirtualKeyCode, base_key)
+		"""
+		# Characters that require Shift modifier
+		shift_chars = {
+			'!': ('1', 49),
+			'@': ('2', 50),
+			'#': ('3', 51),
+			'$': ('4', 52),
+			'%': ('5', 53),
+			'^': ('6', 54),
+			'&': ('7', 55),
+			'*': ('8', 56),
+			'(': ('9', 57),
+			')': ('0', 48),
+			'_': ('-', 189),
+			'+': ('=', 187),
+			'{': ('[', 219),
+			'}': (']', 221),
+			'|': ('\\', 220),
+			':': (';', 186),
+			'"': ("'", 222),
+			'<': (',', 188),
+			'>': ('.', 190),
+			'?': ('/', 191),
+			'~': ('`', 192),
+		}
+
+		# Check if character requires Shift
+		if char in shift_chars:
+			base_key, vk_code = shift_chars[char]
+			return (8, vk_code, base_key)  # Shift=8
+
+		# Uppercase letters require Shift
+		if char.isupper():
+			return (8, ord(char), char.lower())  # Shift=8
+
+		# Lowercase letters
+		if char.islower():
+			return (0, ord(char.upper()), char)
+
+		# Numbers
+		if char.isdigit():
+			return (0, ord(char), char)
+
+		# Special characters without Shift
+		no_shift_chars = {
+			' ': 32,
+			'-': 189,
+			'=': 187,
+			'[': 219,
+			']': 221,
+			'\\': 220,
+			';': 186,
+			"'": 222,
+			',': 188,
+			'.': 190,
+			'/': 191,
+			'`': 192,
+		}
+
+		if char in no_shift_chars:
+			return (0, no_shift_chars[char], char)
+
+		# Fallback
+		return (0, ord(char.upper()) if char.isalpha() else ord(char), char)
+
+	def _get_key_code_for_char(self, char: str) -> str:
+		"""Get the proper key code for a character (like Playwright does)."""
+		# Key code mapping for common characters (using proper base keys + modifiers)
+		key_codes = {
+			' ': 'Space',
+			'.': 'Period',
+			',': 'Comma',
+			'-': 'Minus',
+			'_': 'Minus',  # Underscore uses Minus with Shift
+			'@': 'Digit2',  # @ uses Digit2 with Shift
+			'!': 'Digit1',  # ! uses Digit1 with Shift (not 'Exclamation')
+			'?': 'Slash',  # ? uses Slash with Shift
+			':': 'Semicolon',  # : uses Semicolon with Shift
+			';': 'Semicolon',
+			'(': 'Digit9',  # ( uses Digit9 with Shift
+			')': 'Digit0',  # ) uses Digit0 with Shift
+			'[': 'BracketLeft',
+			']': 'BracketRight',
+			'{': 'BracketLeft',  # { uses BracketLeft with Shift
+			'}': 'BracketRight',  # } uses BracketRight with Shift
+			'/': 'Slash',
+			'\\': 'Backslash',
+			'=': 'Equal',
+			'+': 'Equal',  # + uses Equal with Shift
+			'*': 'Digit8',  # * uses Digit8 with Shift
+			'&': 'Digit7',  # & uses Digit7 with Shift
+			'%': 'Digit5',  # % uses Digit5 with Shift
+			'$': 'Digit4',  # $ uses Digit4 with Shift
+			'#': 'Digit3',  # # uses Digit3 with Shift
+			'^': 'Digit6',  # ^ uses Digit6 with Shift
+			'~': 'Backquote',  # ~ uses Backquote with Shift
+			'`': 'Backquote',
+			'"': 'Quote',  # " uses Quote with Shift
+			"'": 'Quote',
+			'<': 'Comma',  # < uses Comma with Shift
+			'>': 'Period',  # > uses Period with Shift
+			'|': 'Backslash',  # | uses Backslash with Shift
+		}
+
+		if char in key_codes:
+			return key_codes[char]
+		elif char.isalpha():
+			return f'Key{char.upper()}'
+		elif char.isdigit():
+			return f'Digit{char}'
+		else:
+			# Fallback for unknown characters
+			return f'Key{char.upper()}' if char.isascii() and char.isalpha() else 'Unidentified'
+
+	async def _clear_text_field(self, object_id: str, cdp_client, session_id: str) -> bool:
+		"""Clear text field using multiple strategies, starting with the most reliable."""
+		try:
+			# Strategy 1: Direct JavaScript value setting (most reliable for modern web apps)
+			logger.debug('Clearing text field using JavaScript value setting')
+
+			await cdp_client.send.Runtime.callFunctionOn(
+				params={
+					'functionDeclaration': """
+						function() {
+							this.value = "";
+							this.dispatchEvent(new Event("input", { bubbles: true }));
+							this.dispatchEvent(new Event("change", { bubbles: true }));
+							return this.value;
+						}
+					""",
+					'objectId': object_id,
+					'returnByValue': True,
+				},
+				session_id=session_id,
+			)
+
+			# Verify clearing worked by checking the value
+			verify_result = await cdp_client.send.Runtime.callFunctionOn(
+				params={
+					'functionDeclaration': 'function() { return this.value; }',
+					'objectId': object_id,
+					'returnByValue': True,
+				},
+				session_id=session_id,
+			)
+
+			current_value = verify_result.get('result', {}).get('value', '')
+			if not current_value:
+				logger.debug('Text field cleared successfully using JavaScript')
+				return True
+			else:
+				logger.debug(f'JavaScript clear partially failed, field still contains: "{current_value}"')
+
+		except Exception as e:
+			logger.debug(f'JavaScript clear failed: {e}')
+
+		# Strategy 2: Triple-click + Delete (fallback for stubborn fields)
+		try:
+			logger.debug('Fallback: Clearing using triple-click + Delete')
+
+			# Get element center coordinates for triple-click
+			bounds_result = await cdp_client.send.Runtime.callFunctionOn(
+				params={
+					'functionDeclaration': 'function() { return this.getBoundingClientRect(); }',
+					'objectId': object_id,
+					'returnByValue': True,
+				},
+				session_id=session_id,
+			)
+
+			if bounds_result.get('result', {}).get('value'):
+				bounds = bounds_result['result']['value']  # type: ignore  # type: ignore
+				center_x = bounds['x'] + bounds['width'] / 2
+				center_y = bounds['y'] + bounds['height'] / 2
+
+				# Triple-click to select all text
+				await cdp_client.send.Input.dispatchMouseEvent(
+					params={
+						'type': 'mousePressed',
+						'x': center_x,
+						'y': center_y,
+						'button': 'left',
+						'clickCount': 3,
+					},
+					session_id=session_id,
+				)
+				await cdp_client.send.Input.dispatchMouseEvent(
+					params={
+						'type': 'mouseReleased',
+						'x': center_x,
+						'y': center_y,
+						'button': 'left',
+						'clickCount': 3,
+					},
+					session_id=session_id,
+				)
+
+				# Delete selected text
+				await cdp_client.send.Input.dispatchKeyEvent(
+					params={
+						'type': 'keyDown',
+						'key': 'Delete',
+						'code': 'Delete',
+					},
+					session_id=session_id,
+				)
+				await cdp_client.send.Input.dispatchKeyEvent(
+					params={
+						'type': 'keyUp',
+						'key': 'Delete',
+						'code': 'Delete',
+					},
+					session_id=session_id,
+				)
+
+				logger.debug('Text field cleared using triple-click + Delete')
+				return True
+
+		except Exception as e:
+			logger.debug(f'Triple-click clear failed: {e}')
+
+		# If all strategies failed
+		logger.warning('All text clearing strategies failed')
+		return False
+
+	async def _focus_element_simple(
+		self, backend_node_id: int, object_id: str, cdp_client, session_id: str, input_coordinates=None
+	) -> bool:
+		"""Focus element using multiple strategies with robust fallbacks."""
+		try:
+			# Strategy 1: CDP focus (most reliable)
+			logger.debug('Focusing element using CDP focus')
+			await cdp_client.send.DOM.focus(params={'backendNodeId': backend_node_id}, session_id=session_id)
+			logger.debug('Element focused successfully using CDP focus')
+			return True
+		except Exception as e:
+			logger.debug(f'CDP focus failed: {e}, trying JavaScript focus')
+
+		try:
+			# Strategy 2: JavaScript focus (fallback)
+			logger.debug('Focusing element using JavaScript focus')
+			await cdp_client.send.Runtime.callFunctionOn(
+				params={
+					'functionDeclaration': 'function() { this.focus(); }',
+					'objectId': object_id,
+				},
+				session_id=session_id,
+			)
+			logger.debug('Element focused successfully using JavaScript')
+			return True
+		except Exception as e:
+			logger.debug(f'JavaScript focus failed: {e}, trying click focus')
+
+		try:
+			# Strategy 3: Click to focus (last resort)
+			if input_coordinates:
+				logger.debug(f'Focusing element by clicking at coordinates: {input_coordinates}')
+				center_x = input_coordinates['input_x']
+				center_y = input_coordinates['input_y']
+
+				# Click on the element to focus it
+				await cdp_client.send.Input.dispatchMouseEvent(
+					params={
+						'type': 'mousePressed',
+						'x': center_x,
+						'y': center_y,
+						'button': 'left',
+						'clickCount': 1,
+					},
+					session_id=session_id,
+				)
+				await cdp_client.send.Input.dispatchMouseEvent(
+					params={
+						'type': 'mouseReleased',
+						'x': center_x,
+						'y': center_y,
+						'button': 'left',
+						'clickCount': 1,
+					},
+					session_id=session_id,
+				)
+				logger.debug('Element focused using click')
+				return True
+			else:
+				logger.debug('No coordinates available for click focus')
+		except Exception as e:
+			logger.warning(f'All focus strategies failed: {e}')
+		return False
 
 	async def get_basic_info(self) -> ElementInfo:
 		"""Get basic information about the element including coordinates and properties."""

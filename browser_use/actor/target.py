@@ -94,9 +94,9 @@ class Target:
 		"""Get an element by its backend node ID."""
 		session_id = await self._ensure_session()
 
-		from .element import Element
+		from .element import Element as Element_
 
-		return Element(self._browser_session, backend_node_id, session_id)
+		return Element_(self._browser_session, backend_node_id, session_id)
 
 	async def evaluate(self, page_function: str, *args) -> str:
 		"""Execute JavaScript in the target.
@@ -343,7 +343,7 @@ class Target:
 		result = await self._client.send.DOM.querySelectorAll(query_params, session_id=session_id)
 
 		elements = []
-		from .element import Element
+		from .element import Element as Element_
 
 		# Convert node IDs to backend node IDs
 		for node_id in result['nodeIds']:
@@ -351,7 +351,7 @@ class Target:
 			describe_params: 'DescribeNodeParameters' = {'nodeId': node_id}
 			node_result = await self._client.send.DOM.describeNode(describe_params, session_id=session_id)
 			backend_node_id = node_result['node']['backendNodeId']
-			elements.append(Element(self._browser_session, backend_node_id, session_id))
+			elements.append(Element_(self._browser_session, backend_node_id, session_id))
 
 		return elements
 

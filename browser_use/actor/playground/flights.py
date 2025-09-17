@@ -1,8 +1,6 @@
 import asyncio
 
-from pydantic import BaseModel
-
-from browser_use import Browser, ChatOpenAI
+from browser_use import Agent, Browser, ChatOpenAI
 
 llm = ChatOpenAI('gpt-4.1-mini')
 
@@ -18,39 +16,25 @@ async def main():
 
 	target = await browser.get_current_target() or await browser.new_target()
 
-	await target.navigate('https://www.nseindia.com/companies-listing/corporate-filings-financial-results-comparision')
-
-	company_name_input = await target.must_get_element_by_prompt('company name input', llm)
-	await company_name_input.fill('Tata Consultancy Services Limited')
+	# Go to apple wikipedia page
+	await target.goto('https://www.google.com/travel/flights')
 
 	await asyncio.sleep(1)
 
-	confirm_button = await target.must_get_element_by_prompt('confirm Tata Consultancy Services Limited selection button', llm)
-	await confirm_button.click()
+	round_trip_button = await target.must_get_element_by_prompt('round trip button', llm)
+	await round_trip_button.click()
 
-	await asyncio.sleep(0.1)
+	one_way_button = await target.must_get_element_by_prompt('one way button', llm)
+	await one_way_button.click()
 
-	search_button = await target.must_get_element_by_prompt('search button', llm)
-	await search_button.click()
+	await asyncio.sleep(1)
 
-	await asyncio.sleep(2)  # wait for the table to load
-
-	class Quarter(BaseModel):
-		quarter: str
-		year: str
-		net_profit: str
-
-	class TableData(BaseModel):
-		qurters: list[Quarter]
-
-	extracted_table = await target.extract_content('extract the table', TableData, llm)
-	print(extracted_table)
-
-	await asyncio.sleep(10)
+	agent = Agent(task='Find the cheapest flight from London to Paris on 2025-10-15', llm=llm, browser_session=browser)
+	await agent.run()
 
 	input('Press Enter to continue...')
 
-	# await browser.stop()
+	await browser.stop()
 
 
 if __name__ == '__main__':
