@@ -1814,6 +1814,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 						self.logger.warning(f'{step_name} failed (attempt {retry_count}/{max_retries}), retrying...')
 						await asyncio.sleep(delay_between_actions)
 
+		await self.close()
 		return results
 
 	async def _execute_initial_actions(self) -> None:

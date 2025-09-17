@@ -778,7 +778,7 @@ class DOMInteractedElement:
 			'attributes': self.attributes,
 			'x_path': self.x_path,
 			'element_hash': self.element_hash,
-			'bounds': self.bounds.to_dict(),
+			'bounds': self.bounds.to_dict() if self.bounds else None,
 		}
 
 	@classmethod
