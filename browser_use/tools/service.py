@@ -980,14 +980,18 @@ You can also use it to explore the website.
 					error_msg = f'JavaScript execution error: {exception.get("text", "Unknown error")}'
 					if 'lineNumber' in exception:
 						error_msg += f' at line {exception["lineNumber"]}'
-					return ActionResult(error=f'Code: {code}\n\nError: {error_msg}')
+					msg = f'Code: {code}\n\nError: {error_msg}'
+					logger.info(msg)
+					return ActionResult(error=msg)
 
 				# Get the result data
 				result_data = result.get('result', {})
 
 				# Check for wasThrown flag (backup error detection)
 				if result_data.get('wasThrown'):
-					return ActionResult(error=f'Code: {code}\n\nError: JavaScript execution failed (wasThrown=true)')
+					msg = f'Code: {code}\n\nError: JavaScript execution failed (wasThrown=true)'
+					logger.info(msg)
+					return ActionResult(error=msg)
 
 				# Get the actual value
 				value = result_data.get('value')
@@ -1010,13 +1014,15 @@ You can also use it to explore the website.
 				# Apply length limit with better truncation
 				if len(result_text) > 20000:
 					result_text = result_text[:19950] + '\n... [Truncated after 20000 characters]'
-
+				msg = f'Code: {code}\n\nResult: {result_text}'
+				logger.info(msg)
 				return ActionResult(extracted_content=f'Code: {code}\n\nResult: {result_text}')
 
 			except Exception as e:
 				# CDP communication or other system errors
-				error_msg = f'Failed to execute JavaScript: {type(e).__name__}: {e}'
-				return ActionResult(error=f'Code: {code}\n\nError: {error_msg}')
+				error_msg = f'Code: {code}\n\nError: {error_msg} Failed to execute JavaScript: {type(e).__name__}: {e}'
+				logger.info(error_msg)
+				return ActionResult(error=error_msg)
 
 	# Custom done action for structured output
 	async def extract_clean_markdown(
