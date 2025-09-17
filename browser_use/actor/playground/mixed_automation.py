@@ -38,7 +38,7 @@ async def main():
 
 	await asyncio.sleep(1)
 
-	element = await target.getElementByPrompt('zip code input', llm)
+	element = await target.get_element_by_prompt('zip code input', llm)
 
 	print('Element found', element)
 

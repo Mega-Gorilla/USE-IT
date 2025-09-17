@@ -19,36 +19,36 @@ from browser_use import Browser
 
 # Create and start browser session
 browser = Browser()
-await browser.start()`
+await browser.start()
 
 # Use integrated browser methods directly
-target = await browser.newTarget("https://example.com")
-targets = await browser.getTargets()
+target = await browser.new_target("https://example.com")
+targets = await browser.get_targets()
 current_target = await browser.get_current_target()
 ```
 
 ```python
 # Get targets (multiple ways) - using browser methods
-target = await browser.newTarget()  # Create blank tab
-target = await browser.newTarget("https://example.com")  # Create tab with URL
-targets = await browser.getTargets()  # Get all existing tabs
+target = await browser.new_target()  # Create blank tab
+target = await browser.new_target("https://example.com")  # Create tab with URL
+targets = await browser.get_targets()  # Get all existing tabs
 
 # Navigate target to URL
 await target.goto("https://example.com")
 
-await browser.closeTarget(target)
+await browser.close_target(target)
 ```
 
 ```python
 # Find elements by CSS selector
-elements = await target.getElementsByCSSSelector("input[type='text']")
-buttons = await target.getElementsByCSSSelector("button.submit")
+elements = await target.get_elements_by_css_selector("input[type='text']")
+buttons = await target.get_elements_by_css_selector("button.submit")
 
 # Get element by backend node ID
-element = await target.getElement(backend_node_id=12345)
+element = await target.get_element(backend_node_id=12345)
 ```
 
-Unlike other libraries, the native implementation for `getElementsByCSSSelector` does not support waiting for the element to be visible.
+Unlike other libraries, the native implementation for `get_elements_by_css_selector` does not support waiting for the element to be visible.
 
 ```python
 # Element actions
@@ -57,12 +57,12 @@ await element.fill("Hello World")
 await element.hover()
 await element.focus()
 await element.check() 
-await element.selectOption(["option1", "option2"])
+await element.select_option(["option1", "option2"])
 
 # Element properties  
-value = await element.getAttribute("value")
-box = await element.getBoundingBox()
-info = await element.getBasicInfo()
+value = await element.get_attribute("value")
+box = await element.get_bounding_box()
+info = await element.get_basic_info()
 ```
 
 ```python
@@ -78,7 +78,7 @@ mouse = await target.mouse
 await mouse.scroll(x=0, y=100, delta_y=-500) # x,y (coordinates to scroll on), delta_y (how much to scroll)
 await target.press("Control+A")  # Key combinations supported
 await target.press("Escape")
-await target.setViewportSize(width=1920, height=1080)
+await target.set_viewport_size(width=1920, height=1080)
 await target.reload()
 page_screenshot = await target.screenshot()  # JPEG by default
 page_png = await target.screenshot(format="png")
@@ -92,24 +92,24 @@ page_png = await target.screenshot(format="png")
 ## API Reference
 
 ### Browser Methods (Browser Operations)
-- `newTarget(url=None)` → `Target` - Create blank tab or navigate to URL
-- `getTargets()` → `list[Target]` - Get all page/iframe targets
-- `closeTarget(target: Target | str)` - Close target by object or ID
+- `new_target(url=None)` → `Target` - Create blank tab or navigate to URL
+- `get_targets()` → `list[Target]` - Get all page/iframe targets
+- `close_target(target: Target | str)` - Close target by object or ID
 - `cookies(urls=None)` → `list[Cookie]` - Get cookies for specified URLs (or all if None)
-- `clearCookies()` - Clear all cookies
+- `clear_cookies()` - Clear all cookies
 - `get_current_target()` → `Target | None` - Get the current target
 
 ### Target Methods
-- `getElementsByCSSSelector(selector: str)` → `list[Element]` - Find elements by CSS selector
-- `getElement(backend_node_id: int)` → `Element` - Get element by backend node ID
+- `get_elements_by_css_selector(selector: str)` → `list[Element]` - Find elements by CSS selector
+- `get_element(backend_node_id: int)` → `Element` - Get element by backend node ID
 - `goto(url: str)` - Navigate this target to URL
-- `goBack()`, `goForward()` - Navigate target history (with proper error handling)
+- `go_back()`, `go_forward()` - Navigate target history (with proper error handling)
 - `evaluate(page_function: str, *args)` → `str` - Execute JavaScript (MUST use (...args) => format) and return string (objects/arrays are JSON-stringified)
 - `press(key: str)` - Press key on page (supports "Control+A" format)
-- `setViewportSize(width: int, height: int)` - Set viewport dimensions
+- `set_viewport_size(width: int, height: int)` - Set viewport dimensions
 - `reload()` - Reload the current page
 - `screenshot(format='jpeg', quality=None)` → `str` - Take page screenshot and return base64
-- `getUrl()` → `str`, `getTitle()` → `str` - Get page info
+- `get_url()` → `str`, `get_title()` → `str` - Get page info
 
 ### Element Methods (Supported Only)
 - `click(button='left', click_count=1, modifiers=None)` - Click element
@@ -117,12 +117,12 @@ page_png = await target.screenshot(format="png")
 - `hover()` - Hover over element
 - `focus()` - Focus the element
 - `check()` - Toggle checkbox/radio button (clicks to change state)
-- `selectOption(values: str | list[str])` - Select dropdown options (string or array)
-- `dragTo(target: Element | Position, source_position=None, target_position=None)` - Drag to target
-- `getAttribute(name: str)` → `str | None` - Get attribute value
-- `getBoundingBox()` → `BoundingBox | None` - Get element position/size
+- `select_option(values: str | list[str])` - Select dropdown options (string or array)
+- `drag_to(target: Element | Position, source_position=None, target_position=None)` - Drag to target
+- `get_attribute(name: str)` → `str | None` - Get attribute value
+- `get_bounding_box()` → `BoundingBox | None` - Get element position/size
 - `screenshot(format='jpeg', quality=None)` → `str` - Take element screenshot and return base64
-- `getBasicInfo()` → `ElementInfo` - Get comprehensive element information
+- `get_basic_info()` → `ElementInfo` - Get comprehensive element information
 
 
 ### Mouse Methods
@@ -152,13 +152,13 @@ class BoundingBox(TypedDict):
 ### ElementInfo
 ```python
 class ElementInfo(TypedDict):
-    backendNodeId: int
-    nodeId: int | None
-    nodeName: str
-    nodeType: int
-    nodeValue: str | None
+    backend_node_id: int
+    node_id: int | None
+    node_name: str
+    node_type: int
+    node_value: str | None
     attributes: dict[str, str]
-    boundingBox: BoundingBox | None
+    bounding_box: BoundingBox | None
 ```
 
 ## Important LLM Usage Notes
@@ -172,13 +172,13 @@ class ElementInfo(TypedDict):
 - **ESCAPING**: Use `\\"` to escape double quotes inside selectors, never mix quote patterns
 
 **METHOD RESTRICTIONS:**
-- `getElementsByCSSSelector()` returns immediately, no waiting
-- For dropdowns: use `element.selectOption("value")` or `element.selectOption(["val1", "val2"])`, not `element.fill()`
-- No methods: `element.submit()`, `element.dispatchEvent()`, `element.getProperty()`, `target.querySelectorAll()`
+- `get_elements_by_css_selector()` returns immediately, no waiting
+- For dropdowns: use `element.select_option("value")` or `element.select_option(["val1", "val2"])`, not `element.fill()`
+- No methods: `element.submit()`, `element.dispatch_event()`, `element.get_property()`, `target.query_selector_all()`
 - Form submission: click submit button or use `target.press("Enter")`
-- Get properties: use `target.evaluate("() => element.value")` not `element.getProperty()`
+- Get properties: use `target.evaluate("() => element.value")` not `element.get_property()`
 
 **ERROR PREVENTION:**
-- Loop prevention: verify page state changes with `target.getUrl()`, `target.getTitle()`, `element.getAttribute()`
+- Loop prevention: verify page state changes with `target.get_url()`, `target.get_title()`, `element.get_attribute()`
 - Validate selectors before use: ensure no excessive escaping like `\\\\\\\\`
 - Test complex selectors: if a selector fails, simplify it step by step

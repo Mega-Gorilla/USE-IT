@@ -37,8 +37,8 @@ async def main():
 		target = await browser.newTarget('https://en.wikipedia.org')
 
 		# Get basic page info
-		url = await target.getUrl()
-		title = await target.getTitle()
+		url = await target.get_url()
+		title = await target.get_title()
 		logger.info(f'📄 Page loaded: {title} ({url})')
 
 		# Take a screenshot
@@ -48,7 +48,7 @@ async def main():
 
 		# Set viewport size
 		logger.info('🖥️ Setting viewport to 1920x1080...')
-		await target.setViewportSize(1920, 1080)
+		await target.set_viewport_size(1920, 1080)
 
 		# Execute some JavaScript to count links
 		logger.info('🔍 Counting article links using JavaScript...')
@@ -71,7 +71,7 @@ async def main():
 		# Try to find and interact with links using CSS selector
 		try:
 			# Find article links on the page
-			links = await target.getElementsByCSSSelector('a[href*="/wiki/"]:not([href*=":"])')
+			links = await target.get_elements_by_css_selector('a[href*="/wiki/"]:not([href*=":"])')
 
 			if links:
 				logger.info(f'📋 Found {len(links)} wiki links via CSS selector')
@@ -80,8 +80,8 @@ async def main():
 				link_element = links[0]
 
 				# Get link info using available methods
-				basic_info = await link_element.getBasicInfo()
-				link_href = await link_element.getAttribute('href')
+				basic_info = await link_element.get_basic_info()
+				link_href = await link_element.get_attribute('href')
 
 				logger.info(f'🎯 Selected element: <{basic_info["nodeName"]}>')
 				logger.info(f'🔗 Link href: {link_href}')
@@ -107,8 +107,8 @@ async def main():
 				await asyncio.sleep(3)
 
 				# Get new page info
-				new_url = await target.getUrl()
-				new_title = await target.getTitle()
+				new_url = await target.get_url()
+				new_title = await target.get_title()
 				logger.info(f'📄 Navigated to: {new_title}')
 				logger.info(f'🌐 New URL: {new_url}')
 			else:
@@ -157,7 +157,7 @@ async def main():
 
 		# Get page title using different methods
 		title_via_js = await target.evaluate('() => document.title')
-		title_via_api = await target.getTitle()
+		title_via_api = await target.get_title()
 		logger.info(f'📝 Title via JS: "{title_via_js}"')
 		logger.info(f'📝 Title via API: "{title_via_api}"')
 
@@ -169,11 +169,11 @@ async def main():
 		# Test browser navigation with error handling
 		logger.info('⬅️ Testing browser back navigation...')
 		try:
-			await target.goBack()
+			await target.go_back()
 			await asyncio.sleep(2)
 
-			back_url = await target.getUrl()
-			back_title = await target.getTitle()
+			back_url = await target.get_url()
+			back_title = await target.get_title()
 			logger.info(f'📄 After going back: {back_title}')
 			logger.info(f'🌐 Back URL: {back_url}')
 		except RuntimeError as e:
@@ -182,7 +182,7 @@ async def main():
 		# Test creating new target
 		logger.info('🆕 Creating new blank target...')
 		new_target = await browser.newTarget()
-		new_target_url = await new_target.getUrl()
+		new_target_url = await new_target.get_url()
 		logger.info(f'🆕 New target created with URL: {new_target_url}')
 
 		# Get all targets
@@ -192,7 +192,7 @@ async def main():
 		# Test form interaction if we can find a form
 		try:
 			# Look for search input on the page
-			search_inputs = await target.getElementsByCSSSelector('input[type="search"], input[name*="search"]')
+			search_inputs = await target.get_elements_by_css_selector('input[type="search"], input[name*="search"]')
 
 			if search_inputs:
 				search_input = search_inputs[0]

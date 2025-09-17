@@ -370,7 +370,7 @@ class Element:
 
 	async def hover(self) -> None:
 		"""Hover over the element."""
-		box = await self.getBoundingBox()
+		box = await self.get_bounding_box()
 		if not box:
 			raise RuntimeError('Element is not visible or has no bounding box')
 
@@ -390,7 +390,7 @@ class Element:
 		"""Check or uncheck a checkbox/radio button."""
 		await self.click()
 
-	async def selectOption(self, values: str | list[str]) -> None:
+	async def select_option(self, values: str | list[str]) -> None:
 		"""Select option(s) in a select element."""
 		if isinstance(values, str):
 			values = [values]
@@ -447,7 +447,7 @@ class Element:
 						option_element = Element(self._browser_session, option_backend_id, self._session_id)
 						await option_element.click()
 
-	async def dragTo(
+	async def drag_to(
 		self,
 		target: Union['Element', Position],
 		source_position: Position | None = None,
@@ -459,7 +459,7 @@ class Element:
 			source_x = source_position['x']
 			source_y = source_position['y']
 		else:
-			source_box = await self.getBoundingBox()
+			source_box = await self.get_bounding_box()
 			if not source_box:
 				raise RuntimeError('Source element is not visible')
 			source_x = source_box['x'] + source_box['width'] / 2
@@ -471,13 +471,13 @@ class Element:
 			target_y = target['y']
 		else:
 			if target_position:
-				target_box = await target.getBoundingBox()
+				target_box = await target.get_bounding_box()
 				if not target_box:
 					raise RuntimeError('Target element is not visible')
 				target_x = target_box['x'] + target_position['x']
 				target_y = target_box['y'] + target_position['y']
 			else:
-				target_box = await target.getBoundingBox()
+				target_box = await target.get_bounding_box()
 				if not target_box:
 					raise RuntimeError('Target element is not visible')
 				target_x = target_box['x'] + target_box['width'] / 2
@@ -500,7 +500,7 @@ class Element:
 		)
 
 	# Element properties and queries
-	async def getAttribute(self, name: str) -> str | None:
+	async def get_attribute(self, name: str) -> str | None:
 		"""Get an attribute value."""
 		node_id = await self._get_node_id()
 		params: 'GetAttributesParameters' = {'nodeId': node_id}
@@ -512,7 +512,7 @@ class Element:
 				return attributes[i + 1]
 		return None
 
-	async def getBoundingBox(self) -> BoundingBox | None:
+	async def get_bounding_box(self) -> BoundingBox | None:
 		"""Get the bounding box of the element."""
 		try:
 			node_id = await self._get_node_id()
@@ -552,7 +552,7 @@ class Element:
 			Base64-encoded image data
 		"""
 		# Get element's bounding box
-		box = await self.getBoundingBox()
+		box = await self.get_bounding_box()
 		if not box:
 			raise RuntimeError('Element is not visible or has no bounding box')
 
@@ -570,7 +570,7 @@ class Element:
 
 		return result['data']
 
-	async def getBasicInfo(self) -> ElementInfo:
+	async def get_basic_info(self) -> ElementInfo:
 		"""Get basic information about the element including coordinates and properties."""
 		try:
 			# Get basic node information
@@ -580,7 +580,7 @@ class Element:
 			node_info = describe_result['node']
 
 			# Get bounding box
-			bounding_box = await self.getBoundingBox()
+			bounding_box = await self.get_bounding_box()
 
 			# Get attributes as a proper dict
 			attributes_list = node_info.get('attributes', [])

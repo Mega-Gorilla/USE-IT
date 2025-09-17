@@ -21,10 +21,10 @@ async def main():
 
 	await asyncio.sleep(2)
 
-	round_trip_button = await target.mustGetElementByPrompt('round trip button', llm)
+	round_trip_button = await target.must_get_element_by_prompt('round trip button', llm)
 	await round_trip_button.click()
 
-	one_way_button = await target.mustGetElementByPrompt('one way button', llm)
+	one_way_button = await target.must_get_element_by_prompt('one way button', llm)
 	await one_way_button.click()
 
 	await asyncio.sleep(0.5)

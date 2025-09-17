@@ -88,7 +88,7 @@ class Target:
 		session_id = await self._ensure_session()
 		await self._client.send.Page.reload(session_id=session_id)
 
-	async def getElement(self, backend_node_id: int) -> 'Element':
+	async def get_element(self, backend_node_id: int) -> 'Element':
 		"""Get an element by its backend node ID."""
 		session_id = await self._ensure_session()
 
@@ -240,7 +240,7 @@ class Target:
 			key_up_params: 'DispatchKeyEventParameters' = {'type': 'keyUp', 'key': key}
 			await self._client.send.Input.dispatchKeyEvent(key_up_params, session_id=session_id)
 
-	async def setViewportSize(self, width: int, height: int) -> None:
+	async def set_viewport_size(self, width: int, height: int) -> None:
 		"""Set the viewport size."""
 		session_id = await self._ensure_session()
 
@@ -256,20 +256,20 @@ class Target:
 		)
 
 	# Target properties (from CDP getTargetInfo)
-	async def getTargetInfo(self) -> 'TargetInfo':
+	async def get_target_info(self) -> 'TargetInfo':
 		"""Get target information."""
 		params: 'GetTargetInfoParameters' = {'targetId': self._target_id}
 		result = await self._client.send.Target.getTargetInfo(params)
 		return result['targetInfo']
 
-	async def getUrl(self) -> str:
+	async def get_url(self) -> str:
 		"""Get the current URL."""
-		info = await self.getTargetInfo()
+		info = await self.get_target_info()
 		return info.get('url', '')
 
-	async def getTitle(self) -> str:
+	async def get_title(self) -> str:
 		"""Get the current title."""
-		info = await self.getTargetInfo()
+		info = await self.get_target_info()
 		return info.get('title', '')
 
 	async def goto(self, url: str) -> None:
@@ -279,7 +279,7 @@ class Target:
 		params: 'NavigateParameters' = {'url': url}
 		await self._client.send.Page.navigate(params, session_id=session_id)
 
-	async def goBack(self) -> None:
+	async def go_back(self) -> None:
 		"""Navigate back in history."""
 		session_id = await self._ensure_session()
 
@@ -301,7 +301,7 @@ class Target:
 		except Exception as e:
 			raise RuntimeError(f'Failed to navigate back: {e}')
 
-	async def goForward(self) -> None:
+	async def go_forward(self) -> None:
 		"""Navigate forward in history."""
 		session_id = await self._ensure_session()
 
@@ -324,7 +324,7 @@ class Target:
 			raise RuntimeError(f'Failed to navigate forward: {e}')
 
 	# Element finding methods (these would need to be implemented based on DOM queries)
-	async def getElementsByCSSSelector(self, selector: str) -> list['Element']:
+	async def get_elements_by_css_selector(self, selector: str) -> list['Element']:
 		"""Get elements by CSS selector."""
 		session_id = await self._ensure_session()
 
@@ -356,7 +356,7 @@ class Target:
 		"""Get the DOM service for this target."""
 		return DomService(self._browser_session)
 
-	async def getElementByPrompt(self, prompt: str, llm: 'BaseChatModel | None' = None) -> 'Element | None':
+	async def get_element_by_prompt(self, prompt: str, llm: 'BaseChatModel | None' = None) -> 'Element | None':
 		"""Get an element by a prompt."""
 		await self._ensure_session()
 		llm = llm or self._llm
@@ -435,12 +435,12 @@ Before you return the element index, reason about the state and elements for a s
 
 		return Element(self._browser_session, element.backend_node_id, self._session_id)
 
-	async def mustGetElementByPrompt(self, prompt: str, llm: 'BaseChatModel | None' = None) -> 'Element':
+	async def must_get_element_by_prompt(self, prompt: str, llm: 'BaseChatModel | None' = None) -> 'Element':
 		"""Get an element by a prompt.
 
 		@dev LLM can still return None, this just raises an error if the element is not found.
 		"""
-		element = await self.getElementByPrompt(prompt, llm)
+		element = await self.get_element_by_prompt(prompt, llm)
 		if element is None:
 			raise ValueError(f'No element found for prompt: {prompt}')
 
