@@ -73,7 +73,7 @@ class CloudBrowserClient:
 
 		if not api_token:
 			raise CloudBrowserAuthError(
-                'No authentication token found. Please set BROWSER_USE_API_KEY environment variable to authenticate with the cloud service.'
+				'No authentication token found. Please set BROWSER_USE_API_KEY environment variable to authenticate with the cloud service.'
 			)
 
 		headers = {'X-Browser-Use-API-Key': api_token, 'Content-Type': 'application/json'}
@@ -174,7 +174,7 @@ class CloudBrowserClient:
 					'Authentication failed. Please make sure you have set the BROWSER_USE_API_KEY environment variable to authenticate with the cloud service.'
 				)
 			elif response.status_code == 404:
-                # Session already stopped or doesn't exist - treating as error and clearing session
+				# Session already stopped or doesn't exist - treating as error and clearing session
 				logger.debug(f'🌤️ Cloud browser session {session_id} not found (already stopped)')
 				# Clear current session if it was this one
 				if session_id == self.current_session_id:
