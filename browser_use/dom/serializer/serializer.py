@@ -110,43 +110,134 @@ class DOMTreeSerializer:
 
 	def _add_compound_components(self, simplified: SimplifiedNode, node: EnhancedDOMTreeNode) -> None:
 		"""Enhance compound controls with information from their child components."""
-		# Only process form controls that might have compound components
-		if (
-			node.tag_name not in ['input', 'select']
-			or not node.attributes
-			or node.attributes.get('type') not in ['date', 'time', 'datetime-local', 'month', 'week']
-		):
+		# Only process elements that might have compound components
+		if node.tag_name not in ['input', 'select', 'details', 'audio', 'video']:
 			return
 
-		# Check if this node's AX info has child_ids (indicating compound components)
-		if not node.ax_node or not node.ax_node.child_ids:
+		# For input elements, check for compound input types
+		if node.tag_name == 'input':
+			if (not node.attributes or
+				node.attributes.get('type') not in ['date', 'time', 'datetime-local', 'month', 'week', 'range', 'number', 'color', 'file']):
+				return
+		# For other elements, check if they have AX child indicators
+		elif not node.ax_node or not node.ax_node.child_ids:
 			return
 
-		# For now, add basic compound component information based on the input type
-		input_type = node.attributes.get('type', '')
+		# Add compound component information based on element type
+		element_type = node.tag_name
+		input_type = node.attributes.get('type', '') if node.attributes else ''
 
-		if input_type == 'date':
+		if element_type == 'input':
+			if input_type == 'date':
+				node._compound_children.extend([
+					{'role': 'spinbutton', 'name': 'Day', 'valuemin': 1, 'valuemax': 31, 'valuenow': None},
+					{'role': 'spinbutton', 'name': 'Month', 'valuemin': 1, 'valuemax': 12, 'valuenow': None},
+					{'role': 'spinbutton', 'name': 'Year', 'valuemin': 1, 'valuemax': 275760, 'valuenow': None}
+				])
+				simplified.is_compound_component = True
+			elif input_type == 'time':
+				node._compound_children.extend([
+					{'role': 'spinbutton', 'name': 'Hour', 'valuemin': 0, 'valuemax': 23, 'valuenow': None},
+					{'role': 'spinbutton', 'name': 'Minute', 'valuemin': 0, 'valuemax': 59, 'valuenow': None}
+				])
+				simplified.is_compound_component = True
+			elif input_type == 'datetime-local':
+				node._compound_children.extend([
+					{'role': 'spinbutton', 'name': 'Day', 'valuemin': 1, 'valuemax': 31, 'valuenow': None},
+					{'role': 'spinbutton', 'name': 'Month', 'valuemin': 1, 'valuemax': 12, 'valuenow': None},
+					{'role': 'spinbutton', 'name': 'Year', 'valuemin': 1, 'valuemax': 275760, 'valuenow': None},
+					{'role': 'spinbutton', 'name': 'Hour', 'valuemin': 0, 'valuemax': 23, 'valuenow': None},
+					{'role': 'spinbutton', 'name': 'Minute', 'valuemin': 0, 'valuemax': 59, 'valuenow': None}
+				])
+				simplified.is_compound_component = True
+			elif input_type == 'month':
+				node._compound_children.extend([
+					{'role': 'spinbutton', 'name': 'Month', 'valuemin': 1, 'valuemax': 12, 'valuenow': None},
+					{'role': 'spinbutton', 'name': 'Year', 'valuemin': 1, 'valuemax': 275760, 'valuenow': None}
+				])
+				simplified.is_compound_component = True
+			elif input_type == 'week':
+				node._compound_children.extend([
+					{'role': 'spinbutton', 'name': 'Week', 'valuemin': 1, 'valuemax': 53, 'valuenow': None},
+					{'role': 'spinbutton', 'name': 'Year', 'valuemin': 1, 'valuemax': 275760, 'valuenow': None}
+				])
+				simplified.is_compound_component = True
+			elif input_type == 'range':
+				# Range slider with value indicator
+				min_val = node.attributes.get('min', '0') if node.attributes else '0'
+				max_val = node.attributes.get('max', '100') if node.attributes else '100'
+				node._compound_children.append({
+					'role': 'slider',
+					'name': 'Value',
+					'valuemin': int(min_val) if min_val.isdigit() else 0,
+					'valuemax': int(max_val) if max_val.isdigit() else 100,
+					'valuenow': None
+				})
+				simplified.is_compound_component = True
+			elif input_type == 'number':
+				# Number input with increment/decrement buttons
+				min_val = node.attributes.get('min') if node.attributes else None
+				max_val = node.attributes.get('max') if node.attributes else None
+				node._compound_children.extend([
+					{'role': 'button', 'name': 'Increment', 'valuemin': None, 'valuemax': None, 'valuenow': None},
+					{'role': 'button', 'name': 'Decrement', 'valuemin': None, 'valuemax': None, 'valuenow': None},
+					{'role': 'textbox', 'name': 'Value',
+					 'valuemin': int(min_val) if min_val and min_val.lstrip('-').isdigit() else None,
+					 'valuemax': int(max_val) if max_val and max_val.lstrip('-').isdigit() else None,
+					 'valuenow': None}
+				])
+				simplified.is_compound_component = True
+			elif input_type == 'color':
+				# Color picker with components
+				node._compound_children.extend([
+					{'role': 'textbox', 'name': 'Hex Value', 'valuemin': None, 'valuemax': None, 'valuenow': None},
+					{'role': 'button', 'name': 'Color Picker', 'valuemin': None, 'valuemax': None, 'valuenow': None}
+				])
+				simplified.is_compound_component = True
+			elif input_type == 'file':
+				# File input with browse button
+				multiple = 'multiple' in node.attributes if node.attributes else False
+				node._compound_children.extend([
+					{'role': 'button', 'name': 'Browse Files', 'valuemin': None, 'valuemax': None, 'valuenow': None},
+					{'role': 'textbox', 'name': f'{"Files" if multiple else "File"} Selected', 'valuemin': None, 'valuemax': None, 'valuenow': None}
+				])
+				simplified.is_compound_component = True
+
+		elif element_type == 'select':
+			# Select dropdown with option list
 			node._compound_children.extend([
-				{'role': 'spinbutton', 'name': 'Day', 'valuemin': 1, 'valuemax': 31, 'valuenow': None},
-				{'role': 'spinbutton', 'name': 'Month', 'valuemin': 1, 'valuemax': 12, 'valuenow': None},
-				{'role': 'spinbutton', 'name': 'Year', 'valuemin': 1, 'valuemax': 275760, 'valuenow': None}
+				{'role': 'button', 'name': 'Dropdown Toggle', 'valuemin': None, 'valuemax': None, 'valuenow': None},
+				{'role': 'listbox', 'name': 'Options', 'valuemin': None, 'valuemax': None, 'valuenow': None}
 			])
 			simplified.is_compound_component = True
-		elif input_type == 'time':
+
+		elif element_type == 'details':
+			# Details/summary disclosure widget
 			node._compound_children.extend([
-				{'role': 'spinbutton', 'name': 'Hour', 'valuemin': 0, 'valuemax': 23, 'valuenow': None},
-				{'role': 'spinbutton', 'name': 'Minute', 'valuemin': 0, 'valuemax': 59, 'valuenow': None}
+				{'role': 'button', 'name': 'Toggle Disclosure', 'valuemin': None, 'valuemax': None, 'valuenow': None},
+				{'role': 'region', 'name': 'Content Area', 'valuemin': None, 'valuemax': None, 'valuenow': None}
 			])
 			simplified.is_compound_component = True
-		elif input_type in ['datetime-local', 'month', 'week']:
-			# For other compound input types, add basic info
-			node._compound_children.append({
-				'role': 'compound',
-				'name': f'{input_type} components',
-				'valuemin': None,
-				'valuemax': None,
-				'valuenow': None
-			})
+
+		elif element_type == 'audio':
+			# Audio player controls
+			node._compound_children.extend([
+				{'role': 'button', 'name': 'Play/Pause', 'valuemin': None, 'valuemax': None, 'valuenow': None},
+				{'role': 'slider', 'name': 'Progress', 'valuemin': 0, 'valuemax': 100, 'valuenow': None},
+				{'role': 'button', 'name': 'Mute', 'valuemin': None, 'valuemax': None, 'valuenow': None},
+				{'role': 'slider', 'name': 'Volume', 'valuemin': 0, 'valuemax': 100, 'valuenow': None}
+			])
+			simplified.is_compound_component = True
+
+		elif element_type == 'video':
+			# Video player controls
+			node._compound_children.extend([
+				{'role': 'button', 'name': 'Play/Pause', 'valuemin': None, 'valuemax': None, 'valuenow': None},
+				{'role': 'slider', 'name': 'Progress', 'valuemin': 0, 'valuemax': 100, 'valuenow': None},
+				{'role': 'button', 'name': 'Mute', 'valuemin': None, 'valuemax': None, 'valuenow': None},
+				{'role': 'slider', 'name': 'Volume', 'valuemin': 0, 'valuemax': 100, 'valuenow': None},
+				{'role': 'button', 'name': 'Fullscreen', 'valuemin': None, 'valuemax': None, 'valuenow': None}
+			])
 			simplified.is_compound_component = True
 
 	def _is_interactive_cached(self, node: EnhancedDOMTreeNode) -> bool:
