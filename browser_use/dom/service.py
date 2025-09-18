@@ -130,6 +130,7 @@ class DomService:
 			name=ax_node.get('name', {}).get('value', None),
 			description=ax_node.get('description', {}).get('value', None),
 			properties=properties,
+			child_ids=ax_node.get('childIds', []) if ax_node.get('childIds') else None,
 		)
 		return enhanced_ax_node
 

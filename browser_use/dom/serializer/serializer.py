@@ -107,6 +107,48 @@ class DOMTreeSerializer:
 
 		return SerializedDOMState(_root=filtered_tree, selector_map=self._selector_map), self.timing_info
 
+
+	def _add_compound_components(self, simplified: SimplifiedNode, node: EnhancedDOMTreeNode) -> None:
+		"""Enhance compound controls with information from their child components."""
+		# Only process form controls that might have compound components
+		if (
+			node.tag_name not in ['input', 'select']
+			or not node.attributes
+			or node.attributes.get('type') not in ['date', 'time', 'datetime-local', 'month', 'week']
+		):
+			return
+
+		# Check if this node's AX info has child_ids (indicating compound components)
+		if not node.ax_node or not node.ax_node.child_ids:
+			return
+
+		# For now, add basic compound component information based on the input type
+		input_type = node.attributes.get('type', '')
+
+		if input_type == 'date':
+			node._compound_children.extend([
+				{'role': 'spinbutton', 'name': 'Day', 'valuemin': 1, 'valuemax': 31, 'valuenow': None},
+				{'role': 'spinbutton', 'name': 'Month', 'valuemin': 1, 'valuemax': 12, 'valuenow': None},
+				{'role': 'spinbutton', 'name': 'Year', 'valuemin': 1, 'valuemax': 275760, 'valuenow': None}
+			])
+			simplified.is_compound_component = True
+		elif input_type == 'time':
+			node._compound_children.extend([
+				{'role': 'spinbutton', 'name': 'Hour', 'valuemin': 0, 'valuemax': 23, 'valuenow': None},
+				{'role': 'spinbutton', 'name': 'Minute', 'valuemin': 0, 'valuemax': 59, 'valuenow': None}
+			])
+			simplified.is_compound_component = True
+		elif input_type in ['datetime-local', 'month', 'week']:
+			# For other compound input types, add basic info
+			node._compound_children.append({
+				'role': 'compound',
+				'name': f'{input_type} components',
+				'valuemin': None,
+				'valuemax': None,
+				'valuenow': None
+			})
+			simplified.is_compound_component = True
+
 	def _is_interactive_cached(self, node: EnhancedDOMTreeNode) -> bool:
 		"""Cached version of clickable element detection to avoid redundant calls."""
 		if node.node_id not in self._clickable_cache:
@@ -169,7 +211,13 @@ class DOMTreeSerializer:
 			# ENHANCED SHADOW DOM DETECTION: Include shadow hosts even if not visible
 			is_shadow_host = any(child.node_type == NodeType.DOCUMENT_FRAGMENT_NODE for child in node.children_and_shadow_roots)
 
-			# Include if interactive (regardless of visibility), scrollable, has children, or is shadow host
+			# Override visibility for elements with validation attributes
+			if not is_visible and node.attributes:
+				has_validation_attrs = any(attr.startswith(('aria-', 'pseudo')) for attr in node.attributes.keys())
+				if has_validation_attrs:
+					is_visible = True  # Force visibility for validation elements
+
+			# Include if visible, interactive, scrollable, has children, or is shadow host
 			if is_visible or is_scrollable or has_shadow_content or is_shadow_host:
 				simplified = SimplifiedNode(original_node=node, children=[], is_shadow_host=is_shadow_host)
 
@@ -178,6 +226,9 @@ class DOMTreeSerializer:
 					simplified_child = self._create_simplified_tree(child, depth + 1)
 					if simplified_child:
 						simplified.children.append(simplified_child)
+
+				# COMPOUND CONTROL PROCESSING: Add virtual components for compound controls
+				self._add_compound_components(simplified, node)
 
 				# SHADOW DOM SPECIAL CASE: Always include shadow hosts even if not visible
 				# Many SPA frameworks (React, Vue) render content in shadow DOM
@@ -211,7 +262,6 @@ class DOMTreeSerializer:
 		node.children = optimized_children
 
 		# Keep meaningful nodes
-		is_interactive_opt = self._is_interactive_cached(node.original_node)
 		is_visible = node.original_node.snapshot_node and node.original_node.is_visible
 
 		if (
@@ -243,7 +293,7 @@ class DOMTreeSerializer:
 
 		# Skip assigning index to excluded nodes, or ignored by paint order
 		if not node.excluded_by_parent and not node.ignored_by_paint_order:
-			# Assign index to clickable elements that are also visible
+			# Regular interactive element assignment (including enhanced compound controls)
 			is_interactive_assign = self._is_interactive_cached(node.original_node)
 			is_visible = node.original_node.snapshot_node and node.original_node.is_visible
 
@@ -254,8 +304,11 @@ class DOMTreeSerializer:
 				self._selector_map[self._interactive_counter] = node.original_node
 				self._interactive_counter += 1
 
-				# Check if node is new
-				if self._previous_cached_selector_map:
+				# Mark compound components as new for visibility
+				if node.is_compound_component:
+					node.is_new = True
+				elif self._previous_cached_selector_map:
+					# Check if node is new for regular elements
 					previous_backend_node_ids = {node.backend_node_id for node in self._previous_cached_selector_map.values()}
 					if node.original_node.backend_node_id not in previous_backend_node_ids:
 						node.is_new = True
@@ -456,8 +509,35 @@ class DOMTreeSerializer:
 			):
 				next_depth += 1
 
-				# Build attributes string
-				attributes_html_str = DOMTreeSerializer._build_attributes_string(node.original_node, include_attributes, '')
+				# Build attributes string with compound component info
+				text_content = ''
+				attributes_html_str = DOMTreeSerializer._build_attributes_string(node.original_node, include_attributes, text_content)
+
+				# Add compound component information to attributes if present
+				if node.original_node._compound_children:
+					compound_info = []
+					for child_info in node.original_node._compound_children:
+						parts = []
+						if child_info['name']:
+							parts.append(f"name={child_info['name']}")
+						if child_info['role']:
+							parts.append(f"role={child_info['role']}")
+						if child_info['valuemin'] is not None:
+							parts.append(f"min={child_info['valuemin']}")
+						if child_info['valuemax'] is not None:
+							parts.append(f"max={child_info['valuemax']}")
+						if child_info['valuenow'] is not None:
+							parts.append(f"current={child_info['valuenow']}")
+
+						if parts:
+							compound_info.append(f"({','.join(parts)})")
+
+					if compound_info:
+						compound_attr = f"compound_components={','.join(compound_info)}"
+						if attributes_html_str:
+							attributes_html_str += f' {compound_attr}'
+						else:
+							attributes_html_str = compound_attr
 
 				# Build the line with shadow host indicator
 				shadow_prefix = ''
