@@ -19,6 +19,8 @@ DEFAULT_INCLUDE_ATTRIBUTES = [
 	'title',
 	'type',
 	'checked',
+	# 'class',
+	'id',
 	'name',
 	'role',
 	'value',
@@ -29,13 +31,29 @@ DEFAULT_INCLUDE_ATTRIBUTES = [
 	'aria-expanded',
 	'data-state',
 	'aria-checked',
+	# ARIA value attributes for datetime/range inputs
+	'aria-valuemin',
+	'aria-valuemax',
+	'aria-valuenow',
+	'aria-placeholder',
+	# Validation attributes - help agents avoid brute force attempts
+	'pattern',
+	'min',
+	'max',
+	'minlength',
+	'maxlength',
+	'step',
+	# Webkit shadow DOM identifiers
+	'pseudo',
 	# Accessibility properties from ax_node (ordered by importance for automation)
 	'checked',
 	'selected',
 	'expanded',
 	'pressed',
 	'disabled',
-	# 'invalid',
+	'invalid',  # Current validation state from AX node
+	'valuemin',  # Min value from AX node (for datetime/range)
+	'valuemax',  # Max value from AX node (for datetime/range)
 	'valuenow',
 	'keyshortcuts',
 	'haspopup',
@@ -50,6 +68,57 @@ DEFAULT_INCLUDE_ATTRIBUTES = [
 	# Accessibility name (contains text content for StaticText elements)
 	'ax_name',
 ]
+
+STATIC_ATTRIBUTES = {
+	'class',
+	'id',
+	'name',
+	'type',
+	'placeholder',
+	'aria-label',
+	'title',
+	# 'aria-expanded',
+	'role',
+	'data-testid',
+	'data-test',
+	'data-cy',
+	'data-selenium',
+	'for',
+	'required',
+	'disabled',
+	'readonly',
+	'checked',
+	'selected',
+	'multiple',
+	'href',
+	'target',
+	'rel',
+	'aria-describedby',
+	'aria-labelledby',
+	'aria-controls',
+	'aria-owns',
+	'aria-live',
+	'aria-atomic',
+	'aria-busy',
+	'aria-disabled',
+	'aria-hidden',
+	'aria-pressed',
+	'aria-checked',
+	'aria-selected',
+	'tabindex',
+	'alt',
+	'src',
+	'lang',
+	'itemscope',
+	'itemtype',
+	'itemprop',
+	# Webkit shadow DOM attributes
+	'pseudo',
+	'aria-valuemin',
+	'aria-valuemax',
+	'aria-valuenow',
+	'aria-placeholder',
+}
 
 
 @dataclass
@@ -93,6 +162,8 @@ class SimplifiedNode:
 
 	ignored_by_paint_order: bool = False  # More info in dom/serializer/paint_order.py
 	excluded_by_parent: bool = False  # New field for bbox filtering
+	is_shadow_host: bool = False  # New field for shadow DOM hosts
+	is_compound_component: bool = False  # True for virtual components of compound controls
 
 	def _clean_original_node_json(self, node_json: dict) -> dict:
 		"""Recursively remove children_nodes and shadow_roots from original_node JSON."""
@@ -181,6 +252,7 @@ class EnhancedAXNode:
 	description: str | None
 
 	properties: list[EnhancedAXProperty] | None
+	child_ids: list[str] | None
 
 
 @dataclass(slots=True)
@@ -305,6 +377,9 @@ class EnhancedDOMTreeNode:
 
 	# Interactive element index
 	element_index: int | None = None
+
+	# Compound control child components information
+	_compound_children: list[dict[str, Any]] = field(default_factory=list)
 
 	uuid: str = field(default_factory=uuid7str)
 
@@ -683,8 +758,9 @@ class EnhancedDOMTreeNode:
 		parent_branch_path = self._get_parent_branch_path()
 		parent_branch_path_string = '/'.join(parent_branch_path)
 
-		# Get attributes hash
-		attributes_string = ''.join(f'{key}={value}' for key, value in self.attributes.items())
+		attributes_string = ''.join(
+			f'{k}={v}' for k, v in sorted((k, v) for k, v in self.attributes.items() if k in STATIC_ATTRIBUTES)
+		)
 
 		# Combine both for final hash
 		combined_string = f'{parent_branch_path_string}|{attributes_string}'

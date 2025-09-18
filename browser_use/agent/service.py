@@ -1711,7 +1711,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				).replace('{', '').replace('}', '').replace("'", '').strip().strip(',')
 				# Ensure action_params is always a string before checking length
 				action_params = str(action_params)
-				action_params = f'{action_params[:122]}...' if len(action_params) > 128 else action_params
+				action_params = f'{action_params[:522]}...' if len(action_params) > 528 else action_params
 				time_start = time.time()
 				self.logger.info(f'  🦾 {blue}[ACTION {i + 1}/{total_actions}]{reset} {action_params}')
 

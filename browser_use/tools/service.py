@@ -293,7 +293,7 @@ class Tools(Generic[Context]):
 				await event
 				# Wait for handler to complete and get any exception or metadata
 				click_metadata = await event.event_result(raise_if_any=True, raise_if_none=False)
-				memory = f'Clicked element with index {params.index}'
+				memory = 'Clicked element'
 
 				if params.while_holding_ctrl:
 					memory += ' and opened in new tab'
@@ -940,7 +940,7 @@ You will be given a query and the markdown of a webpage that has been filtered t
 			)
 
 		@self.registry.action(
-			"""This JavaScript code gets executed with Runtime.evaluate
+			"""This JavaScript code gets executed with Runtime.evaluate and 'returnByValue': True, 'awaitPromise': True
 EXAMPLES:
 Using when other tools fail, filling a form all at once, hovering, dragging, extracting only links, extracting content from the page, Clicking on coordinates, zooming, use this if the user provides custom selecotrs which you can otherwise not interact with ....
 You can also use it to explore the website.
@@ -948,40 +948,81 @@ You can also use it to explore the website.
 - Don't write comments in here, no human reads that.
 - Write only valid js code. 
 - use this to e.g. extract + filter links, convert the page to json into the format you need etc...
-- wrap your code in a function(){{ ... }})() 
+- wrap your code in (function(){ ... })() or (async function(){ ... })() for async code
 - wrap your code in a try catch block
 - limit the output otherwise your context will explode
 - think if you deal with special elements like iframes / shadow roots etc
 - Adopt your strategy for React Native Web, React, Angular, Vue, MUI pages etc.
 - e.g. with  synthetic events, keyboard simulation, shadow DOM, etc.
 
-## Basic DOM interaction (single line preferred):
-Return: 
-JSON.stringify(Array.from(document.querySelectorAll('a')).map(el => el.textContent.trim()))
-- execute_js can only return strings/numbers/booleans that are readable
-- Objects return "Executed successfully (returned object)" - useless!
+## Return values:
+- Async functions (with await, promises, timeouts) are automatically handled
+- Returns strings, numbers, booleans, and serialized objects/arrays
+- Use JSON.stringify() for complex objects: JSON.stringify(Array.from(document.querySelectorAll('a')).map(el => el.textContent.trim()))
 
 """,
 		)
 		async def execute_js(code: str, browser_session: BrowserSession):
-			# Pre-process JavaScript to fix common issues and add error handling
+			# Execute JavaScript with proper error handling and promise support
 
 			cdp_session = await browser_session.get_or_create_cdp_session()
-			result_text = ''
+
 			try:
+				# Always use awaitPromise=True - it's ignored for non-promises
 				result = await cdp_session.cdp_client.send.Runtime.evaluate(
-					params={'expression': code, 'returnByValue': True}, session_id=cdp_session.session_id
+					params={'expression': code, 'returnByValue': True, 'awaitPromise': True},
+					session_id=cdp_session.session_id,
 				)
-				result_text = result.get('result', {}).get('value', '')
-				result_text = str(result_text)
+
+				# Check for JavaScript execution errors
+				if result.get('exceptionDetails'):
+					exception = result['exceptionDetails']
+					error_msg = f'JavaScript execution error: {exception.get("text", "Unknown error")}'
+					if 'lineNumber' in exception:
+						error_msg += f' at line {exception["lineNumber"]}'
+					msg = f'Code: {code}\n\nError: {error_msg}'
+					logger.info(msg)
+					return ActionResult(error=msg)
+
+				# Get the result data
+				result_data = result.get('result', {})
+
+				# Check for wasThrown flag (backup error detection)
+				if result_data.get('wasThrown'):
+					msg = f'Code: {code}\n\nError: JavaScript execution failed (wasThrown=true)'
+					logger.info(msg)
+					return ActionResult(error=msg)
+
+				# Get the actual value
+				value = result_data.get('value')
+
+				# Handle different value types
+				if value is None:
+					# Could be legitimate null/undefined result
+					result_text = str(value) if 'value' in result_data else 'undefined'
+				elif isinstance(value, (dict, list)):
+					# Complex objects - should be serialized by returnByValue
+					try:
+						result_text = json.dumps(value, ensure_ascii=False)
+					except (TypeError, ValueError):
+						# Fallback for non-serializable objects
+						result_text = str(value)
+				else:
+					# Primitive values (string, number, boolean)
+					result_text = str(value)
+
+				# Apply length limit with better truncation
 				if len(result_text) > 20000:
-					result_text = result_text[:20000] + ' Truncated after 20000 characters ...'
-				# Return the result (could be empty string, which is valid)
+					result_text = result_text[:19950] + '\n... [Truncated after 20000 characters]'
+				msg = f'Code: {code}\n\nResult: {result_text}'
+				logger.info(msg)
 				return ActionResult(extracted_content=f'Code: {code}\n\nResult: {result_text}')
 
 			except Exception as e:
-				result_text = f'Failed to execute JavaScript {code}: {e} '
-				return ActionResult(error=result_text)
+				# CDP communication or other system errors
+				error_msg = f'Code: {code}\n\nError: {error_msg} Failed to execute JavaScript: {type(e).__name__}: {e}'
+				logger.info(error_msg)
+				return ActionResult(error=error_msg)
 
 	# Custom done action for structured output
 	async def extract_clean_markdown(
