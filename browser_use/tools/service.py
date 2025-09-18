@@ -307,7 +307,7 @@ class Tools(Generic[Context]):
 
 				# Include click coordinates in metadata if available
 				return ActionResult(
-					long_term_memory=memory,
+					extracted_content=memory,
 					metadata=click_metadata if isinstance(click_metadata, dict) else None,
 				)
 			except BrowserError as e:
