@@ -943,7 +943,7 @@ You will be given a query and the markdown of a webpage that has been filtered t
 		@self.registry.action(
 			"""This JavaScript code gets executed with Runtime.evaluate and 'returnByValue': True, 'awaitPromise': True
 EXAMPLES:
-Using when other tools fail, filling a form all at once, hovering, dragging, extracting only links, extracting content from the page, Clicking on coordinates, zooming, use this if the user provides custom selecotrs which you can otherwise not interact with ....
+Using when other tools do not achieve the expected change or when a more general tool is needed, e.g. for filling a form all at once, hovering, dragging, extracting only links, extracting content from the page, press and hold, hovoring, clicking on coordinates, zooming, use this if the user provides custom selecotrs which you can otherwise not interact with ....
 You can also use it to explore the website.
 - Write code to solve problems you could not solve with other tools.
 - Don't write comments in here, no human reads that.
