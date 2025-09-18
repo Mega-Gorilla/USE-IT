@@ -943,7 +943,7 @@ You will be given a query and the markdown of a webpage that has been filtered t
 		@self.registry.action(
 			"""This JavaScript code gets executed with Runtime.evaluate and 'returnByValue': True, 'awaitPromise': True
 
-CRITICAL SYNTAX RULES - FAILURE TO FOLLOW CAUSES "Uncaught at line 0" ERRORS:
+SYNTAX RULES - FAILURE TO FOLLOW CAUSES "Uncaught at line 0" ERRORS:
 - ALWAYS wrap your code in IIFE: (function(){ ... })() or (async function(){ ... })() for async code
 - ALWAYS add try-catch blocks to prevent execution errors
 - ALWAYS use proper semicolons and valid JavaScript syntax
@@ -951,7 +951,7 @@ CRITICAL SYNTAX RULES - FAILURE TO FOLLOW CAUSES "Uncaught at line 0" ERRORS:
 - ALWAYS validate elements exist before accessing them
 
 EXAMPLES:
-Using when other tools do not achieve the expected change or when a more general tool is needed, e.g. for filling a form all at once, hovering, dragging, extracting only links, extracting content from the page, press and hold, hovoring, clicking on coordinates, zooming, use this if the user provides custom selecotrs which you can otherwise not interact with ....
+Use this tool when other tools do not work on the first try as expected or when a more general tool is needed, e.g. for filling a form all at once, hovering, dragging, extracting only links, extracting content from the page, press and hold, hovoring, clicking on coordinates, zooming, use this if the user provides custom selecotrs which you can otherwise not interact with ....
 You can also use it to explore the website.
 - Write code to solve problems you could not solve with other tools.
 - Don't write comments in here, no human reads that.
