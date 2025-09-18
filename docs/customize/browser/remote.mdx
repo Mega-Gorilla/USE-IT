@@ -23,8 +23,39 @@ agent = Agent(
 
 
 ## Get a CDP URL
-### Cloud Browser
-Get a cdp url from your favorite browser provider like AnchorBorwser, HyperBrowser, BrowserBase, Steel.dev, etc.
+
+### Browser-Use Cloud Browser
+
+The easiest way to use a cloud browser is with the built-in Browser-Use cloud service:
+
+```python
+from browser_use import Agent, Browser, ChatOpenAI
+
+# Use Browser-Use cloud browser service
+browser = Browser(
+    cloud_browser=True  # Automatically provisions a cloud browser
+)
+
+agent = Agent(
+    task="Your task here",
+    llm=ChatOpenAI(model='gpt-4.1-mini'),
+    browser=browser,
+)
+```
+
+**Prerequisites:**
+1. Get an API key from [cloud.browser-use.com](https://cloud.browser-use.com)
+2. Set BROWSER_USE_API_KEY environment variable
+
+**Benefits:**
+- ✅ No local browser setup required
+- ✅ Scalable and fast cloud infrastructure
+- ✅ Automatic provisioning and teardown
+- ✅ Built-in authentication handling
+- ✅ Optimized for browser automation
+
+### Third-Party Cloud Browsers
+Get a CDP URL from your favorite browser provider like AnchorBrowser, HyperBrowser, BrowserBase, Steel.dev, etc.
 
 
 
