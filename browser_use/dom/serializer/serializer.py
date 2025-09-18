@@ -58,6 +58,22 @@ class DOMTreeSerializer:
 		# Paint order filtering configuration
 		self.paint_order_filtering = paint_order_filtering
 
+	def _safe_parse_number(self, value_str: str, default: float) -> float:
+		"""Parse string to float, handling negatives and decimals."""
+		try:
+			return float(value_str)
+		except (ValueError, TypeError):
+			return default
+
+	def _safe_parse_optional_number(self, value_str: str | None) -> float | None:
+		"""Parse string to float, returning None for invalid values."""
+		if not value_str:
+			return None
+		try:
+			return float(value_str)
+		except (ValueError, TypeError):
+			return None
+
 	def serialize_accessible_elements(self) -> tuple[SerializedDOMState, dict[str, float]]:
 		import time
 
@@ -185,12 +201,13 @@ class DOMTreeSerializer:
 				# Range slider with value indicator
 				min_val = node.attributes.get('min', '0') if node.attributes else '0'
 				max_val = node.attributes.get('max', '100') if node.attributes else '100'
+
 				node._compound_children.append(
 					{
 						'role': 'slider',
 						'name': 'Value',
-						'valuemin': int(min_val) if min_val.isdigit() else 0,
-						'valuemax': int(max_val) if max_val.isdigit() else 100,
+						'valuemin': self._safe_parse_number(min_val, 0.0),
+						'valuemax': self._safe_parse_number(max_val, 100.0),
 						'valuenow': None,
 					}
 				)
@@ -199,6 +216,7 @@ class DOMTreeSerializer:
 				# Number input with increment/decrement buttons
 				min_val = node.attributes.get('min') if node.attributes else None
 				max_val = node.attributes.get('max') if node.attributes else None
+
 				node._compound_children.extend(
 					[
 						{'role': 'button', 'name': 'Increment', 'valuemin': None, 'valuemax': None, 'valuenow': None},
@@ -206,8 +224,8 @@ class DOMTreeSerializer:
 						{
 							'role': 'textbox',
 							'name': 'Value',
-							'valuemin': int(min_val) if min_val and min_val.lstrip('-').isdigit() else None,
-							'valuemax': int(max_val) if max_val and max_val.lstrip('-').isdigit() else None,
+							'valuemin': self._safe_parse_optional_number(min_val),
+							'valuemax': self._safe_parse_optional_number(max_val),
 							'valuenow': None,
 						},
 					]
