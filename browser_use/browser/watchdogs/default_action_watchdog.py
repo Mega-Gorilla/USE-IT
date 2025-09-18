@@ -1980,7 +1980,12 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			if not dropdown_data.get('options'):
 				msg = f'No options found in dropdown at index {index_for_logging}'
-				raise BrowserError(message=msg, long_term_memory=msg)
+				return {
+					'error': msg,
+					'short_term_memory': msg,
+					'long_term_memory': msg,
+					'element_index': str(index_for_logging),
+				}
 
 			# Format options for display
 			formatted_options = []
