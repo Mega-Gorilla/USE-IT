@@ -253,7 +253,8 @@ class BrowserSession(BaseModel):
 		# From BrowserNewContextArgs
 		storage_state: str | Path | dict[str, Any] | None = None,
 		# BrowserProfile specific fields
-		cloud_browser: bool | None = None,
+		use_cloud: bool | None = None,
+		cloud_browser: bool | None = None,  # Backward compatibility alias
 		disable_security: bool | None = None,
 		deterministic_rendering: bool | None = None,
 		allowed_domains: list[str] | None = None,
@@ -280,6 +281,10 @@ class BrowserSession(BaseModel):
 		# Following the same pattern as AgentSettings in service.py
 		# Only pass non-None values to avoid validation errors
 		profile_kwargs = {k: v for k, v in locals().items() if k not in ['self', 'browser_profile', 'id'] and v is not None}
+
+		# Handle backward compatibility: map cloud_browser to use_cloud
+		if 'cloud_browser' in profile_kwargs:
+			profile_kwargs['use_cloud'] = profile_kwargs.pop('cloud_browser')
 
 		# if is_local is False but executable_path is provided, set is_local to True
 		if is_local is False and executable_path is not None:
@@ -324,7 +329,7 @@ class BrowserSession(BaseModel):
 	@property
 	def cloud_browser(self) -> bool:
 		"""Whether to use cloud browser service from browser profile."""
-		return self.browser_profile.cloud_browser
+		return self.browser_profile.use_cloud
 
 	# Main shared event bus for all browser session + all watchdogs
 	event_bus: EventBus = Field(default_factory=EventBus)
@@ -506,7 +511,7 @@ class BrowserSession(BaseModel):
 		try:
 			# If no CDP URL, launch local browser or cloud browser
 			if not self.cdp_url:
-				if self.browser_profile.cloud_browser:
+				if self.browser_profile.use_cloud:
 					# Use cloud browser service
 					try:
 						cloud_cdp_url = await get_cloud_browser_cdp_url()
@@ -835,7 +840,7 @@ class BrowserSession(BaseModel):
 				return
 
 			# Clean up cloud browser session if using cloud browser
-			if self.browser_profile.cloud_browser:
+			if self.browser_profile.use_cloud:
 				try:
 					from browser_use.browser.cloud import cleanup_cloud_client
 

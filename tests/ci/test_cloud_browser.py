@@ -229,18 +229,18 @@ class TestBrowserSessionCloudIntegration:
 	async def test_cloud_browser_profile_property(self):
 		"""Test that cloud_browser property works correctly."""
 
-		profile = BrowserProfile(cloud_browser=True)
+		profile = BrowserProfile(use_cloud=True)
 		session = BrowserSession(browser_profile=profile)
 
 		assert session.cloud_browser is True
-		assert session.browser_profile.cloud_browser is True
+		assert session.browser_profile.use_cloud is True
 
 	async def test_browser_session_cloud_browser_logic(self, mock_auth_config):
 		"""Test that cloud browser profile settings work correctly."""
 
 		# Test cloud browser profile creation
-		profile = BrowserProfile(cloud_browser=True)
-		assert profile.cloud_browser is True
+		profile = BrowserProfile(use_cloud=True)
+		assert profile.use_cloud is True
 
 		# Test that BrowserSession respects cloud_browser setting
 		session = BrowserSession(browser_profile=profile)
@@ -287,7 +287,7 @@ async def test_cloud_browser_auth_error_no_fallback(temp_config_dir):
 	"""Test that cloud browser throws error when auth fails (no fallback)."""
 
 	# Don't create auth config to trigger auth error
-	profile = BrowserProfile(cloud_browser=True)
+	profile = BrowserProfile(use_cloud=True)
 
 	# Test that cloud browser client raises error without fallback
 	with patch('browser_use.browser.cloud.get_cloud_browser_cdp_url') as mock_cloud_cdp:
@@ -300,7 +300,7 @@ async def test_cloud_browser_auth_error_no_fallback(temp_config_dir):
 		assert 'BROWSER_USE_API_KEY environment variable' in str(exc_info.value)
 
 		# Verify profile state unchanged (no fallback)
-		assert profile.cloud_browser is True
+		assert profile.use_cloud is True
 		assert profile.is_local is False
 
 

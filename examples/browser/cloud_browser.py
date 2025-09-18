@@ -25,7 +25,7 @@ async def main():
 	agent = Agent(
 		task='Go to https://github.com/browser-use/browser-use and find the number of stars',
 		llm=ChatOpenAI(model='gpt-4.1-mini'),
-		browser=Browser(cloud_browser=True),  # Enable cloud browser
+		browser=Browser(use_cloud=True),  # Enable cloud browser
 	)
 
 	try:
