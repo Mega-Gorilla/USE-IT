@@ -1,5 +1,6 @@
 # @file purpose: Serializes enhanced DOM trees to string format for LLM consumption
 
+from typing import Any
 
 from browser_use.dom.serializer.clickable_elements import ClickableElementDetector
 from browser_use.dom.serializer.paint_order import PaintOrderRemover
@@ -107,7 +108,6 @@ class DOMTreeSerializer:
 
 		return SerializedDOMState(_root=filtered_tree, selector_map=self._selector_map), self.timing_info
 
-
 	def _add_compound_components(self, simplified: SimplifiedNode, node: EnhancedDOMTreeNode) -> None:
 		"""Enhance compound controls with information from their child components."""
 		# Only process elements that might have compound components
@@ -116,8 +116,17 @@ class DOMTreeSerializer:
 
 		# For input elements, check for compound input types
 		if node.tag_name == 'input':
-			if (not node.attributes or
-				node.attributes.get('type') not in ['date', 'time', 'datetime-local', 'month', 'week', 'range', 'number', 'color', 'file']):
+			if not node.attributes or node.attributes.get('type') not in [
+				'date',
+				'time',
+				'datetime-local',
+				'month',
+				'week',
+				'range',
+				'number',
+				'color',
+				'file',
+			]:
 				return
 		# For other elements, check if they have AX child indicators
 		elif not node.ax_node or not node.ax_node.child_ids:
@@ -129,116 +138,253 @@ class DOMTreeSerializer:
 
 		if element_type == 'input':
 			if input_type == 'date':
-				node._compound_children.extend([
-					{'role': 'spinbutton', 'name': 'Day', 'valuemin': 1, 'valuemax': 31, 'valuenow': None},
-					{'role': 'spinbutton', 'name': 'Month', 'valuemin': 1, 'valuemax': 12, 'valuenow': None},
-					{'role': 'spinbutton', 'name': 'Year', 'valuemin': 1, 'valuemax': 275760, 'valuenow': None}
-				])
+				node._compound_children.extend(
+					[
+						{'role': 'spinbutton', 'name': 'Day', 'valuemin': 1, 'valuemax': 31, 'valuenow': None},
+						{'role': 'spinbutton', 'name': 'Month', 'valuemin': 1, 'valuemax': 12, 'valuenow': None},
+						{'role': 'spinbutton', 'name': 'Year', 'valuemin': 1, 'valuemax': 275760, 'valuenow': None},
+					]
+				)
 				simplified.is_compound_component = True
 			elif input_type == 'time':
-				node._compound_children.extend([
-					{'role': 'spinbutton', 'name': 'Hour', 'valuemin': 0, 'valuemax': 23, 'valuenow': None},
-					{'role': 'spinbutton', 'name': 'Minute', 'valuemin': 0, 'valuemax': 59, 'valuenow': None}
-				])
+				node._compound_children.extend(
+					[
+						{'role': 'spinbutton', 'name': 'Hour', 'valuemin': 0, 'valuemax': 23, 'valuenow': None},
+						{'role': 'spinbutton', 'name': 'Minute', 'valuemin': 0, 'valuemax': 59, 'valuenow': None},
+					]
+				)
 				simplified.is_compound_component = True
 			elif input_type == 'datetime-local':
-				node._compound_children.extend([
-					{'role': 'spinbutton', 'name': 'Day', 'valuemin': 1, 'valuemax': 31, 'valuenow': None},
-					{'role': 'spinbutton', 'name': 'Month', 'valuemin': 1, 'valuemax': 12, 'valuenow': None},
-					{'role': 'spinbutton', 'name': 'Year', 'valuemin': 1, 'valuemax': 275760, 'valuenow': None},
-					{'role': 'spinbutton', 'name': 'Hour', 'valuemin': 0, 'valuemax': 23, 'valuenow': None},
-					{'role': 'spinbutton', 'name': 'Minute', 'valuemin': 0, 'valuemax': 59, 'valuenow': None}
-				])
+				node._compound_children.extend(
+					[
+						{'role': 'spinbutton', 'name': 'Day', 'valuemin': 1, 'valuemax': 31, 'valuenow': None},
+						{'role': 'spinbutton', 'name': 'Month', 'valuemin': 1, 'valuemax': 12, 'valuenow': None},
+						{'role': 'spinbutton', 'name': 'Year', 'valuemin': 1, 'valuemax': 275760, 'valuenow': None},
+						{'role': 'spinbutton', 'name': 'Hour', 'valuemin': 0, 'valuemax': 23, 'valuenow': None},
+						{'role': 'spinbutton', 'name': 'Minute', 'valuemin': 0, 'valuemax': 59, 'valuenow': None},
+					]
+				)
 				simplified.is_compound_component = True
 			elif input_type == 'month':
-				node._compound_children.extend([
-					{'role': 'spinbutton', 'name': 'Month', 'valuemin': 1, 'valuemax': 12, 'valuenow': None},
-					{'role': 'spinbutton', 'name': 'Year', 'valuemin': 1, 'valuemax': 275760, 'valuenow': None}
-				])
+				node._compound_children.extend(
+					[
+						{'role': 'spinbutton', 'name': 'Month', 'valuemin': 1, 'valuemax': 12, 'valuenow': None},
+						{'role': 'spinbutton', 'name': 'Year', 'valuemin': 1, 'valuemax': 275760, 'valuenow': None},
+					]
+				)
 				simplified.is_compound_component = True
 			elif input_type == 'week':
-				node._compound_children.extend([
-					{'role': 'spinbutton', 'name': 'Week', 'valuemin': 1, 'valuemax': 53, 'valuenow': None},
-					{'role': 'spinbutton', 'name': 'Year', 'valuemin': 1, 'valuemax': 275760, 'valuenow': None}
-				])
+				node._compound_children.extend(
+					[
+						{'role': 'spinbutton', 'name': 'Week', 'valuemin': 1, 'valuemax': 53, 'valuenow': None},
+						{'role': 'spinbutton', 'name': 'Year', 'valuemin': 1, 'valuemax': 275760, 'valuenow': None},
+					]
+				)
 				simplified.is_compound_component = True
 			elif input_type == 'range':
 				# Range slider with value indicator
 				min_val = node.attributes.get('min', '0') if node.attributes else '0'
 				max_val = node.attributes.get('max', '100') if node.attributes else '100'
-				node._compound_children.append({
-					'role': 'slider',
-					'name': 'Value',
-					'valuemin': int(min_val) if min_val.isdigit() else 0,
-					'valuemax': int(max_val) if max_val.isdigit() else 100,
-					'valuenow': None
-				})
+				node._compound_children.append(
+					{
+						'role': 'slider',
+						'name': 'Value',
+						'valuemin': int(min_val) if min_val.isdigit() else 0,
+						'valuemax': int(max_val) if max_val.isdigit() else 100,
+						'valuenow': None,
+					}
+				)
 				simplified.is_compound_component = True
 			elif input_type == 'number':
 				# Number input with increment/decrement buttons
 				min_val = node.attributes.get('min') if node.attributes else None
 				max_val = node.attributes.get('max') if node.attributes else None
-				node._compound_children.extend([
-					{'role': 'button', 'name': 'Increment', 'valuemin': None, 'valuemax': None, 'valuenow': None},
-					{'role': 'button', 'name': 'Decrement', 'valuemin': None, 'valuemax': None, 'valuenow': None},
-					{'role': 'textbox', 'name': 'Value',
-					 'valuemin': int(min_val) if min_val and min_val.lstrip('-').isdigit() else None,
-					 'valuemax': int(max_val) if max_val and max_val.lstrip('-').isdigit() else None,
-					 'valuenow': None}
-				])
+				node._compound_children.extend(
+					[
+						{'role': 'button', 'name': 'Increment', 'valuemin': None, 'valuemax': None, 'valuenow': None},
+						{'role': 'button', 'name': 'Decrement', 'valuemin': None, 'valuemax': None, 'valuenow': None},
+						{
+							'role': 'textbox',
+							'name': 'Value',
+							'valuemin': int(min_val) if min_val and min_val.lstrip('-').isdigit() else None,
+							'valuemax': int(max_val) if max_val and max_val.lstrip('-').isdigit() else None,
+							'valuenow': None,
+						},
+					]
+				)
 				simplified.is_compound_component = True
 			elif input_type == 'color':
 				# Color picker with components
-				node._compound_children.extend([
-					{'role': 'textbox', 'name': 'Hex Value', 'valuemin': None, 'valuemax': None, 'valuenow': None},
-					{'role': 'button', 'name': 'Color Picker', 'valuemin': None, 'valuemax': None, 'valuenow': None}
-				])
+				node._compound_children.extend(
+					[
+						{'role': 'textbox', 'name': 'Hex Value', 'valuemin': None, 'valuemax': None, 'valuenow': None},
+						{'role': 'button', 'name': 'Color Picker', 'valuemin': None, 'valuemax': None, 'valuenow': None},
+					]
+				)
 				simplified.is_compound_component = True
 			elif input_type == 'file':
 				# File input with browse button
 				multiple = 'multiple' in node.attributes if node.attributes else False
-				node._compound_children.extend([
-					{'role': 'button', 'name': 'Browse Files', 'valuemin': None, 'valuemax': None, 'valuenow': None},
-					{'role': 'textbox', 'name': f'{"Files" if multiple else "File"} Selected', 'valuemin': None, 'valuemax': None, 'valuenow': None}
-				])
+				node._compound_children.extend(
+					[
+						{'role': 'button', 'name': 'Browse Files', 'valuemin': None, 'valuemax': None, 'valuenow': None},
+						{
+							'role': 'textbox',
+							'name': f'{"Files" if multiple else "File"} Selected',
+							'valuemin': None,
+							'valuemax': None,
+							'valuenow': None,
+						},
+					]
+				)
 				simplified.is_compound_component = True
 
 		elif element_type == 'select':
-			# Select dropdown with option list
-			node._compound_children.extend([
-				{'role': 'button', 'name': 'Dropdown Toggle', 'valuemin': None, 'valuemax': None, 'valuenow': None},
-				{'role': 'listbox', 'name': 'Options', 'valuemin': None, 'valuemax': None, 'valuenow': None}
-			])
+			# Select dropdown with option list and detailed option information
+			base_components = [
+				{'role': 'button', 'name': 'Dropdown Toggle', 'valuemin': None, 'valuemax': None, 'valuenow': None}
+			]
+
+			# Extract option information from child nodes
+			options_info = self._extract_select_options(node)
+			if options_info:
+				options_component = {
+					'role': 'listbox',
+					'name': 'Options',
+					'valuemin': None,
+					'valuemax': None,
+					'valuenow': None,
+					'options_count': options_info['count'],
+					'first_options': options_info['first_options'],
+				}
+				if options_info['format_hint']:
+					options_component['format_hint'] = options_info['format_hint']
+				base_components.append(options_component)
+			else:
+				base_components.append(
+					{'role': 'listbox', 'name': 'Options', 'valuemin': None, 'valuemax': None, 'valuenow': None}
+				)
+
+			node._compound_children.extend(base_components)
 			simplified.is_compound_component = True
 
 		elif element_type == 'details':
 			# Details/summary disclosure widget
-			node._compound_children.extend([
-				{'role': 'button', 'name': 'Toggle Disclosure', 'valuemin': None, 'valuemax': None, 'valuenow': None},
-				{'role': 'region', 'name': 'Content Area', 'valuemin': None, 'valuemax': None, 'valuenow': None}
-			])
+			node._compound_children.extend(
+				[
+					{'role': 'button', 'name': 'Toggle Disclosure', 'valuemin': None, 'valuemax': None, 'valuenow': None},
+					{'role': 'region', 'name': 'Content Area', 'valuemin': None, 'valuemax': None, 'valuenow': None},
+				]
+			)
 			simplified.is_compound_component = True
 
 		elif element_type == 'audio':
 			# Audio player controls
-			node._compound_children.extend([
-				{'role': 'button', 'name': 'Play/Pause', 'valuemin': None, 'valuemax': None, 'valuenow': None},
-				{'role': 'slider', 'name': 'Progress', 'valuemin': 0, 'valuemax': 100, 'valuenow': None},
-				{'role': 'button', 'name': 'Mute', 'valuemin': None, 'valuemax': None, 'valuenow': None},
-				{'role': 'slider', 'name': 'Volume', 'valuemin': 0, 'valuemax': 100, 'valuenow': None}
-			])
+			node._compound_children.extend(
+				[
+					{'role': 'button', 'name': 'Play/Pause', 'valuemin': None, 'valuemax': None, 'valuenow': None},
+					{'role': 'slider', 'name': 'Progress', 'valuemin': 0, 'valuemax': 100, 'valuenow': None},
+					{'role': 'button', 'name': 'Mute', 'valuemin': None, 'valuemax': None, 'valuenow': None},
+					{'role': 'slider', 'name': 'Volume', 'valuemin': 0, 'valuemax': 100, 'valuenow': None},
+				]
+			)
 			simplified.is_compound_component = True
 
 		elif element_type == 'video':
 			# Video player controls
-			node._compound_children.extend([
-				{'role': 'button', 'name': 'Play/Pause', 'valuemin': None, 'valuemax': None, 'valuenow': None},
-				{'role': 'slider', 'name': 'Progress', 'valuemin': 0, 'valuemax': 100, 'valuenow': None},
-				{'role': 'button', 'name': 'Mute', 'valuemin': None, 'valuemax': None, 'valuenow': None},
-				{'role': 'slider', 'name': 'Volume', 'valuemin': 0, 'valuemax': 100, 'valuenow': None},
-				{'role': 'button', 'name': 'Fullscreen', 'valuemin': None, 'valuemax': None, 'valuenow': None}
-			])
+			node._compound_children.extend(
+				[
+					{'role': 'button', 'name': 'Play/Pause', 'valuemin': None, 'valuemax': None, 'valuenow': None},
+					{'role': 'slider', 'name': 'Progress', 'valuemin': 0, 'valuemax': 100, 'valuenow': None},
+					{'role': 'button', 'name': 'Mute', 'valuemin': None, 'valuemax': None, 'valuenow': None},
+					{'role': 'slider', 'name': 'Volume', 'valuemin': 0, 'valuemax': 100, 'valuenow': None},
+					{'role': 'button', 'name': 'Fullscreen', 'valuemin': None, 'valuemax': None, 'valuenow': None},
+				]
+			)
 			simplified.is_compound_component = True
+
+	def _extract_select_options(self, select_node: EnhancedDOMTreeNode) -> dict[str, Any] | None:
+		"""Extract option information from a select element."""
+		if not select_node.children:
+			return None
+
+		options = []
+		option_values = []
+
+		def extract_options_recursive(node: EnhancedDOMTreeNode) -> None:
+			"""Recursively extract option elements, including from optgroups."""
+			if node.tag_name.lower() == 'option':
+				# Extract option text and value
+				option_text = ''
+				option_value = ''
+
+				# Get value attribute if present
+				if node.attributes and 'value' in node.attributes:
+					option_value = str(node.attributes['value']).strip()
+
+				# Get text content from direct child text nodes only to avoid duplication
+				def get_direct_text_content(n: EnhancedDOMTreeNode) -> str:
+					text = ''
+					for child in n.children:
+						if child.node_type == NodeType.TEXT_NODE and child.node_value:
+							text += child.node_value.strip() + ' '
+					return text.strip()
+
+				option_text = get_direct_text_content(node)
+
+				# Use text as value if no explicit value
+				if not option_value and option_text:
+					option_value = option_text
+
+				if option_text or option_value:
+					options.append({'text': option_text, 'value': option_value})
+					option_values.append(option_value)
+
+			elif node.tag_name.lower() == 'optgroup':
+				# Process optgroup children
+				for child in node.children:
+					extract_options_recursive(child)
+			else:
+				# Process other children that might contain options
+				for child in node.children:
+					extract_options_recursive(child)
+
+		# Extract all options from select children
+		for child in select_node.children:
+			extract_options_recursive(child)
+
+		if not options:
+			return None
+
+		# Prepare first 4 options for display
+		first_options = []
+		for option in options[:4]:
+			if option['text'] and option['value'] and option['text'] != option['value']:
+				# Limit individual option text to avoid overly long attributes
+				text = option['text'][:20] + ('...' if len(option['text']) > 20 else '')
+				value = option['value'][:10] + ('...' if len(option['value']) > 10 else '')
+				first_options.append(f'{text} ({value})')
+			elif option['text']:
+				text = option['text'][:25] + ('...' if len(option['text']) > 25 else '')
+				first_options.append(text)
+			elif option['value']:
+				value = option['value'][:25] + ('...' if len(option['value']) > 25 else '')
+				first_options.append(value)
+
+		# Try to infer format hint from option values
+		format_hint = None
+		if len(option_values) >= 2:
+			# Check for common patterns
+			if all(val.isdigit() for val in option_values[:5] if val):
+				format_hint = 'numeric'
+			elif all(len(val) == 2 and val.isupper() for val in option_values[:5] if val):
+				format_hint = 'country/state codes'
+			elif all('/' in val or '-' in val for val in option_values[:5] if val):
+				format_hint = 'date/path format'
+			elif any('@' in val for val in option_values[:5] if val):
+				format_hint = 'email addresses'
+
+		return {'count': len(options), 'first_options': first_options, 'format_hint': format_hint}
 
 	def _is_interactive_cached(self, node: EnhancedDOMTreeNode) -> bool:
 		"""Cached version of clickable element detection to avoid redundant calls."""
@@ -602,7 +748,9 @@ class DOMTreeSerializer:
 
 				# Build attributes string with compound component info
 				text_content = ''
-				attributes_html_str = DOMTreeSerializer._build_attributes_string(node.original_node, include_attributes, text_content)
+				attributes_html_str = DOMTreeSerializer._build_attributes_string(
+					node.original_node, include_attributes, text_content
+				)
 
 				# Add compound component information to attributes if present
 				if node.original_node._compound_children:
@@ -610,21 +758,30 @@ class DOMTreeSerializer:
 					for child_info in node.original_node._compound_children:
 						parts = []
 						if child_info['name']:
-							parts.append(f"name={child_info['name']}")
+							parts.append(f'name={child_info["name"]}')
 						if child_info['role']:
-							parts.append(f"role={child_info['role']}")
+							parts.append(f'role={child_info["role"]}')
 						if child_info['valuemin'] is not None:
-							parts.append(f"min={child_info['valuemin']}")
+							parts.append(f'min={child_info["valuemin"]}')
 						if child_info['valuemax'] is not None:
-							parts.append(f"max={child_info['valuemax']}")
+							parts.append(f'max={child_info["valuemax"]}')
 						if child_info['valuenow'] is not None:
-							parts.append(f"current={child_info['valuenow']}")
+							parts.append(f'current={child_info["valuenow"]}')
+
+						# Add select-specific information
+						if 'options_count' in child_info and child_info['options_count'] is not None:
+							parts.append(f'count={child_info["options_count"]}')
+						if 'first_options' in child_info and child_info['first_options']:
+							options_str = '|'.join(child_info['first_options'][:4])  # Limit to 4 options
+							parts.append(f'options={options_str}')
+						if 'format_hint' in child_info and child_info['format_hint']:
+							parts.append(f'format={child_info["format_hint"]}')
 
 						if parts:
-							compound_info.append(f"({','.join(parts)})")
+							compound_info.append(f'({",".join(parts)})')
 
 					if compound_info:
-						compound_attr = f"compound_components={','.join(compound_info)}"
+						compound_attr = f'compound_components={",".join(compound_info)}'
 						if attributes_html_str:
 							attributes_html_str += f' {compound_attr}'
 						else:
