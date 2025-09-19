@@ -6,13 +6,17 @@
 
 <h1 align="center">Enable AI to control your browser 🤖</h1>
 
-[![GitHub stars](https://img.shields.io/github/stars/gregpr07/browser-use?style=social)](https://github.com/gregpr07/browser-use/stargazers)
+[![Docs](https://img.shields.io/badge/Docs-📕-blue?style=for-the-badge)](https://docs.browser-use.com)
+[![Browser-use cloud](https://img.shields.io/badge/Browser_Use_Cloud-☁️-blue?style=for-the-badge&logo=rocket&logoColor=white)](https://cloud.browser-use.com)
+
 [![Discord](https://img.shields.io/discord/1303749220842340412?color=7289DA&label=Discord&logo=discord&logoColor=white)](https://link.browser-use.com/discord)
-[![Cloud](https://img.shields.io/badge/Cloud-☁️-blue)](https://cloud.browser-use.com)
-[![Documentation](https://img.shields.io/badge/Documentation-📕-blue)](https://docs.browser-use.com)
 [![Twitter Follow](https://img.shields.io/twitter/follow/Gregor?style=social)](https://x.com/intent/user?screen_name=gregpr07)
 [![Twitter Follow](https://img.shields.io/twitter/follow/Magnus?style=social)](https://x.com/intent/user?screen_name=mamagnus00)
 [![Weave Badge](https://img.shields.io/endpoint?url=https%3A%2F%2Fapp.workweave.ai%2Fapi%2Frepository%2Fbadge%2Forg_T5Pvn3UBswTHIsN1dWS3voPg%2F881458615&labelColor=#EC6341)](https://app.workweave.ai/reports/repository/org_T5Pvn3UBswTHIsN1dWS3voPg/881458615)
+
+
+
+
 
 <!-- Keep these links. Translations will automatically update with the README. -->
 [Deutsch](https://www.readme-i18n.com/browser-use/browser-use?lang=de) |
@@ -24,71 +28,46 @@
 [Русский](https://www.readme-i18n.com/browser-use/browser-use?lang=ru) |
 [中文](https://www.readme-i18n.com/browser-use/browser-use?lang=zh)
 
-🌤️ Want to skip the setup? Use our <b>[cloud](https://cloud.browser-use.com)</b> for faster, scalable, stealth-enabled browser automation!
-
-**🚀 Use the latest version!**
-
-> We ship every day improvements for **speed**, **accuracy**, and **UX**.
-> ```bash
-> uv pip install --upgrade browser-use
-> ```
 
 # 🤖 Quickstart
 
 With uv (Python>=3.11):
 
 ```bash
+#  We ship every day - use the latest version!
 uv pip install browser-use
 ```
 
-If you don't already have Chrome or Chromium installed, you can also download the latest Chromium using playwright's install shortcut:
+Download chromium using playwright's shortcut:
 
 ```bash
 uvx playwright install chromium --with-deps --no-shell
 ```
 
-
-Spin up your agent:
-
-```python
-import asyncio
-from dotenv import load_dotenv
-load_dotenv()
-from browser_use import Agent, ChatOpenAI
-
-async def main():
-    agent = Agent(
-        task="Find the number of stars of the browser-use repo",
-        llm=ChatOpenAI(model="gpt-4.1-mini"),
-    )
-    await agent.run()
-
-asyncio.run(main())
-```
-
-Add your API keys for the provider you want to use to your `.env` file.
+Create a `.env` file and add your API key. Don't have one? Start with a [free Gemini key](https://aistudio.google.com/app/u/1/apikey?pli=1).
 
 ```bash
-OPENAI_API_KEY=
+GEMINI_API_KEY=
 ```
 
-For other settings, models, and more, check out the [documentation 📕](https://docs.browser-use.com).
-
-**🌤️ Want to use cloud browsers?** Simply add `cloud_browser=True` to your Browser config:
+Run your first agent:
 
 ```python
-from browser_use import Agent, Browser, ChatOpenAI
+from browser_use import Agent, ChatGoogle
+from dotenv import load_dotenv
+load_dotenv()
 
 agent = Agent(
     task="Find the number of stars of the browser-use repo",
-    llm=ChatOpenAI(model="gpt-4.1-mini"),
-    browser=Browser(cloud_browser=True),  # Uses Browser-Use cloud service
+    llm=ChatGoogle(model="gemini-2.5-flash"),
+    # browser=Browser(use_cloud=True),  # Uses Browser-Use cloud for the browser
 )
+agent.run_sync()
 ```
 
-First Set BROWSER_USE_API_KEY environment variable. You can get your API key from [here](https://cloud.browser-use.com).
+Check out the [library docs](https://docs.browser-use.com) and [cloud docs](https://docs.cloud.browser-use.com) for more settings.
 
-For other settings, models, and more, check out the [Cloud documentation 📕](https://docs.cloud.browser-use.com).
+
 
 # Demos
 
