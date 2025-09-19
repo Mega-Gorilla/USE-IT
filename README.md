@@ -4,7 +4,7 @@
   <img alt="Shows a black Browser Use Logo in light color mode and a white one in dark color mode." src="./static/browser-use.png"  width="full">
 </picture>
 
-<h1 align="center">Enable AI to control your browser 🤖</h1>
+<h1 align="center">Enable AI to control your browser</h1>
 
 [![Docs](https://img.shields.io/badge/Docs-📕-blue?style=for-the-badge)](https://docs.browser-use.com)
 [![Browser-use cloud](https://img.shields.io/badge/Browser_Use_Cloud-☁️-blue?style=for-the-badge&logo=rocket&logoColor=white)](https://cloud.browser-use.com)
@@ -81,23 +81,18 @@ Check out the [library docs](https://docs.browser-use.com) and [cloud docs](http
 <br/><br/>
 
 
-[Prompt](https://github.com/browser-use/browser-use/blob/main/examples/use-cases/find_and_apply_to_jobs.py): Read my CV & find ML jobs, save them to a file, and then start applying for them in new tabs, if you need help, ask me.'
+[Task](https://github.com/browser-use/browser-use/blob/main/examples/use-cases/find_and_apply_to_jobs.py): Read my CV & find ML jobs, save them to a file, and then start applying for them in new tabs, if you need help, ask me.
 
 https://github.com/user-attachments/assets/171fb4d6-0355-46f2-863e-edb04a828d04
 
 <br/><br/>
-
 For more examples see the [examples](examples) folder.
 
 
 
+<br/><br/>
 ## MCP Integration
 
-Browser-use supports the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/), enabling integration with Claude Desktop and other MCP-compatible clients.
-
-### Use as MCP Server with Claude Desktop
-
-Add browser-use to your Claude Desktop configuration:
 This gives Claude Desktop access to browser automation tools for web scraping, form filling, and more.
 ```json
 {
@@ -112,14 +107,13 @@ This gives Claude Desktop access to browser automation tools for web scraping, f
   }
 }
 ```
-See the [MCP documentation](https://docs.browser-use.com/customize/mcp-server) for more details.
+See the [MCP docs](https://docs.browser-use.com/customize/mcp-server).
 
 
 
 
  <div align="center"> 
 Tell your computer what to do, and it gets it done.
- 
  <img src="https://github.com/user-attachments/assets/06fa3078-8461-4560-b434-445510c1766f" width="400"/>
 
 [![Twitter Follow](https://img.shields.io/twitter/follow/Magnus?style=social)](https://x.com/intent/user?screen_name=mamagnus00)
