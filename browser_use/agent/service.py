@@ -68,6 +68,7 @@ from browser_use.tools.service import Tools
 from browser_use.utils import (
 	URL_PATTERN,
 	_log_pretty_path,
+	check_latest_browser_use_version,
 	get_browser_use_version,
 	get_git_info,
 	time_execution_async,
@@ -1175,12 +1176,19 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			# Just re-raise - Pydantic's validation errors are already descriptive
 			raise
 
-	def _log_agent_run(self) -> None:
+	async def _log_agent_run(self) -> None:
 		"""Log the agent run"""
 		# Blue color for task
 		self.logger.info(f'\033[34m🚀 Task: {self.task}\033[0m')
 
 		self.logger.debug(f'🤖 Browser-Use Library Version {self.version} ({self.source})')
+
+		# Check for latest version and log upgrade message if needed
+		latest_version = await check_latest_browser_use_version()
+		if latest_version and latest_version != self.version:
+			self.logger.info(
+				f'📦 Newer version available: {latest_version} (current: {self.version}). Upgrade with: uv add browser-use@{latest_version}'
+			)
 
 	def _log_first_step_startup(self) -> None:
 		"""Log startup message only on the first step"""
@@ -1406,7 +1414,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		signal_handler.register()
 
 		try:
-			self._log_agent_run()
+			await self._log_agent_run()
 
 			self.logger.debug(
 				f'🔧 Agent setup: Agent Session ID {self.session_id[-4:]}, Task ID {self.task_id[-4:]}, Browser Session ID {self.browser_session.id[-4:] if self.browser_session else "None"} {"(connecting via CDP)" if (self.browser_session and self.browser_session.cdp_url) else "(launching local browser)"}'
