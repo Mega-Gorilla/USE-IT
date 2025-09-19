@@ -65,6 +65,25 @@ Context = TypeVar('Context')
 T = TypeVar('T', bound=BaseModel)
 
 
+def _detect_sensitive_key_name(text: str, sensitive_data: dict[str, str | dict[str, str]] | None) -> str | None:
+	"""Detect which sensitive key name corresponds to the given text value."""
+	if not sensitive_data or not text:
+		return None
+
+	# Collect all sensitive values and their keys
+	for domain_or_key, content in sensitive_data.items():
+		if isinstance(content, dict):
+			# New format: {domain: {key: value}}
+			for key, value in content.items():
+				if value and value == text:
+					return key
+		elif content:  # Old format: {key: value}
+			if content == text:
+				return domain_or_key
+
+	return None
+
+
 def handle_browser_error(e: BrowserError) -> ActionResult:
 	if e.long_term_memory is not None:
 		if e.short_term_memory is not None:
@@ -274,7 +293,7 @@ class Tools(Generic[Context]):
 				await event
 				# Wait for handler to complete and get any exception or metadata
 				click_metadata = await event.event_result(raise_if_any=True, raise_if_none=False)
-				memory = f'Clicked element with index {params.index}'
+				memory = 'Clicked element'
 
 				if params.while_holding_ctrl:
 					memory += ' and opened in new tab'
@@ -288,7 +307,7 @@ class Tools(Generic[Context]):
 
 				# Include click coordinates in metadata if available
 				return ActionResult(
-					long_term_memory=memory,
+					extracted_content=memory,
 					metadata=click_metadata if isinstance(click_metadata, dict) else None,
 				)
 			except BrowserError as e:
@@ -301,6 +320,7 @@ class Tools(Generic[Context]):
 						logger.error(
 							f'Failed to get dropdown options as shortcut during click_element_by_index on dropdown: {type(dropdown_error).__name__}: {dropdown_error}'
 						)
+					return ActionResult(error='Can not click on select elements.')
 
 				return handle_browser_error(e)
 			except Exception as e:
@@ -311,7 +331,12 @@ class Tools(Generic[Context]):
 			'Input text into an input interactive element. Only input text into indices that are inside your current browser_state. Never input text into indices that are not inside your current browser_state.',
 			param_model=InputTextAction,
 		)
-		async def input_text(params: InputTextAction, browser_session: BrowserSession, has_sensitive_data: bool = False):
+		async def input_text(
+			params: InputTextAction,
+			browser_session: BrowserSession,
+			has_sensitive_data: bool = False,
+			sensitive_data: dict[str, str | dict[str, str]] | None = None,
+		):
 			# Look up the node from the selector map
 			node = await browser_session.get_element_by_index(params.index)
 			if node is None:
@@ -319,18 +344,41 @@ class Tools(Generic[Context]):
 
 			# Dispatch type text event with node
 			try:
+				# Detect which sensitive key is being used
+				sensitive_key_name = None
+				if has_sensitive_data and sensitive_data:
+					sensitive_key_name = _detect_sensitive_key_name(params.text, sensitive_data)
+
 				event = browser_session.event_bus.dispatch(
-					TypeTextEvent(node=node, text=params.text, clear_existing=params.clear_existing)
+					TypeTextEvent(
+						node=node,
+						text=params.text,
+						clear_existing=params.clear_existing,
+						is_sensitive=has_sensitive_data,
+						sensitive_key_name=sensitive_key_name,
+					)
 				)
 				await event
 				input_metadata = await event.event_result(raise_if_any=True, raise_if_none=False)
-				msg = f"Input '{params.text}' into element {params.index}."
-				logger.debug(msg)
+
+				# Create message with sensitive data handling
+				if has_sensitive_data:
+					if sensitive_key_name:
+						msg = f'Input {sensitive_key_name} into element {params.index}.'
+						log_msg = f'Input <{sensitive_key_name}> into element {params.index}.'
+					else:
+						msg = f'Input sensitive data into element {params.index}.'
+						log_msg = f'Input <sensitive> into element {params.index}.'
+				else:
+					msg = f"Input '{params.text}' into element {params.index}."
+					log_msg = msg
+
+				logger.debug(log_msg)
 
 				# Include input coordinates in metadata if available
 				return ActionResult(
 					extracted_content=msg,
-					long_term_memory=f"Input '{params.text}' into element {params.index}.",
+					long_term_memory=msg,
 					metadata=input_metadata if isinstance(input_metadata, dict) else None,
 				)
 			except BrowserError as e:
@@ -891,6 +939,123 @@ You will be given a query and the markdown of a webpage that has been filtered t
 				long_term_memory=memory,
 				include_extracted_content_only_once=True,
 			)
+
+		@self.registry.action(
+			"""This JavaScript code gets executed with Runtime.evaluate and 'returnByValue': True, 'awaitPromise': True
+
+SYNTAX RULES - FAILURE TO FOLLOW CAUSES "Uncaught at line 0" ERRORS:
+- ALWAYS wrap your code in IIFE: (function(){ ... })() or (async function(){ ... })() for async code
+- ALWAYS add try-catch blocks to prevent execution errors
+- ALWAYS use proper semicolons and valid JavaScript syntax
+- NEVER write multiline code without proper IIFE wrapping
+- ALWAYS validate elements exist before accessing them
+
+EXAMPLES:
+Use this tool when other tools do not work on the first try as expected or when a more general tool is needed, e.g. for filling a form all at once, hovering, dragging, extracting only links, extracting content from the page, press and hold, hovering, clicking on coordinates, zooming, use this if the user provides custom selectors which you can otherwise not interact with ....
+You can also use it to explore the website.
+- Write code to solve problems you could not solve with other tools.
+- Don't write comments in here, no human reads that.
+- Write only valid js code.
+- use this to e.g. extract + filter links, convert the page to json into the format you need etc...
+
+
+- limit the output otherwise your context will explode
+- think if you deal with special elements like iframes / shadow roots etc
+- Adopt your strategy for React Native Web, React, Angular, Vue, MUI pages etc.
+- e.g. with  synthetic events, keyboard simulation, shadow DOM, etc.
+
+PROPER SYNTAX EXAMPLES:
+CORRECT: (function(){ try { const el = document.querySelector('#id'); return el ? el.value : 'not found'; } catch(e) { return 'Error: ' + e.message; } })()
+CORRECT: (async function(){ try { await new Promise(r => setTimeout(r, 100)); return 'done'; } catch(e) { return 'Error: ' + e.message; } })()
+
+WRONG: const el = document.querySelector('#id'); el ? el.value : '';
+WRONG: document.querySelector('#id').value
+WRONG: Multiline code without IIFE wrapping
+
+SHADOW DOM ACCESS EXAMPLE:
+(function(){
+    try {
+        const hosts = document.querySelectorAll('*');
+        for (let host of hosts) {
+            if (host.shadowRoot) {
+                const el = host.shadowRoot.querySelector('#target');
+                if (el) return el.textContent;
+            }
+        }
+        return 'Not found';
+    } catch(e) {
+        return 'Error: ' + e.message;
+    }
+})()
+
+## Return values:
+- Async functions (with await, promises, timeouts) are automatically handled
+- Returns strings, numbers, booleans, and serialized objects/arrays
+- Use JSON.stringify() for complex objects: JSON.stringify(Array.from(document.querySelectorAll('a')).map(el => el.textContent.trim()))
+
+""",
+		)
+		async def execute_js(code: str, browser_session: BrowserSession):
+			# Execute JavaScript with proper error handling and promise support
+
+			cdp_session = await browser_session.get_or_create_cdp_session()
+
+			try:
+				# Always use awaitPromise=True - it's ignored for non-promises
+				result = await cdp_session.cdp_client.send.Runtime.evaluate(
+					params={'expression': code, 'returnByValue': True, 'awaitPromise': True},
+					session_id=cdp_session.session_id,
+				)
+
+				# Check for JavaScript execution errors
+				if result.get('exceptionDetails'):
+					exception = result['exceptionDetails']
+					error_msg = f'JavaScript execution error: {exception.get("text", "Unknown error")}'
+					if 'lineNumber' in exception:
+						error_msg += f' at line {exception["lineNumber"]}'
+					msg = f'Code: {code}\n\nError: {error_msg}'
+					logger.info(msg)
+					return ActionResult(error=msg)
+
+				# Get the result data
+				result_data = result.get('result', {})
+
+				# Check for wasThrown flag (backup error detection)
+				if result_data.get('wasThrown'):
+					msg = f'Code: {code}\n\nError: JavaScript execution failed (wasThrown=true)'
+					logger.info(msg)
+					return ActionResult(error=msg)
+
+				# Get the actual value
+				value = result_data.get('value')
+
+				# Handle different value types
+				if value is None:
+					# Could be legitimate null/undefined result
+					result_text = str(value) if 'value' in result_data else 'undefined'
+				elif isinstance(value, (dict, list)):
+					# Complex objects - should be serialized by returnByValue
+					try:
+						result_text = json.dumps(value, ensure_ascii=False)
+					except (TypeError, ValueError):
+						# Fallback for non-serializable objects
+						result_text = str(value)
+				else:
+					# Primitive values (string, number, boolean)
+					result_text = str(value)
+
+				# Apply length limit with better truncation
+				if len(result_text) > 20000:
+					result_text = result_text[:19950] + '\n... [Truncated after 20000 characters]'
+				msg = f'Code: {code}\n\nResult: {result_text}'
+				logger.info(msg)
+				return ActionResult(extracted_content=f'Code: {code}\n\nResult: {result_text}')
+
+			except Exception as e:
+				# CDP communication or other system errors
+				error_msg = f'Code: {code}\n\nError: {error_msg} Failed to execute JavaScript: {type(e).__name__}: {e}'
+				logger.info(error_msg)
+				return ActionResult(error=error_msg)
 
 	# Custom done action for structured output
 	async def extract_clean_markdown(

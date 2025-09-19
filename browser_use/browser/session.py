@@ -15,6 +15,8 @@ from cdp_use.cdp.target import AttachedToTargetEvent, SessionID, TargetID
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 from uuid_extensions import uuid7str
 
+from browser_use.browser.cloud import CloudBrowserAuthError, CloudBrowserError, get_cloud_browser_cdp_url
+
 # CDP logging is now handled by setup_logging() in logging_config.py
 # It automatically sets CDP logs to the same level as browser_use logs
 from browser_use.browser.events import (
@@ -251,6 +253,8 @@ class BrowserSession(BaseModel):
 		# From BrowserNewContextArgs
 		storage_state: str | Path | dict[str, Any] | None = None,
 		# BrowserProfile specific fields
+		use_cloud: bool | None = None,
+		cloud_browser: bool | None = None,  # Backward compatibility alias
 		disable_security: bool | None = None,
 		deterministic_rendering: bool | None = None,
 		allowed_domains: list[str] | None = None,
@@ -277,6 +281,10 @@ class BrowserSession(BaseModel):
 		# Following the same pattern as AgentSettings in service.py
 		# Only pass non-None values to avoid validation errors
 		profile_kwargs = {k: v for k, v in locals().items() if k not in ['self', 'browser_profile', 'id'] and v is not None}
+
+		# Handle backward compatibility: map cloud_browser to use_cloud
+		if 'cloud_browser' in profile_kwargs:
+			profile_kwargs['use_cloud'] = profile_kwargs.pop('cloud_browser')
 
 		# if is_local is False but executable_path is provided, set is_local to True
 		if is_local is False and executable_path is not None:
@@ -317,6 +325,11 @@ class BrowserSession(BaseModel):
 	def is_local(self) -> bool:
 		"""Whether this is a local browser instance from browser profile."""
 		return self.browser_profile.is_local
+
+	@property
+	def cloud_browser(self) -> bool:
+		"""Whether to use cloud browser service from browser profile."""
+		return self.browser_profile.use_cloud
 
 	# Main shared event bus for all browser session + all watchdogs
 	event_bus: EventBus = Field(default_factory=EventBus)
@@ -496,9 +509,22 @@ class BrowserSession(BaseModel):
 		await self.attach_all_watchdogs()
 
 		try:
-			# If no CDP URL, launch local browser
+			# If no CDP URL, launch local browser or cloud browser
 			if not self.cdp_url:
-				if self.is_local:
+				if self.browser_profile.use_cloud:
+					# Use cloud browser service
+					try:
+						cloud_cdp_url = await get_cloud_browser_cdp_url()
+						self.browser_profile.cdp_url = cloud_cdp_url
+						self.browser_profile.is_local = False
+						self.logger.info('🌤️ Successfully connected to cloud browser service')
+					except CloudBrowserAuthError:
+						raise CloudBrowserAuthError(
+							'Authentication failed for cloud browser service. Set BROWSER_USE_API_KEY environment variable. You can also create an API key at https://cloud.browser-use.com'
+						)
+					except CloudBrowserError as e:
+						raise CloudBrowserError(f'Failed to create cloud browser: {e}')
+				elif self.is_local:
 					# Launch local browser using event-driven approach
 					launch_event = self.event_bus.dispatch(BrowserLaunchEvent())
 					await launch_event
@@ -812,6 +838,16 @@ class BrowserSession(BaseModel):
 			if self.browser_profile.keep_alive and not event.force:
 				self.event_bus.dispatch(BrowserStoppedEvent(reason='Kept alive due to keep_alive=True'))
 				return
+
+			# Clean up cloud browser session if using cloud browser
+			if self.browser_profile.use_cloud:
+				try:
+					from browser_use.browser.cloud import cleanup_cloud_client
+
+					await cleanup_cloud_client()
+					self.logger.info('🌤️ Cloud browser session cleaned up')
+				except Exception as e:
+					self.logger.debug(f'Failed to cleanup cloud browser session: {e}')
 
 			# Clear CDP session cache before stopping
 			await self.reset()
@@ -1616,18 +1652,18 @@ class BrowserSession(BaseModel):
 				const highlights = document.querySelectorAll('[data-browser-use-highlight]');
 				console.log('Removing', highlights.length, 'browser-use highlight elements');
 				highlights.forEach(el => el.remove());
-				
+
 				// Also remove by ID in case selector missed anything
 				const highlightContainer = document.getElementById('browser-use-debug-highlights');
 				if (highlightContainer) {
 					console.log('Removing highlight container by ID');
 					highlightContainer.remove();
 				}
-				
+
 				// Final cleanup - remove any orphaned tooltips
 				const orphanedTooltips = document.querySelectorAll('[data-browser-use-highlight="tooltip"]');
 				orphanedTooltips.forEach(el => el.remove());
-				
+
 				return { removed: highlights.length };
 			})();
 			"""

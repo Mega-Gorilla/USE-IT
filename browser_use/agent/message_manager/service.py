@@ -366,10 +366,7 @@ class MessageManager:
 
 	def _set_message_with_type(self, message: BaseMessage, message_type: Literal['system', 'state']) -> None:
 		"""Replace a specific state message slot with a new message"""
-		# filter out sensitive data from the message
-		if self.sensitive_data:
-			message = self._filter_sensitive_data(message)
-
+		# Don't filter system and state messages - they should contain placeholder tags or normal conversation
 		if message_type == 'system':
 			self.state.history.system_message = message
 		elif message_type == 'state':
@@ -379,10 +376,7 @@ class MessageManager:
 
 	def _add_context_message(self, message: BaseMessage) -> None:
 		"""Add a contextual message specific to this step (e.g., validation errors, retry instructions, timeout warnings)"""
-		# filter out sensitive data from the message
-		if self.sensitive_data:
-			message = self._filter_sensitive_data(message)
-
+		# Don't filter context messages - they should contain normal conversation or error messages
 		self.state.history.context_messages.append(message)
 
 	@time_execution_sync('--filter_sensitive_data')

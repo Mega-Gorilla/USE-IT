@@ -1,8 +1,12 @@
-from browser_use import Agent, ChatOpenAI
+from dotenv import load_dotenv
+
+from browser_use import Agent, ChatGoogle
+
+load_dotenv()
 
 agent = Agent(
-	task='Find founders of browser-use',
-	llm=ChatOpenAI(model='gpt-4.1-mini'),
+	task='Find the number of stars of the browser-use repo',
+	llm=ChatGoogle(model='gemini-2.5-flash'),
+	# browser=Browser(use_cloud=True),  # Uses Browser-Use cloud for the browser
 )
-
 agent.run_sync()
