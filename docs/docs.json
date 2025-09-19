@@ -168,6 +168,16 @@
                 ]
               },
               {
+                "group": "Actor",
+                "icon": "terminal",
+                "isDefaultOpen": false,
+                "pages": [
+                  "customize/actor/basics",
+                  "customize/actor/examples",
+                  "customize/actor/all-parameters"
+                ]
+              },
+              {
                 "group": "Integration",
                 "icon": "plug",
                 "isDefaultOpen": false,
