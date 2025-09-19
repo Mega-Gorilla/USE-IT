@@ -72,8 +72,6 @@ Check out the [library docs](https://docs.browser-use.com) and [cloud docs](http
 
 # Demos
 
-<br/><br/>
-
 [Task](https://github.com/browser-use/browser-use/blob/main/examples/use-cases/shopping.py): Add grocery items to cart, and checkout.
 
 [![AI Did My Groceries](https://github.com/user-attachments/assets/a0ffd23d-9a11-4368-8893-b092703abc14)](https://www.youtube.com/watch?v=L2Ya9PYNns8)
@@ -93,7 +91,7 @@ For more examples see the [examples](examples) folder.
 <br/><br/>
 ## MCP Integration
 
-This gives Claude Desktop access to browser automation tools for web scraping, form filling, and more.
+This gives Claude Desktop access to browser automation tools for web scraping, form filling, and more. See the [MCP docs](https://docs.browser-use.com/customize/mcp-server).
 ```json
 {
   "mcpServers": {
@@ -107,19 +105,17 @@ This gives Claude Desktop access to browser automation tools for web scraping, f
   }
 }
 ```
-See the [MCP docs](https://docs.browser-use.com/customize/mcp-server).
 
+<div align="center">
+  
+**Tell your computer what to do, and it gets it done.**
 
-
-
- <div align="center"> 
-Tell your computer what to do, and it gets it done.
- <img src="https://github.com/user-attachments/assets/06fa3078-8461-4560-b434-445510c1766f" width="400"/>
+<img src="https://github.com/user-attachments/assets/06fa3078-8461-4560-b434-445510c1766f" width="400"/>
 
 [![Twitter Follow](https://img.shields.io/twitter/follow/Magnus?style=social)](https://x.com/intent/user?screen_name=mamagnus00)
 [![Twitter Follow](https://img.shields.io/twitter/follow/Gregor?style=social)](https://x.com/intent/user?screen_name=gregpr07)
 
- </div>
+</div>
 
 <div align="center">
 Made with ❤️ in Zurich and San Francisco
