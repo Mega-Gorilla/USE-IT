@@ -951,7 +951,7 @@ SYNTAX RULES - FAILURE TO FOLLOW CAUSES "Uncaught at line 0" ERRORS:
 - ALWAYS validate elements exist before accessing them
 
 EXAMPLES:
-Use this tool when other tools do not work on the first try as expected or when a more general tool is needed, e.g. for filling a form all at once, hovering, dragging, extracting only links, extracting content from the page, press and hold, hovoring, clicking on coordinates, zooming, use this if the user provides custom selecotrs which you can otherwise not interact with ....
+Use this tool when other tools do not work on the first try as expected or when a more general tool is needed, e.g. for filling a form all at once, hovering, dragging, extracting only links, extracting content from the page, press and hold, hovering, clicking on coordinates, zooming, use this if the user provides custom selectors which you can otherwise not interact with ....
 You can also use it to explore the website.
 - Write code to solve problems you could not solve with other tools.
 - Don't write comments in here, no human reads that.
