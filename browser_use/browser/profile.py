@@ -550,7 +550,15 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	# Session/connection configuration
 	cdp_url: str | None = Field(default=None, description='CDP URL for connecting to existing browser instance')
 	is_local: bool = Field(default=False, description='Whether this is a local browser instance')
-	# label: str = 'default'
+	use_cloud: bool = Field(
+		default=False,
+		description='Use browser-use cloud browser service instead of local browser',
+	)
+
+	@property
+	def cloud_browser(self) -> bool:
+		"""Alias for use_cloud field for compatibility."""
+		return self.use_cloud
 
 	# custom options we provide that aren't native playwright kwargs
 	disable_security: bool = Field(default=False, description='Disable browser security features.')

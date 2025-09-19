@@ -71,33 +71,28 @@ You can configure browser-use through environment variables:
 The MCP server exposes these browser automation tools:
 
 ### Autonomous Agent Tools
-- **`run_browser_task`** - Run a complete browser automation task with an AI agent
-- **`run_browser_task_streaming`** - Same as above but with streaming responses
+- **`retry_with_browser_use_agent`** - Run a complete browser automation task with an AI agent (use as last resort when direct control fails)
 
 ### Direct Browser Control
 - **`browser_navigate`** - Navigate to a URL
 - **`browser_click`** - Click on an element by index
 - **`browser_type`** - Type text into an element
-- **`browser_get_state`** - Get current page state and screenshot
+- **`browser_get_state`** - Get current page state and interactive elements
 - **`browser_scroll`** - Scroll the page
 - **`browser_go_back`** - Go back in browser history
-- **`browser_go_forward`** - Go forward in browser history
-- **`browser_refresh`** - Refresh the current page
 
 ### Tab Management
 - **`browser_list_tabs`** - List all open browser tabs
 - **`browser_switch_tab`** - Switch to a specific tab
 - **`browser_close_tab`** - Close a tab
-- **`browser_new_tab`** - Open a new tab
 
 ### Content Extraction
 - **`browser_extract_content`** - Extract structured content from the current page
-- **`browser_take_screenshot`** - Take a screenshot of the current page
 
-### File Operations
-- **`read_file`** - Read content from a file
-- **`write_file`** - Write content to a file
-- **`list_files`** - List files in a directory
+### Session Management
+- **`browser_list_sessions`** - List all active browser sessions with details
+- **`browser_close_session`** - Close a specific browser session by ID
+- **`browser_close_all`** - Close all active browser sessions
 
 ## Example Usage
 
@@ -140,12 +135,12 @@ async def use_browser_mcp():
             )
             print(result.content[0].text)
             
-            # Take a screenshot
+            # Get page state
             result = await session.call_tool(
-                "browser_take_screenshot", 
-                arguments={}
+                "browser_get_state", 
+                arguments={"include_screenshot": True}
             )
-            print("Screenshot taken!")
+            print("Page state retrieved!")
 
 asyncio.run(use_browser_mcp())
 ```

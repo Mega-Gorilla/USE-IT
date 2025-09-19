@@ -130,6 +130,7 @@ class DomService:
 			name=ax_node.get('name', {}).get('value', None),
 			description=ax_node.get('description', {}).get('value', None),
 			properties=properties,
+			child_ids=ax_node.get('childIds', []) if ax_node.get('childIds') else None,
 		)
 		return enhanced_ax_node
 
@@ -234,8 +235,8 @@ class DomService:
 				frame_intersects = (
 					adjusted_x < viewport_right
 					and adjusted_x + current_bounds.width > viewport_left
-					and adjusted_y < viewport_bottom
-					and adjusted_y + current_bounds.height > viewport_top
+					and adjusted_y < viewport_bottom + 1000
+					and adjusted_y + current_bounds.height > viewport_top - 1000
 				)
 
 				if not frame_intersects:
