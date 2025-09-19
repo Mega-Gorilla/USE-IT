@@ -110,7 +110,8 @@ class CloudBrowserClient:
 
 			logger.info(f'🌤️ Cloud browser created successfully: {browser_response.id}')
 			logger.debug(f'🌤️ CDP URL: {browser_response.cdpUrl}')
-			logger.debug(f'🌤️ Live URL: {browser_response.liveUrl}')
+			# Cyan color for live URL
+			logger.info(f'\033[36m🔗 Live URL: {browser_response.liveUrl}\033[0m')
 
 			return browser_response
 
