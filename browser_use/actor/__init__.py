@@ -5,6 +5,6 @@ A Playwright-like library built on top of CDP (Chrome DevTools Protocol).
 
 from .element import Element
 from .mouse import Mouse
-from .target import Target
+from .page import Page
 
-__all__ = ['Target', 'Element', 'Mouse']
+__all__ = ['Page', 'Element', 'Mouse']

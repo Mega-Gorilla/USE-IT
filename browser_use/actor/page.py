@@ -1,4 +1,4 @@
-"""Target class for target-level operations."""
+"""Page class for page-level operations."""
 
 from typing import TYPE_CHECKING, TypeVar
 
@@ -34,8 +34,8 @@ if TYPE_CHECKING:
 	from .mouse import Mouse
 
 
-class Target:
-	"""Target operations (tab or iframe)."""
+class Page:
+	"""Page operations (tab or iframe)."""
 
 	def __init__(
 		self, browser_session: 'BrowserSession', target_id: str, session_id: str | None = None, llm: 'BaseChatModel | None' = None

@@ -43,7 +43,7 @@ from browser_use.observability import observe_debug
 from browser_use.utils import _log_pretty_url, is_new_tab_page
 
 if TYPE_CHECKING:
-	from browser_use.actor.target import Target
+	from browser_use.actor.page import Page
 
 DEFAULT_BROWSER_PROFILE = BrowserProfile()
 
@@ -844,8 +844,8 @@ class BrowserSession(BaseModel):
 		assert self._cdp_client_root is not None, 'CDP client not initialized - browser may not be connected yet'
 		return self._cdp_client_root
 
-	async def new_target(self, url: str | None = None) -> 'Target':
-		"""Create a new target (tab)."""
+	async def new_page(self, url: str | None = None) -> 'Page':
+		"""Create a new page (tab)."""
 		from cdp_use.cdp.target.commands import CreateTargetParameters
 
 		params: CreateTargetParameters = {'url': url or 'about:blank'}
@@ -854,28 +854,36 @@ class BrowserSession(BaseModel):
 		target_id = result['targetId']
 
 		# Import here to avoid circular import
-		from browser_use.actor.target import Target
+		from browser_use.actor.page import Page as Target
 
 		return Target(self, target_id)
 
-	async def get_current_target(self) -> 'Target | None':
-		"""Get the current target as an actor Target."""
+	async def get_current_page(self) -> 'Page | None':
+		"""Get the current page as an actor Page."""
 		target_info = await self.get_current_target_info()
 
 		if not target_info:
 			return None
 
-		from browser_use.actor.target import Target
+		from browser_use.actor.page import Page as Target
 
 		return Target(self, target_info['targetId'])
 
-	async def get_targets(self) -> list['Target']:
-		"""Get all available targets."""
+	async def must_get_current_page(self) -> 'Page':
+		"""Get the current page as an actor Page."""
+		page = await self.get_current_page()
+		if not page:
+			raise RuntimeError('No current target found')
+
+		return page
+
+	async def get_pages(self) -> list['Page']:
+		"""Get all available pages."""
 		result = await self.cdp_client.send.Target.getTargets()
 
 		targets = []
 		# Import here to avoid circular import
-		from browser_use.actor.target import Target
+		from browser_use.actor.page import Page as Target
 
 		for target_info in result['targetInfos']:
 			if target_info['type'] in ['page', 'iframe']:
@@ -883,17 +891,17 @@ class BrowserSession(BaseModel):
 
 		return targets
 
-	async def close_target(self, target: 'Union[Target, str]') -> None:
-		"""Close a target by Target object or target ID."""
+	async def close_page(self, page: 'Union[Page, str]') -> None:
+		"""Close a page by Page object or target ID."""
 		from cdp_use.cdp.target.commands import CloseTargetParameters
 
 		# Import here to avoid circular import
-		from browser_use.actor.target import Target
+		from browser_use.actor.page import Page as Target
 
-		if isinstance(target, Target):
-			target_id = target._target_id
+		if isinstance(page, Target):
+			target_id = page._target_id
 		else:
-			target_id = str(target)
+			target_id = str(page)
 
 		params: CloseTargetParameters = {'targetId': target_id}
 		await self.cdp_client.send.Target.closeTarget(params)

@@ -31,14 +31,14 @@ async def main():
 	browser = Browser(keep_alive=True)
 	await browser.start()
 
-	target = await browser.get_current_target() or await browser.new_target()
+	page = await browser.get_current_page() or await browser.new_page()
 
 	# Go to apple wikipedia page
-	await target.goto('https://browser-use.github.io/stress-tests/challenges/angularjs-form.html')
+	await page.goto('https://browser-use.github.io/stress-tests/challenges/angularjs-form.html')
 
 	await asyncio.sleep(1)
 
-	element = await target.get_element_by_prompt('zip code input', llm)
+	element = await page.get_element_by_prompt('zip code input', llm)
 
 	print('Element found', element)
 

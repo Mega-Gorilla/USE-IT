@@ -34,21 +34,21 @@ async def main():
 
 		# Navigate to Wikipedia using integrated methods
 		logger.info('📖 Navigating to Wikipedia...')
-		target = await browser.new_target('https://en.wikipedia.org')
+		page = await browser.new_page('https://en.wikipedia.org')
 
 		# Get basic page info
-		url = await target.get_url()
-		title = await target.get_title()
+		url = await page.get_url()
+		title = await page.get_title()
 		logger.info(f'📄 Page loaded: {title} ({url})')
 
 		# Take a screenshot
 		logger.info('📸 Taking initial screenshot...')
-		screenshot_b64 = await target.screenshot()
+		screenshot_b64 = await page.screenshot()
 		logger.info(f'📸 Screenshot captured: {len(screenshot_b64)} bytes')
 
 		# Set viewport size
 		logger.info('🖥️ Setting viewport to 1920x1080...')
-		await target.set_viewport_size(1920, 1080)
+		await page.set_viewport_size(1920, 1080)
 
 		# Execute some JavaScript to count links
 		logger.info('🔍 Counting article links using JavaScript...')
@@ -66,12 +66,12 @@ async def main():
 			};
 		}"""
 
-		link_info = json.loads(await target.evaluate(js_code))
+		link_info = json.loads(await page.evaluate(js_code))
 		logger.info(f'🔗 Found {link_info["total"]} article links')
 		# Try to find and interact with links using CSS selector
 		try:
 			# Find article links on the page
-			links = await target.get_elements_by_css_selector('a[href*="/wiki/"]:not([href*=":"])')
+			links = await page.get_elements_by_css_selector('a[href*="/wiki/"]:not([href*=":"])')
 
 			if links:
 				logger.info(f'📋 Found {len(links)} wiki links via CSS selector')
@@ -107,8 +107,8 @@ async def main():
 				await asyncio.sleep(3)
 
 				# Get new page info
-				new_url = await target.get_url()
-				new_title = await target.get_title()
+				new_url = await page.get_url()
+				new_title = await page.get_title()
 				logger.info(f'📄 Navigated to: {new_title}')
 				logger.info(f'🌐 New URL: {new_url}')
 			else:
@@ -119,7 +119,7 @@ async def main():
 
 		# Scroll down the page
 		logger.info('📜 Scrolling down the page...')
-		mouse = await target.mouse
+		mouse = await page.mouse
 		await mouse.scroll(x=0, y=100, delta_y=500)
 		await asyncio.sleep(1)
 
@@ -132,17 +132,17 @@ async def main():
 		logger.info('🧪 Testing JavaScript evaluation...')
 
 		# Simple expressions
-		page_height = await target.evaluate('() => document.body.scrollHeight')
-		current_scroll = await target.evaluate('() => window.pageYOffset')
+		page_height = await page.evaluate('() => document.body.scrollHeight')
+		current_scroll = await page.evaluate('() => window.pageYOffset')
 		logger.info(f'📏 Page height: {page_height}px, current scroll: {current_scroll}px')
 
 		# JavaScript with arguments
-		result = await target.evaluate('(x) => x * 2', 21)
+		result = await page.evaluate('(x) => x * 2', 21)
 		logger.info(f'🧮 JavaScript with args: 21 * 2 = {result}')
 
 		# More complex JavaScript
 		page_stats = json.loads(
-			await target.evaluate("""() => {
+			await page.evaluate("""() => {
 			return {
 				url: window.location.href,
 				title: document.title,
@@ -156,43 +156,43 @@ async def main():
 		logger.info(f'📊 Page stats: {page_stats}')
 
 		# Get page title using different methods
-		title_via_js = await target.evaluate('() => document.title')
-		title_via_api = await target.get_title()
+		title_via_js = await page.evaluate('() => document.title')
+		title_via_api = await page.get_title()
 		logger.info(f'📝 Title via JS: "{title_via_js}"')
 		logger.info(f'📝 Title via API: "{title_via_api}"')
 
 		# Take a final screenshot
 		logger.info('📸 Taking final screenshot...')
-		final_screenshot = await target.screenshot()
+		final_screenshot = await page.screenshot()
 		logger.info(f'📸 Final screenshot: {len(final_screenshot)} bytes')
 
 		# Test browser navigation with error handling
 		logger.info('⬅️ Testing browser back navigation...')
 		try:
-			await target.go_back()
+			await page.go_back()
 			await asyncio.sleep(2)
 
-			back_url = await target.get_url()
-			back_title = await target.get_title()
+			back_url = await page.get_url()
+			back_title = await page.get_title()
 			logger.info(f'📄 After going back: {back_title}')
 			logger.info(f'🌐 Back URL: {back_url}')
 		except RuntimeError as e:
 			logger.info(f'ℹ️ Navigation back failed as expected: {e}')
 
-		# Test creating new target
-		logger.info('🆕 Creating new blank target...')
-		new_target = await browser.new_target()
-		new_target_url = await new_target.get_url()
-		logger.info(f'🆕 New target created with URL: {new_target_url}')
+		# Test creating new page
+		logger.info('🆕 Creating new blank page...')
+		new_page = await browser.new_page()
+		new_page_url = await new_page.get_url()
+		logger.info(f'🆕 New page created with URL: {new_page_url}')
 
-		# Get all targets
-		all_targets = await browser.get_targets()
-		logger.info(f'📑 Total targets: {len(all_targets)}')
+		# Get all pages
+		all_pages = await browser.get_pages()
+		logger.info(f'📑 Total pages: {len(all_pages)}')
 
 		# Test form interaction if we can find a form
 		try:
 			# Look for search input on the page
-			search_inputs = await target.get_elements_by_css_selector('input[type="search"], input[name*="search"]')
+			search_inputs = await page.get_elements_by_css_selector('input[type="search"], input[name*="search"]')
 
 			if search_inputs:
 				search_input = search_inputs[0]
@@ -200,7 +200,7 @@ async def main():
 
 				await search_input.focus()
 				await search_input.fill('test search query')
-				await target.press('Enter')
+				await page.press('Enter')
 
 				logger.info('✅ Form interaction test completed')
 			else:
@@ -209,11 +209,11 @@ async def main():
 		except Exception as e:
 			logger.info(f'ℹ️ Form interaction test skipped: {e}')
 
-			# wait 2 seconds before closing the new target
-		logger.info('🕒 Waiting 2 seconds before closing the new target...')
+			# wait 2 seconds before closing the new page
+		logger.info('🕒 Waiting 2 seconds before closing the new page...')
 		await asyncio.sleep(2)
-		logger.info('🗑️ Closing new target...')
-		await browser.close_target(new_target)
+		logger.info('🗑️ Closing new page...')
+		await browser.close_page(new_page)
 
 		logger.info('✅ Playground completed successfully!')
 

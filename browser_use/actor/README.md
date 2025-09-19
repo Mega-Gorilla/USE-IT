@@ -1,135 +1,189 @@
 # Browser Actor
 
-Browser Actor is a web automation library built directly on CDP.
+Browser Actor is a web automation library built on CDP (Chrome DevTools Protocol) that provides low-level browser automation capabilities within the browser-use ecosystem.
 
 ## Usage
 
-### Option 1: Direct CDP Usage
+### Integrated with BrowserSession (Recommended)
 ```python
-from cdp_use import CDPClient
-from browser_use.actor import Target, Element, Mouse
-
-# Create client directly - no Browser class needed
-client = CDPClient(ws_url)
-```
-
-### Option 2: Integrated with Browser (Recommended)
-```python
-from browser_use import Browser
+from browser_use import Browser  # Alias for BrowserSession
 
 # Create and start browser session
 browser = Browser()
 await browser.start()
 
-# Use integrated browser methods directly
-target = await browser.new_target("https://example.com")
-targets = await browser.get_targets()
-current_target = await browser.get_current_target()
+# Create new tabs and navigate
+page = await browser.new_page("https://example.com")
+pages = await browser.get_pages()
+current_page = await browser.get_current_page()
 ```
+
+### Direct Page Access (Advanced)
+```python
+from browser_use.actor import Page, Element, Mouse
+
+# Create page with existing browser session
+page = Page(browser_session, target_id, session_id)
+```
+
+## Basic Operations
 
 ```python
-# Get targets (multiple ways) - using browser methods
-target = await browser.new_target()  # Create blank tab
-target = await browser.new_target("https://example.com")  # Create tab with URL
-targets = await browser.get_targets()  # Get all existing tabs
+# Tab Management
+page = await browser.new_page()  # Create blank tab
+page = await browser.new_page("https://example.com")  # Create tab with URL
+pages = await browser.get_pages()  # Get all existing tabs
+await browser.close_page(page)  # Close specific tab
 
-# Navigate target to URL
-await target.goto("https://example.com")
-
-await browser.close_target(target)
+# Navigation
+await page.goto("https://example.com")
+await page.go_back()
+await page.go_forward()
+await page.reload()
 ```
+
+## Element Operations
 
 ```python
 # Find elements by CSS selector
-elements = await target.get_elements_by_css_selector("input[type='text']")
-buttons = await target.get_elements_by_css_selector("button.submit")
+elements = await page.get_elements_by_css_selector("input[type='text']")
+buttons = await page.get_elements_by_css_selector("button.submit")
 
 # Get element by backend node ID
-element = await target.get_element(backend_node_id=12345)
+element = await page.get_element(backend_node_id=12345)
+
+# AI-powered element finding (requires LLM)
+element = await page.get_element_by_prompt("search button", llm=your_llm)
+element = await page.must_get_element_by_prompt("login form", llm=your_llm)
 ```
 
-Unlike other libraries, the native implementation for `get_elements_by_css_selector` does not support waiting for the element to be visible.
+> **Note**: `get_elements_by_css_selector` returns immediately without waiting for visibility.
+
+## Element Interactions
 
 ```python
 # Element actions
 await element.click(button='left', click_count=1, modifiers=['Control'])
-await element.fill("Hello World") 
+await element.fill("Hello World")  # Clears first, then types
 await element.hover()
 await element.focus()
-await element.check() 
-await element.select_option(["option1", "option2"])
+await element.check()  # Toggle checkbox/radio
+await element.select_option(["option1", "option2"])  # For dropdown/select
+await element.drag_to(target_element)  # Drag and drop
 
-# Element properties  
+# Element properties
 value = await element.get_attribute("value")
-box = await element.get_bounding_box()
-info = await element.get_basic_info()
+box = await element.get_bounding_box()  # Returns BoundingBox or None
+info = await element.get_basic_info()  # Comprehensive element info
+screenshot_b64 = await element.screenshot(format='jpeg')
 ```
+
+## Mouse Operations
 
 ```python
 # Mouse operations
-mouse = await target.mouse
-await mouse.click(x=100, y=200, button='left')
-await mouse.move(x=300, y=400)
+mouse = await page.mouse
+await mouse.click(x=100, y=200, button='left', click_count=1)
+await mouse.move(x=300, y=400, steps=1)
+await mouse.down(button='left')  # Press button
+await mouse.up(button='left')    # Release button
+await mouse.scroll(x=0, y=100, delta_x=0, delta_y=-500)  # Scroll at coordinates
 ```
 
+## Page Operations
+
 ```python
-# Target operations
-mouse = await target.mouse
-await mouse.scroll(x=0, y=100, delta_y=-500) # x,y (coordinates to scroll on), delta_y (how much to scroll)
-await target.press("Control+A")  # Key combinations supported
-await target.press("Escape")
-await target.set_viewport_size(width=1920, height=1080)
-await target.reload()
-page_screenshot = await target.screenshot()  # JPEG by default
-page_png = await target.screenshot(format="png")
+# JavaScript evaluation
+result = await page.evaluate('() => document.title')  # Must use arrow function format
+result = await page.evaluate('(x, y) => x + y', 10, 20)  # With arguments
+
+# Keyboard input
+await page.press("Control+A")  # Key combinations supported
+await page.press("Escape")     # Single keys
+
+# Page controls
+await page.set_viewport_size(width=1920, height=1080)
+page_screenshot = await page.screenshot()  # JPEG by default
+page_png = await page.screenshot(format="png", quality=90)
+
+# Page information
+url = await page.get_url()
+title = await page.get_title()
+```
+
+## AI-Powered Features
+
+```python
+# Content extraction using LLM
+from pydantic import BaseModel
+
+class ProductInfo(BaseModel):
+    name: str
+    price: float
+    description: str
+
+# Extract structured data from current page
+products = await page.extract_content(
+    "Find all products with their names, prices and descriptions",
+    ProductInfo,
+    llm=your_llm
+)
 ```
 
 ## Core Classes
 
-- **Browser**: Main browser session with integrated browser methods
-- **Target**, **Element**, **Mouse**: Core classes for browser operations
+- **BrowserSession** (aliased as **Browser**): Main browser session manager with tab operations
+- **Page**: Represents a single browser tab or iframe for page-level operations
+- **Element**: Individual DOM element for interactions and property access
+- **Mouse**: Mouse operations within a page (click, move, scroll)
 
 ## API Reference
 
-### Browser Methods (Browser Operations)
-- `new_target(url=None)` → `Target` - Create blank tab or navigate to URL
-- `get_targets()` → `list[Target]` - Get all page/iframe targets
-- `close_target(target: Target | str)` - Close target by object or ID
-- `cookies(urls=None)` → `list[Cookie]` - Get cookies for specified URLs (or all if None)
-- `clear_cookies()` - Clear all cookies
-- `get_current_target()` → `Target | None` - Get the current target
+### BrowserSession Methods (Tab Management)
+- `start()` - Initialize and start the browser session
+- `stop()` - Stop the browser session (keeps browser alive)
+- `kill()` - Kill the browser process and reset all state
+- `new_page(url=None)` → `Page` - Create blank tab or navigate to URL
+- `get_pages()` → `list[Page]` - Get all available pages
+- `get_current_page()` → `Page | None` - Get the currently focused page
+- `close_page(page: Page | str)` - Close page by object or ID
+- Session management and CDP client operations
 
-### Target Methods
+### Page Methods (Page Operations)
 - `get_elements_by_css_selector(selector: str)` → `list[Element]` - Find elements by CSS selector
 - `get_element(backend_node_id: int)` → `Element` - Get element by backend node ID
-- `goto(url: str)` - Navigate this target to URL
-- `go_back()`, `go_forward()` - Navigate target history (with proper error handling)
-- `evaluate(page_function: str, *args)` → `str` - Execute JavaScript (MUST use (...args) => format) and return string (objects/arrays are JSON-stringified)
+- `get_element_by_prompt(prompt: str, llm)` → `Element | None` - AI-powered element finding
+- `must_get_element_by_prompt(prompt: str, llm)` → `Element` - AI element finding (raises if not found)
+- `extract_content(prompt: str, structured_output: type[T], llm)` → `T` - Extract structured data using LLM
+- `goto(url: str)` - Navigate this page to URL
+- `go_back()`, `go_forward()` - Navigate history (with error handling)
+- `reload()` - Reload the current page
+- `evaluate(page_function: str, *args)` → `str` - Execute JavaScript (MUST use (...args) => format)
 - `press(key: str)` - Press key on page (supports "Control+A" format)
 - `set_viewport_size(width: int, height: int)` - Set viewport dimensions
-- `reload()` - Reload the current page
-- `screenshot(format='jpeg', quality=None)` → `str` - Take page screenshot and return base64
-- `get_url()` → `str`, `get_title()` → `str` - Get page info
+- `screenshot(format='jpeg', quality=None)` → `str` - Take page screenshot, return base64
+- `get_url()` → `str`, `get_title()` → `str` - Get page information
+- `mouse` → `Mouse` - Get mouse interface for this page
 
-### Element Methods (Supported Only)
-- `click(button='left', click_count=1, modifiers=None)` - Click element
-- `fill(text: str)` - Fill input with text (clears first)
+### Element Methods (DOM Interactions)
+- `click(button='left', click_count=1, modifiers=None)` - Click element with advanced fallbacks
+- `fill(text: str, clear_existing=True)` - Fill input with text (clears first by default)
 - `hover()` - Hover over element
 - `focus()` - Focus the element
 - `check()` - Toggle checkbox/radio button (clicks to change state)
-- `select_option(values: str | list[str])` - Select dropdown options (string or array)
-- `drag_to(target: Element | Position, source_position=None, target_position=None)` - Drag to target
+- `select_option(values: str | list[str])` - Select dropdown options
+- `drag_to(target_element: Element | Position, source_position=None, target_position=None)` - Drag to target element
 - `get_attribute(name: str)` → `str | None` - Get attribute value
 - `get_bounding_box()` → `BoundingBox | None` - Get element position/size
-- `screenshot(format='jpeg', quality=None)` → `str` - Take element screenshot and return base64
+- `screenshot(format='jpeg', quality=None)` → `str` - Take element screenshot, return base64
 - `get_basic_info()` → `ElementInfo` - Get comprehensive element information
 
 
-### Mouse Methods
+### Mouse Methods (Coordinate-Based Operations)
 - `click(x: int, y: int, button='left', click_count=1)` - Click at coordinates
 - `move(x: int, y: int, steps=1)` - Move to coordinates
-- `down(button='left')`, `up(button='left')` - Press/release button
-- `scroll(x=0, y=0, delta_x=None, delta_y=None)` - Scroll page (x,y coordinates to scroll on, delta_x/delta_y how much to scroll)
+- `down(button='left', click_count=1)`, `up(button='left', click_count=1)` - Press/release button
+- `scroll(x=0, y=0, delta_x=None, delta_y=None)` - Scroll page at coordinates
 
 ## Type Definitions
 
@@ -152,33 +206,39 @@ class BoundingBox(TypedDict):
 ### ElementInfo
 ```python
 class ElementInfo(TypedDict):
-    backend_node_id: int
-    node_id: int | None
-    node_name: str
-    node_type: int
-    node_value: str | None
-    attributes: dict[str, str]
-    bounding_box: BoundingBox | None
+    backendNodeId: int          # CDP backend node ID
+    nodeId: int | None          # CDP node ID
+    nodeName: str               # HTML tag name (e.g., "DIV", "INPUT")
+    nodeType: int               # DOM node type
+    nodeValue: str | None       # Text content for text nodes
+    attributes: dict[str, str]  # HTML attributes
+    boundingBox: BoundingBox | None  # Element position and size
+    error: str | None           # Error message if info retrieval failed
 ```
 
-## Important LLM Usage Notes
+## Important Usage Notes
 
-**This is NOT Playwright.**. You can NOT use other methods than the ones described here. Key constraints for code generation:
+**This is browser-use actor, NOT Playwright or Selenium.** Only use the methods documented above.
 
-**CRITICAL JAVASCRIPT EVALUATION RULES:**
-- `target.evaluate()` MUST use (...args) => format and always returns string (objects become JSON strings)
-- **STRING QUOTES**: Always use `target.evaluate('...')` (single quotes outside, double inside for CSS)
-- **CSS SELECTORS**: Use `"input[name=\\"email\\"]"` format inside evaluate calls
-- **ESCAPING**: Use `\\"` to escape double quotes inside selectors, never mix quote patterns
+### Critical JavaScript Rules
+- `page.evaluate()` MUST use `(...args) => {}` arrow function format
+- Always returns string (objects are JSON-stringified automatically)
+- Use single quotes around the function: `page.evaluate('() => document.title')`
+- For complex selectors in JS: `'() => document.querySelector("input[name=\\"email\\"]")'`
 
-**METHOD RESTRICTIONS:**
-- `get_elements_by_css_selector()` returns immediately, no waiting
-- For dropdowns: use `element.select_option("value")` or `element.select_option(["val1", "val2"])`, not `element.fill()`
-- No methods: `element.submit()`, `element.dispatch_event()`, `element.get_property()`, `target.query_selector_all()`
-- Form submission: click submit button or use `target.press("Enter")`
-- Get properties: use `target.evaluate("() => element.value")` not `element.get_property()`
+### Method Restrictions
+- `get_elements_by_css_selector()` returns immediately (no automatic waiting)
+- For dropdowns: use `element.select_option()`, NOT `element.fill()`
+- Form submission: click submit button or use `page.press("Enter")`
+- No methods like: `element.submit()`, `element.dispatch_event()`, `element.get_property()`
 
-**ERROR PREVENTION:**
-- Loop prevention: verify page state changes with `target.get_url()`, `target.get_title()`, `element.get_attribute()`
-- Validate selectors before use: ensure no excessive escaping like `\\\\\\\\`
-- Test complex selectors: if a selector fails, simplify it step by step
+### Error Prevention
+- Always verify page state changes with `page.get_url()`, `page.get_title()`
+- Use `element.get_attribute()` to check element properties
+- Validate CSS selectors before use
+- Handle navigation timing with appropriate `asyncio.sleep()` calls
+
+### AI Features
+- `get_element_by_prompt()` and `extract_content()` require an LLM instance
+- These methods use DOM analysis and structured output parsing
+- Best for complex page understanding and data extraction tasks
