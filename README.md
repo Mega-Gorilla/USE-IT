@@ -85,7 +85,7 @@ https://github.com/user-attachments/assets/171fb4d6-0355-46f2-863e-edb04a828d04
 
 <br/><br/>
 
-See [more examples](https://docs.browser-use.com/examples) in the docs and give us a star!
+See [more examples](https://docs.browser-use.com/examples) and give us a star!
 
 
 <br/><br/>
