@@ -1,4 +1,3 @@
-import os
 import sys
 import tempfile
 from collections.abc import Iterable
@@ -552,7 +551,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	cdp_url: str | None = Field(default=None, description='CDP URL for connecting to existing browser instance')
 	is_local: bool = Field(default=False, description='Whether this is a local browser instance')
 	use_cloud: bool = Field(
-		default_factory=lambda: bool(os.getenv('BROWSER_USE_API_KEY')),
+		default=False,
 		description='Use browser-use cloud browser service instead of local browser',
 	)
 
