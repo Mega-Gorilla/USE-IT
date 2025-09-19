@@ -1179,8 +1179,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 			# Execute JavaScript to trigger comprehensive event sequence
 			framework_events_script = """
 			(function() {
-				// Find the target element
-				const element = arguments[0];
+				// Find the target element (available as 'this' when using objectId)
+				const element = this;
 				if (!element) return false;
 
 				// Ensure element is focused
@@ -1255,7 +1255,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				}
 
 				return success;
-			})(arguments[0]);
+			})();
 			"""
 
 			# Execute the framework events script
@@ -1263,7 +1263,6 @@ class DefaultActionWatchdog(BaseWatchdog):
 				params={
 					'objectId': object_id,
 					'functionDeclaration': framework_events_script,
-					'arguments': [{'objectId': object_id}],
 					'returnByValue': True,
 				},
 				session_id=cdp_session.session_id,
