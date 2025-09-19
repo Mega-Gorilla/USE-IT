@@ -84,7 +84,7 @@ Check out the [library docs](https://docs.browser-use.com) and [cloud docs](http
 https://github.com/user-attachments/assets/171fb4d6-0355-46f2-863e-edb04a828d04
 
 <br/><br/>
-For more examples see the [examples](examples) folder.
+See more [examples in the docs](https://docs.browser-use.com/examples). 
 
 
 
