@@ -520,7 +520,7 @@ class BrowserSession(BaseModel):
 						self.logger.info('🌤️ Successfully connected to cloud browser service')
 					except CloudBrowserAuthError:
 						raise CloudBrowserAuthError(
-							'Authentication failed for cloud browser service. Set BROWSER_USE_API_KEY environment variable'
+							'Authentication failed for cloud browser service. Set BROWSER_USE_API_KEY environment variable. You can also create an API key at https://cloud.browser-use.com'
 						)
 					except CloudBrowserError as e:
 						raise CloudBrowserError(f'Failed to create cloud browser: {e}')

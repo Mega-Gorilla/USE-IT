@@ -5,23 +5,6 @@ icon: "cloud"
 mode: "wide"
 ---
 
-```python
-from browser_use import Agent, Browser, ChatOpenAI
-
-# Connect to remote browser
-browser = Browser(
-    cdp_url='http://remote-server:9222'
-)
-
-
-agent = Agent(
-    task="Your task here",
-    llm=ChatOpenAI(model='gpt-4.1-mini'),
-    browser=browser,
-)
-```
-
-
 ## Get a CDP URL
 
 ### Browser-Use Cloud Browser
@@ -33,7 +16,8 @@ from browser_use import Agent, Browser, ChatOpenAI
 
 # Use Browser-Use cloud browser service
 browser = Browser(
-    cloud_browser=True  # Automatically provisions a cloud browser
+    use_cloud=True,  # Automatically provisions a cloud browser
+    # cdp_url="http://remote-server:9222" # CDP URL from your favorite browser provider like AnchorBrowser, HyperBrowser, BrowserBase, Steel.dev, etc.
 )
 
 agent = Agent(

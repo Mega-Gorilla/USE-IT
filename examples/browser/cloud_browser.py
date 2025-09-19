@@ -34,7 +34,9 @@ async def main():
 	except Exception as e:
 		print(f'❌ Error: {e}')
 		if 'Authentication' in str(e):
-			print('💡 Set BROWSER_USE_API_KEY environment variable')
+			print(
+				'💡 Set BROWSER_USE_API_KEY environment variable. You can also create an API key at https://cloud.browser-use.com'
+			)
 
 
 if __name__ == '__main__':
