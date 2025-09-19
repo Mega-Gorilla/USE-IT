@@ -472,7 +472,7 @@ class DOMTreeSerializer:
 				if has_validation_attrs:
 					is_visible = True  # Force visibility for validation elements
 
-			# Include if visible, interactive, scrollable, has children, or is shadow host
+			# Include if visible, scrollable, has children, or is shadow host
 			if is_visible or is_scrollable or has_shadow_content or is_shadow_host:
 				simplified = SimplifiedNode(original_node=node, children=[], is_shadow_host=is_shadow_host)
 
