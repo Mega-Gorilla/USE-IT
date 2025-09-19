@@ -1633,8 +1633,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			cached_selector_map = {}
 			cached_element_hashes = set()
 
-		# await self.browser_session.remove_highlights()
-
 		for i, action in enumerate(actions):
 			if i > 0:
 				# ONLY ALLOW TO CALL `done` IF IT IS A SINGLE ACTION
