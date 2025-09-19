@@ -9,7 +9,7 @@ mode: "wide"
 
 ```mermaid
 graph TD
-    A[BrowserSession] --> B[Page]
+    A[Browser] --> B[Page]
     B --> C[Element]
     B --> D[Mouse]
     B --> E[AI Features]
@@ -20,7 +20,7 @@ graph TD
 
 ### Core Classes
 
-- **BrowserSession** (alias: **Browser**): Main session manager
+- **Browser** (alias: **BrowserSession**): Main session manager
 - **Page**: Represents a browser tab/iframe
 - **Element**: Individual DOM element operations
 - **Mouse**: Coordinate-based mouse operations
@@ -31,20 +31,21 @@ graph TD
 from browser_use import Browser, Agent
 from browser_use.llm.openai import ChatOpenAI
 
-llm = ChatOpenAI(api_key="your-api-key")
-browser = Browser()
-await browser.start()
+async def main():
+    llm = ChatOpenAI(api_key="your-api-key")
+    browser = Browser()
+    await browser.start()
 
-# 1. Actor: Precise navigation and element interactions
-page = await browser.new_page("https://github.com/login")
-email_input = await page.must_get_element_by_prompt("username field", llm=llm)
-await email_input.fill("your-username")
+    # 1. Actor: Precise navigation and element interactions
+    page = await browser.new_page("https://github.com/login")
+    email_input = await page.must_get_element_by_prompt("username field", llm=llm)
+    await email_input.fill("your-username")
 
-# 2. Agent: AI-driven complex tasks
-agent = Agent(browser=browser, llm=llm)
-await agent.run("Complete login and navigate to my repositories")
+    # 2. Agent: AI-driven complex tasks
+    agent = Agent(browser=browser, llm=llm)
+    await agent.run("Complete login and navigate to my repositories")
 
-await browser.stop()
+    await browser.stop()
 ```
 
 ## Important Notes

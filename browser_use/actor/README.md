@@ -4,7 +4,7 @@ Browser Actor is a web automation library built on CDP (Chrome DevTools Protocol
 
 ## Usage
 
-### Integrated with BrowserSession (Recommended)
+### Integrated with Browser (Recommended)
 ```python
 from browser_use import Browser  # Alias for BrowserSession
 
