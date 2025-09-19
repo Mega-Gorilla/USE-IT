@@ -1,4 +1,3 @@
-import os
 import sys
 import tempfile
 from collections.abc import Iterable
@@ -731,15 +730,6 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		"""Ensure proxy configuration is consistent."""
 		if self.proxy and (self.proxy.bypass and not self.proxy.server):
 			logger.warning('BrowserProfile.proxy.bypass provided but proxy has no server; bypass will be ignored.')
-		return self
-
-	@model_validator(mode='after')
-	def set_use_cloud_from_env(self) -> Self:
-		"""Set use_cloud=True if BROWSER_USE_API_KEY environment variable is present and use_cloud wasn't explicitly set."""
-		# Only auto-enable if use_cloud is still the default (False) and API key is present
-		if not self.use_cloud and bool(os.getenv('BROWSER_USE_API_KEY')):
-			self.use_cloud = True
-			logger.debug('🌤️ Auto-enabled cloud browser due to BROWSER_USE_API_KEY environment variable')
 		return self
 
 	def model_post_init(self, __context: Any) -> None:
