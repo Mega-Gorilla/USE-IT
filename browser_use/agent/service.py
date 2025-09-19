@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Generic, Literal, TypeVar
 from urllib.parse import urlparse
 
+import requests
 from dotenv import load_dotenv
 
 from browser_use.agent.cloud_events import (
@@ -75,6 +76,23 @@ from browser_use.utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _check_latest_browser_use_version() -> str | None:
+	"""Check the latest version of browser-use from PyPI.
+
+	Returns:
+		The latest version string if successful, None if failed
+	"""
+	try:
+		response = requests.get('https://pypi.org/pypi/browser-use/json', timeout=3)
+		if response.status_code == 200:
+			data = response.json()
+			return data['info']['version']
+	except Exception:
+		# Silently fail - we don't want to break agent startup due to network issues
+		pass
+	return None
 
 
 def log_response(response: AgentOutput, registry=None, logger=None) -> None:
@@ -1181,6 +1199,13 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		self.logger.info(f'\033[34m🚀 Task: {self.task}\033[0m')
 
 		self.logger.debug(f'🤖 Browser-Use Library Version {self.version} ({self.source})')
+
+		# Check for latest version and log upgrade message if needed
+		latest_version = _check_latest_browser_use_version()
+		if latest_version and latest_version != self.version:
+			self.logger.info(
+				f'📦 Newer version available: {latest_version} (current: {self.version}). Upgrade with: uv add browser-use@{latest_version}'
+			)
 
 	def _log_first_step_startup(self) -> None:
 		"""Log startup message only on the first step"""
