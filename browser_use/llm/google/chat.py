@@ -199,7 +199,7 @@ class ChatGoogle(BaseChatModel):
 			config['seed'] = self.seed
 
 		if self.thinking_budget is None and 'gemini-2.5-flash' in self.model:
-			self.thinking_budget = 0
+			self.thinking_budget = -1
 
 		if self.thinking_budget is not None:
 			thinking_config_dict: types.ThinkingConfigDict = {'thinking_budget': self.thinking_budget}
