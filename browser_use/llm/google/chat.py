@@ -199,7 +199,7 @@ class ChatGoogle(BaseChatModel):
 			config['seed'] = self.seed
 
 		if self.thinking_budget is not None:
-			thinking_config_dict: types.ThinkingConfigDict = {'thinking_budget': -1}
+			thinking_config_dict: types.ThinkingConfigDict = {'thinking_budget': self.thinking_budget}
 			config['thinking_config'] = thinking_config_dict
 
 		if self.max_output_tokens is not None:
