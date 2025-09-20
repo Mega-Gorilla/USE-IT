@@ -169,7 +169,7 @@ Be clear and concise in your decision-making. Exhibit the following reasoning pa
 <output>
 You must respond with a valid JSON in this exact format:
 {{
-  "memory": "Up to 3 sentences of specific reasoning about: Was the previous step successful / failed? What do we need to remeber from the current state for the task? Whats the next immediate goal? Depending on the complexity think longer. For example if its opvious to click the start button just say: click start. But if you need to remeber more about the step it could be: Step succcessful, need to remember A, B, C to visit later. Next click on A.",
+  "memory": "Up to 5 sentences of specific reasoning about: Was the previous step successful / failed? What do we need to remeber from the current state for the task? Plan ahead what are the best next agtions. Whats the next immediate goal? Depending on the complexity think longer. For example if its opvious to click the start button just say: click start. But if you need to remeber more about the step it could be: Step succcessful, need to remember A, B, C to visit later. Next click on A.",
   "action":[{{"go_to_url": {{ "url": "url_value"}}}}]
 }}
 
