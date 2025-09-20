@@ -37,23 +37,6 @@ VerifiedGeminiModels = Literal[
 ]
 
 
-def _is_retryable_error(exception):
-	"""Check if an error should be retried based on error message patterns."""
-	error_msg = str(exception).lower()
-
-	# Rate limit patterns
-	rate_limit_patterns = ['rate limit', 'resource exhausted', 'quota exceeded', 'too many requests', '429']
-
-	# Server error patterns
-	server_error_patterns = ['service unavailable', 'internal server error', 'bad gateway', '503', '502', '500']
-
-	# Connection error patterns
-	connection_patterns = ['connection', 'timeout', 'network', 'unreachable']
-
-	all_patterns = rate_limit_patterns + server_error_patterns + connection_patterns
-	return any(pattern in error_msg for pattern in all_patterns)
-
-
 @dataclass
 class ChatGoogle(BaseChatModel):
 	"""
@@ -208,9 +191,6 @@ class ChatGoogle(BaseChatModel):
 		# Add system instruction if present
 		if system_instruction:
 			config['system_instruction'] = system_instruction
-
-		if self.presencePenalty is not None:
-			config['presence_penalty'] = self.presencePenalty
 
 		if self.top_p is not None:
 			config['top_p'] = self.top_p
@@ -394,73 +374,31 @@ class ChatGoogle(BaseChatModel):
 							)
 			except Exception as e:
 				elapsed = time.time() - start_time
-				self.logger.error(f'💥 API call failed after {elapsed:.2f}s: {type(e).__name__}: {str(e)}')
-				# Re-raise to let the retry logic handle it
+				self.logger.error(f'💥 API call failed after {elapsed:.2f}s: {type(e).__name__}: {e}')
+				# Re-raise the exception
 				raise
 
 		try:
-			# Use manual retry loop for Google API calls
-			last_exception = None
-			total_start_time = time.time()
-
-			for attempt in range(10):  # Match our 10 retry attempts from other providers
-				try:
-					self.logger.debug(f'🔄 Attempt {attempt + 1}/10 for {self.model}')
-					return await _make_api_call()
-				except Exception as e:
-					last_exception = e
-					elapsed = time.time() - total_start_time
-
-					# Log the specific error type and details
-					if 'timeout' in str(e).lower() or 'cancelled' in str(e).lower():
-						self.logger.warning(
-							f'⏰ Timeout/cancellation on attempt {attempt + 1}/10 after {elapsed:.2f}s: {type(e).__name__}'
-						)
-						if hasattr(e, '__cause__') and e.__cause__:
-							self.logger.debug(f'   Caused by: {type(e.__cause__).__name__}: {str(e.__cause__)}')
-					else:
-						self.logger.warning(f'⚠️ API error on attempt {attempt + 1}/10: {type(e).__name__}: {str(e)}')
-
-					if not _is_retryable_error(e) or attempt == 9:  # Last attempt
-						self.logger.error(f'❌ Giving up after {attempt + 1} attempts, total time: {elapsed:.2f}s')
-						break
-
-					# Simple exponential backoff
-					delay = min(60.0, 1.0 * (2.0**attempt))  # Cap at 60s
-					self.logger.debug(f'⏳ Waiting {delay:.1f}s before retry {attempt + 2}/10...')
-					await asyncio.sleep(delay)
-
-			# Re-raise the last exception if all retries failed
-			if last_exception:
-				total_elapsed = time.time() - total_start_time
-				self.logger.error(f'💥 All retries failed after {total_elapsed:.2f}s total')
-				raise last_exception
-			else:
-				# This should never happen, but ensure we don't return None
-				raise ModelProviderError(
-					message='All retry attempts failed without exception',
-					status_code=500,
-					model=self.name,
-				)
+			# Let Google client handle retries internally with proper connection management
+			self.logger.debug(f'🔄 Making API call to {self.model} (using built-in retry)')
+			return await _make_api_call()
 
 		except Exception as e:
-			# Handle specific Google API errors
+			# Handle specific Google API errors with enhanced diagnostics
 			error_message = str(e)
 			status_code: int | None = None
 
 			# Enhanced timeout error handling
 			if 'timeout' in error_message.lower() or 'cancelled' in error_message.lower():
-				# Check if it's specifically a CancelledError which indicates timeout
 				if isinstance(e, asyncio.CancelledError) or 'CancelledError' in str(type(e)):
-					total_elapsed = time.time() - total_start_time
-					enhanced_message = f'Request timed out after {total_elapsed:.2f}s. '
-					enhanced_message += 'This suggests the Gemini API is taking too long to respond. '
+					enhanced_message = 'Gemini API request was cancelled (likely timeout). '
+					enhanced_message += 'This suggests the API is taking too long to respond. '
 					enhanced_message += (
 						'Consider: 1) Reducing input size, 2) Using a different model, 3) Checking network connectivity.'
 					)
 					error_message = enhanced_message
 					status_code = 504  # Gateway timeout
-					self.logger.error(f'🕐 Timeout diagnosis: Total time {total_elapsed:.2f}s, Model: {self.model}')
+					self.logger.error(f'🕐 Timeout diagnosis: Model: {self.model}')
 				else:
 					status_code = 408  # Request timeout
 			# Check if this is a rate limit error
