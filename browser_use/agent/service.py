@@ -176,7 +176,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		display_files_in_done_text: bool = True,
 		include_tool_call_examples: bool = False,
 		vision_detail_level: Literal['auto', 'low', 'high'] = 'auto',
-		llm_timeout: int = 90,
+		llm_timeout: int | None = None,
 		step_timeout: int = 120,
 		directly_open_url: bool = True,
 		include_recent_events: bool = False,
@@ -206,6 +206,21 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			page_extraction_llm = llm
 		if available_file_paths is None:
 			available_file_paths = []
+
+		# Set timeout based on model name if not explicitly provided
+		if llm_timeout is None:
+
+			def _get_model_timeout(llm_model: BaseChatModel) -> int:
+				"""Determine timeout based on model name"""
+				model_name = getattr(llm_model, 'model', '').lower()
+				if 'gemini' in model_name or 'groq' in model_name:
+					return 30
+				elif 'o3' in model_name or 'claude' in model_name or 'sonnet' in model_name or 'deepseek' in model_name:
+					return 90
+				else:
+					return 60  # Default timeout
+
+			llm_timeout = _get_model_timeout(llm)
 
 		self.id = task_id or uuid7str()
 		self.task_id: str = self.id
