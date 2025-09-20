@@ -290,7 +290,7 @@ class ChatGoogle(BaseChatModel):
 							else:
 								self.logger.error('❌ No response text received')
 								raise ModelProviderError(
-									message='No response from model',
+									message=f'No response from model {response}',
 									status_code=500,
 									model=self.model,
 								)
