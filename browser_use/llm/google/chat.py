@@ -86,7 +86,7 @@ class ChatGoogle(BaseChatModel):
 	temperature: float | None = 0.2
 	top_p: float | None = None
 	seed: int | None = None
-	thinking_budget: int | None = None
+	thinking_budget: int | None = 0
 	max_output_tokens: int | None = 4096
 	config: types.GenerateContentConfigDict | None = None
 	include_system_in_user: bool = False
