@@ -75,7 +75,7 @@ class ChatGoogle(BaseChatModel):
 	temperature: float | None = 0.2
 	top_p: float | None = None
 	seed: int | None = None
-	thinking_budget: int | None = 0
+	thinking_budget: int | None = None
 	max_output_tokens: int | None = 4096
 	config: types.GenerateContentConfigDict | None = None
 	include_system_in_user: bool = False
@@ -197,6 +197,9 @@ class ChatGoogle(BaseChatModel):
 
 		if self.seed is not None:
 			config['seed'] = self.seed
+
+		if self.thinking_budget is None and 'gemini-2.5' in self.model:
+			self.thinking_budget = -1
 
 		if self.thinking_budget is not None:
 			thinking_config_dict: types.ThinkingConfigDict = {'thinking_budget': self.thinking_budget}

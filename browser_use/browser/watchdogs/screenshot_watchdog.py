@@ -8,6 +8,7 @@ from cdp_use.cdp.page import CaptureScreenshotParameters
 from browser_use.browser.events import ScreenshotEvent
 from browser_use.browser.views import BrowserError
 from browser_use.browser.watchdog_base import BaseWatchdog
+from browser_use.observability import observe_debug
 
 if TYPE_CHECKING:
 	pass
@@ -22,6 +23,7 @@ class ScreenshotWatchdog(BaseWatchdog):
 	# Events this watchdog emits
 	EMITS: ClassVar[list[type[BaseEvent[Any]]]] = []
 
+	@observe_debug(ignore_input=True, ignore_output=True, name='screenshot_event_handler')
 	async def on_ScreenshotEvent(self, event: ScreenshotEvent) -> str:
 		"""Handle screenshot request using CDP.
 
