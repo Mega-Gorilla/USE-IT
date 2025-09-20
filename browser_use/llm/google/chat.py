@@ -198,6 +198,9 @@ class ChatGoogle(BaseChatModel):
 		if self.seed is not None:
 			config['seed'] = self.seed
 
+		if self.thinking_budget is None and 'gemini-2.5-flash' in self.model:
+			self.thinking_budget = 0
+
 		if self.thinking_budget is not None:
 			thinking_config_dict: types.ThinkingConfigDict = {'thinking_budget': self.thinking_budget}
 			config['thinking_config'] = thinking_config_dict
@@ -283,14 +286,14 @@ class ChatGoogle(BaseChatModel):
 									self.logger.error(f'❌ Failed to parse JSON response: {str(e)}')
 									self.logger.debug(f'Raw response text: {response.text[:200]}...')
 									raise ModelProviderError(
-										message=f'Failed to parse or validate response: {str(e)}',
+										message=f'Failed to parse or validate response {response}: {str(e)}',
 										status_code=500,
 										model=self.model,
 									) from e
 							else:
 								self.logger.error('❌ No response text received')
 								raise ModelProviderError(
-									message='No response from model',
+									message=f'No response from model {response}',
 									status_code=500,
 									model=self.model,
 								)

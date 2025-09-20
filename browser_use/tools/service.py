@@ -1058,6 +1058,7 @@ SHADOW DOM ACCESS EXAMPLE:
 				return ActionResult(error=error_msg)
 
 	# Custom done action for structured output
+	@observe_debug(ignore_input=True, ignore_output=True, name='extract_clean_markdown')
 	async def extract_clean_markdown(
 		self, browser_session: BrowserSession, extract_links: bool = False
 	) -> tuple[str, dict[str, Any]]:

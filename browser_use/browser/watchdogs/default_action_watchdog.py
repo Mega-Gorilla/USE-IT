@@ -21,6 +21,7 @@ from browser_use.browser.events import (
 from browser_use.browser.views import BrowserError, URLNotAllowedError
 from browser_use.browser.watchdog_base import BaseWatchdog
 from browser_use.dom.service import EnhancedDOMTreeNode
+from browser_use.observability import observe_debug
 
 # Import EnhancedDOMTreeNode and rebuild event models that have forward references to it
 # This must be done after all imports are complete
@@ -35,6 +36,7 @@ UploadFileEvent.model_rebuild()
 class DefaultActionWatchdog(BaseWatchdog):
 	"""Handles default browser actions like click, type, and scroll using CDP."""
 
+	@observe_debug(ignore_input=True, ignore_output=True, name='click_element_event')
 	async def on_ClickElementEvent(self, event: ClickElementEvent) -> dict | None:
 		"""Handle click request with CDP."""
 		try:
@@ -1516,6 +1518,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 		except Exception as e:
 			raise
 
+	@observe_debug(ignore_input=True, ignore_output=True, name='wait_event_handler')
 	async def on_WaitEvent(self, event: WaitEvent) -> None:
 		"""Handle wait request."""
 		try:

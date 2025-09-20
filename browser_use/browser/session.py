@@ -453,6 +453,7 @@ class BrowserSession(BaseModel):
 		BaseWatchdog.attach_handler_to_session(self, FileDownloadedEvent, self.on_FileDownloadedEvent)
 		BaseWatchdog.attach_handler_to_session(self, CloseTabEvent, self.on_CloseTabEvent)
 
+	@observe_debug(ignore_input=True, ignore_output=True, name='browser_session_start')
 	async def start(self) -> None:
 		"""Start the browser session."""
 		start_event = self.event_bus.dispatch(BrowserStartEvent())
@@ -499,6 +500,7 @@ class BrowserSession(BaseModel):
 		# Create fresh event bus
 		self.event_bus = EventBus()
 
+	@observe_debug(ignore_input=True, ignore_output=True, name='browser_start_event_handler')
 	async def on_BrowserStartEvent(self, event: BrowserStartEvent) -> dict[str, str]:
 		"""Handle browser start request.
 
@@ -2380,6 +2382,7 @@ class BrowserSession(BaseModel):
 
 		return await self.get_or_create_cdp_session()
 
+	@observe_debug(ignore_input=True, ignore_output=True, name='take_screenshot')
 	async def take_screenshot(
 		self,
 		path: str | None = None,
