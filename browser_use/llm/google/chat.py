@@ -23,6 +23,9 @@ VerifiedGeminiModels = Literal[
 	'gemini-2.0-flash-exp',
 	'gemini-2.0-flash-lite-preview-02-05',
 	'Gemini-2.0-exp',
+	'gemini-2.5-flash',
+	'gemini-2.5-flash-lite',
+	'gemini-2.5-pro',
 	'gemma-3-27b-it',
 	'gemma-3-4b',
 	'gemma-3-12b',
@@ -198,6 +201,9 @@ class ChatGoogle(BaseChatModel):
 		if system_instruction:
 			config['system_instruction'] = system_instruction
 
+		if self.presencePenalty is not None:
+			config['presence_penalty'] = self.presencePenalty
+
 		if self.top_p is not None:
 			config['top_p'] = self.top_p
 
@@ -205,7 +211,7 @@ class ChatGoogle(BaseChatModel):
 			config['seed'] = self.seed
 
 		if self.thinking_budget is not None:
-			thinking_config_dict: types.ThinkingConfigDict = {'thinking_budget': self.thinking_budget}
+			thinking_config_dict: types.ThinkingConfigDict = {'thinking_budget': -1}
 			config['thinking_config'] = thinking_config_dict
 
 		if self.max_output_tokens is not None:
