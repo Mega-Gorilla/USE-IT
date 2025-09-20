@@ -283,7 +283,7 @@ class ChatGoogle(BaseChatModel):
 									self.logger.error(f'❌ Failed to parse JSON response: {str(e)}')
 									self.logger.debug(f'Raw response text: {response.text[:200]}...')
 									raise ModelProviderError(
-										message=f'Failed to parse or validate response: {str(e)}',
+										message=f'Failed to parse or validate response {response}: {str(e)}',
 										status_code=500,
 										model=self.model,
 									) from e
