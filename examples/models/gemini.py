@@ -14,7 +14,7 @@ api_key = os.getenv('GOOGLE_API_KEY')
 if not api_key:
 	raise ValueError('GOOGLE_API_KEY is not set')
 
-llm = ChatGoogle(model='gemini-2.5-flash', api_key=api_key)
+llm = ChatGoogle(model='gemini-2.0', api_key=api_key, thinking_budget=-1)
 
 
 async def run_search():
