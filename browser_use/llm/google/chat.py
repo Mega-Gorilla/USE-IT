@@ -116,74 +116,6 @@ class ChatGoogle(BaseChatModel):
 		"""Get logger for this chat instance"""
 		return logging.getLogger(f'browser_use.llm.google.{self.model}')
 
-	async def _make_api_call_with_partial_capture(self, api_call_func):
-		"""
-		Wrapper around API calls to capture partial responses when timeouts occur.
-		This helps debug what stage of the request failed.
-		"""
-		connection_start = time.time()
-		try:
-			self.logger.debug('🔄 Making API call with partial capture enabled')
-			response = await api_call_func()
-			total_time = time.time() - connection_start
-			self.logger.debug(f'📥 API call completed successfully in {total_time:.2f}s')
-			return response
-		except Exception as e:
-			total_time = time.time() - connection_start
-
-			# Log partial information if available
-			if hasattr(e, 'partial_response'):
-				self.logger.error(f'🔍 Partial response captured: {getattr(e, "partial_response", "None")}')
-
-			# Detailed timeout analysis
-			if isinstance(e, asyncio.CancelledError):
-				self.logger.error(f'⏰ Request was cancelled after {total_time:.2f}s (likely due to timeout)')
-				self.logger.debug('   This typically means the API took too long to establish connection or respond')
-
-				# Provide context based on timing
-				if total_time < 5:
-					self.logger.debug('   Quick cancellation suggests connection issues or immediate rejection')
-				elif total_time > 60:
-					self.logger.debug('   Long timeout suggests server overload or very large request processing')
-				else:
-					self.logger.debug('   Moderate timeout suggests network latency or server processing delay')
-
-			# Try to extract any available context from the exception
-			if hasattr(e, '__cause__') and e.__cause__:
-				cause_str = str(e.__cause__)
-				self.logger.debug(f'   Root cause: {type(e.__cause__).__name__}: {cause_str}')
-
-				# Enhanced connection vs response timeout detection
-				if 'timeout' in cause_str.lower():
-					if any(keyword in cause_str.lower() for keyword in ['connect', 'connection', 'resolve', 'dns']):
-						self.logger.error('🌐 Connection timeout - unable to connect to Gemini API')
-						self.logger.debug('   Possible causes: DNS issues, firewall blocking, network connectivity problems')
-					elif 'read' in cause_str.lower() or 'response' in cause_str.lower():
-						self.logger.error('⏳ Read timeout - connected but response took too long')
-						self.logger.debug('   Possible causes: Large request processing, server overload, model thinking time')
-					else:
-						self.logger.error(f'🕐 Generic timeout after {total_time:.2f}s')
-
-				# Check for SSL/certificate issues
-				if any(keyword in cause_str.lower() for keyword in ['ssl', 'certificate', 'cert', 'handshake']):
-					self.logger.error('🔒 SSL/Certificate error - security handshake failed')
-					self.logger.debug('   Possible causes: Outdated certificates, SSL configuration issues')
-
-				# Check for HTTP-level errors
-				if 'http' in cause_str.lower():
-					self.logger.error('🌐 HTTP protocol error')
-					self.logger.debug('   This suggests the connection was established but HTTP communication failed')
-
-			# Log environment context that might help debugging
-			self.logger.debug(f'   Model: {self.model}')
-			if hasattr(self, 'project') and self.project:
-				self.logger.debug(f'   Project: {self.project}')
-			if hasattr(self, 'location') and self.location:
-				self.logger.debug(f'   Location: {self.location}')
-
-			# Re-raise the original exception
-			raise
-
 	def _get_client_params(self) -> dict[str, Any]:
 		"""Prepare client parameters dictionary."""
 		# Define base client params
@@ -302,12 +234,10 @@ class ChatGoogle(BaseChatModel):
 					# Return string response
 					self.logger.debug('📄 Requesting text response')
 
-					response = await self._make_api_call_with_partial_capture(
-						lambda: self.get_client().aio.models.generate_content(
-							model=self.model,
-							contents=contents,  # type: ignore
-							config=config,
-						)
+					response = await self.get_client().aio.models.generate_content(
+						model=self.model,
+						contents=contents,  # type: ignore
+						config=config,
 					)
 
 					elapsed = time.time() - start_time
@@ -337,12 +267,10 @@ class ChatGoogle(BaseChatModel):
 						gemini_schema = self._fix_gemini_schema(optimized_schema)
 						config['response_schema'] = gemini_schema
 
-						response = await self._make_api_call_with_partial_capture(
-							lambda: self.get_client().aio.models.generate_content(
-								model=self.model,
-								contents=contents,
-								config=config,
-							)
+						response = await self.get_client().aio.models.generate_content(
+							model=self.model,
+							contents=contents,
+							config=config,
 						)
 
 						elapsed = time.time() - start_time
@@ -356,8 +284,17 @@ class ChatGoogle(BaseChatModel):
 							# When using response_schema, Gemini returns JSON as text
 							if response.text:
 								try:
+									# Handle JSON wrapped in markdown code blocks (common Gemini behavior)
+									text = response.text.strip()
+									if text.startswith('```json') and text.endswith('```'):
+										text = text[7:-3].strip()
+										self.logger.debug('🔧 Stripped ```json``` wrapper from response')
+									elif text.startswith('```') and text.endswith('```'):
+										text = text[3:-3].strip()
+										self.logger.debug('🔧 Stripped ``` wrapper from response')
+
 									# Parse the JSON text and validate with the Pydantic model
-									parsed_data = json.loads(response.text)
+									parsed_data = json.loads(text)
 									return ChatInvokeCompletion(
 										completion=output_format.model_validate(parsed_data),
 										usage=usage,
@@ -411,12 +348,10 @@ class ChatGoogle(BaseChatModel):
 						if fallback_system:
 							fallback_config['system_instruction'] = fallback_system
 
-						response = await self._make_api_call_with_partial_capture(
-							lambda: self.get_client().aio.models.generate_content(
-								model=self.model,
-								contents=fallback_contents,  # type: ignore
-								config=fallback_config,
-							)
+						response = await self.get_client().aio.models.generate_content(
+							model=self.model,
+							contents=fallback_contents,  # type: ignore
+							config=fallback_config,
 						)
 
 						elapsed = time.time() - start_time
