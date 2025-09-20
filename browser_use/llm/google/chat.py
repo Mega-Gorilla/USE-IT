@@ -1,4 +1,7 @@
+import asyncio
 import json
+import logging
+import time
 from dataclasses import dataclass
 from typing import Any, Literal, TypeVar, overload
 
@@ -107,6 +110,79 @@ class ChatGoogle(BaseChatModel):
 	@property
 	def provider(self) -> str:
 		return 'google'
+
+	@property
+	def logger(self) -> logging.Logger:
+		"""Get logger for this chat instance"""
+		return logging.getLogger(f'browser_use.llm.google.{self.model}')
+
+	async def _make_api_call_with_partial_capture(self, api_call_func):
+		"""
+		Wrapper around API calls to capture partial responses when timeouts occur.
+		This helps debug what stage of the request failed.
+		"""
+		connection_start = time.time()
+		try:
+			self.logger.debug('🔄 Making API call with partial capture enabled')
+			response = await api_call_func()
+			total_time = time.time() - connection_start
+			self.logger.debug(f'📥 API call completed successfully in {total_time:.2f}s')
+			return response
+		except Exception as e:
+			total_time = time.time() - connection_start
+
+			# Log partial information if available
+			if hasattr(e, 'partial_response'):
+				self.logger.error(f'🔍 Partial response captured: {getattr(e, "partial_response", "None")}')
+
+			# Detailed timeout analysis
+			if isinstance(e, asyncio.CancelledError):
+				self.logger.error(f'⏰ Request was cancelled after {total_time:.2f}s (likely due to timeout)')
+				self.logger.debug('   This typically means the API took too long to establish connection or respond')
+
+				# Provide context based on timing
+				if total_time < 5:
+					self.logger.debug('   Quick cancellation suggests connection issues or immediate rejection')
+				elif total_time > 60:
+					self.logger.debug('   Long timeout suggests server overload or very large request processing')
+				else:
+					self.logger.debug('   Moderate timeout suggests network latency or server processing delay')
+
+			# Try to extract any available context from the exception
+			if hasattr(e, '__cause__') and e.__cause__:
+				cause_str = str(e.__cause__)
+				self.logger.debug(f'   Root cause: {type(e.__cause__).__name__}: {cause_str}')
+
+				# Enhanced connection vs response timeout detection
+				if 'timeout' in cause_str.lower():
+					if any(keyword in cause_str.lower() for keyword in ['connect', 'connection', 'resolve', 'dns']):
+						self.logger.error('🌐 Connection timeout - unable to connect to Gemini API')
+						self.logger.debug('   Possible causes: DNS issues, firewall blocking, network connectivity problems')
+					elif 'read' in cause_str.lower() or 'response' in cause_str.lower():
+						self.logger.error('⏳ Read timeout - connected but response took too long')
+						self.logger.debug('   Possible causes: Large request processing, server overload, model thinking time')
+					else:
+						self.logger.error(f'🕐 Generic timeout after {total_time:.2f}s')
+
+				# Check for SSL/certificate issues
+				if any(keyword in cause_str.lower() for keyword in ['ssl', 'certificate', 'cert', 'handshake']):
+					self.logger.error('🔒 SSL/Certificate error - security handshake failed')
+					self.logger.debug('   Possible causes: Outdated certificates, SSL configuration issues')
+
+				# Check for HTTP-level errors
+				if 'http' in cause_str.lower():
+					self.logger.error('🌐 HTTP protocol error')
+					self.logger.debug('   This suggests the connection was established but HTTP communication failed')
+
+			# Log environment context that might help debugging
+			self.logger.debug(f'   Model: {self.model}')
+			if hasattr(self, 'project') and self.project:
+				self.logger.debug(f'   Project: {self.project}')
+			if hasattr(self, 'location') and self.location:
+				self.logger.debug(f'   Location: {self.location}')
+
+			# Re-raise the original exception
+			raise
 
 	def _get_client_params(self) -> dict[str, Any]:
 		"""Prepare client parameters dictionary."""
@@ -218,157 +294,211 @@ class ChatGoogle(BaseChatModel):
 			config['max_output_tokens'] = self.max_output_tokens
 
 		async def _make_api_call():
-			if output_format is None:
-				# Return string response
-				response = await self.get_client().aio.models.generate_content(
-					model=self.model,
-					contents=contents,  # type: ignore
-					config=config,
-				)
+			start_time = time.time()
+			self.logger.debug(f'🚀 Starting API call to {self.model}')
 
-				# Handle case where response.text might be None
-				text = response.text or ''
+			try:
+				if output_format is None:
+					# Return string response
+					self.logger.debug('📄 Requesting text response')
 
-				usage = self._get_usage(response)
-
-				return ChatInvokeCompletion(
-					completion=text,
-					usage=usage,
-				)
-
-			else:
-				# Handle structured output
-				if self.supports_structured_output:
-					# Use native JSON mode
-					config['response_mime_type'] = 'application/json'
-					# Convert Pydantic model to Gemini-compatible schema
-					optimized_schema = SchemaOptimizer.create_optimized_json_schema(output_format)
-
-					gemini_schema = self._fix_gemini_schema(optimized_schema)
-					config['response_schema'] = gemini_schema
-
-					response = await self.get_client().aio.models.generate_content(
-						model=self.model,
-						contents=contents,
-						config=config,
+					response = await self._make_api_call_with_partial_capture(
+						lambda: self.get_client().aio.models.generate_content(
+							model=self.model,
+							contents=contents,  # type: ignore
+							config=config,
+						)
 					)
+
+					elapsed = time.time() - start_time
+					self.logger.debug(f'✅ Got text response in {elapsed:.2f}s')
+
+					# Handle case where response.text might be None
+					text = response.text or ''
+					if not text:
+						self.logger.warning('⚠️ Empty text response received')
 
 					usage = self._get_usage(response)
 
-					# Handle case where response.parsed might be None
-					if response.parsed is None:
-						# When using response_schema, Gemini returns JSON as text
+					return ChatInvokeCompletion(
+						completion=text,
+						usage=usage,
+					)
+
+				else:
+					# Handle structured output
+					if self.supports_structured_output:
+						# Use native JSON mode
+						self.logger.debug(f'🔧 Requesting structured output for {output_format.__name__}')
+						config['response_mime_type'] = 'application/json'
+						# Convert Pydantic model to Gemini-compatible schema
+						optimized_schema = SchemaOptimizer.create_optimized_json_schema(output_format)
+
+						gemini_schema = self._fix_gemini_schema(optimized_schema)
+						config['response_schema'] = gemini_schema
+
+						response = await self._make_api_call_with_partial_capture(
+							lambda: self.get_client().aio.models.generate_content(
+								model=self.model,
+								contents=contents,
+								config=config,
+							)
+						)
+
+						elapsed = time.time() - start_time
+						self.logger.debug(f'✅ Got structured response in {elapsed:.2f}s')
+
+						usage = self._get_usage(response)
+
+						# Handle case where response.parsed might be None
+						if response.parsed is None:
+							self.logger.debug('📝 Parsing JSON from text response')
+							# When using response_schema, Gemini returns JSON as text
+							if response.text:
+								try:
+									# Parse the JSON text and validate with the Pydantic model
+									parsed_data = json.loads(response.text)
+									return ChatInvokeCompletion(
+										completion=output_format.model_validate(parsed_data),
+										usage=usage,
+									)
+								except (json.JSONDecodeError, ValueError) as e:
+									self.logger.error(f'❌ Failed to parse JSON response: {str(e)}')
+									self.logger.debug(f'Raw response text: {response.text[:200]}...')
+									raise ModelProviderError(
+										message=f'Failed to parse or validate response: {str(e)}',
+										status_code=500,
+										model=self.model,
+									) from e
+							else:
+								self.logger.error('❌ No response text received')
+								raise ModelProviderError(
+									message='No response from model',
+									status_code=500,
+									model=self.model,
+								)
+
+						# Ensure we return the correct type
+						if isinstance(response.parsed, output_format):
+							return ChatInvokeCompletion(
+								completion=response.parsed,
+								usage=usage,
+							)
+						else:
+							# If it's not the expected type, try to validate it
+							return ChatInvokeCompletion(
+								completion=output_format.model_validate(response.parsed),
+								usage=usage,
+							)
+					else:
+						# Fallback: Request JSON in the prompt for models without native JSON mode
+						self.logger.debug(f'🔄 Using fallback JSON mode for {output_format.__name__}')
+						# Create a copy of messages to modify
+						modified_messages = [m.model_copy(deep=True) for m in messages]
+
+						# Add JSON instruction to the last message
+						if modified_messages and isinstance(modified_messages[-1].content, str):
+							json_instruction = f'\n\nPlease respond with a valid JSON object that matches this schema: {SchemaOptimizer.create_optimized_json_schema(output_format)}'
+							modified_messages[-1].content += json_instruction
+
+						# Re-serialize with modified messages
+						fallback_contents, fallback_system = GoogleMessageSerializer.serialize_messages(
+							modified_messages, include_system_in_user=self.include_system_in_user
+						)
+
+						# Update config with fallback system instruction if present
+						fallback_config = config.copy()
+						if fallback_system:
+							fallback_config['system_instruction'] = fallback_system
+
+						response = await self._make_api_call_with_partial_capture(
+							lambda: self.get_client().aio.models.generate_content(
+								model=self.model,
+								contents=fallback_contents,  # type: ignore
+								config=fallback_config,
+							)
+						)
+
+						elapsed = time.time() - start_time
+						self.logger.debug(f'✅ Got fallback response in {elapsed:.2f}s')
+
+						usage = self._get_usage(response)
+
+						# Try to extract JSON from the text response
 						if response.text:
 							try:
-								# Parse the JSON text and validate with the Pydantic model
-								parsed_data = json.loads(response.text)
+								# Try to find JSON in the response
+								text = response.text.strip()
+
+								# Common patterns: JSON wrapped in markdown code blocks
+								if text.startswith('```json') and text.endswith('```'):
+									text = text[7:-3].strip()
+								elif text.startswith('```') and text.endswith('```'):
+									text = text[3:-3].strip()
+
+								# Parse and validate
+								parsed_data = json.loads(text)
 								return ChatInvokeCompletion(
 									completion=output_format.model_validate(parsed_data),
 									usage=usage,
 								)
 							except (json.JSONDecodeError, ValueError) as e:
+								self.logger.error(f'❌ Failed to parse fallback JSON: {str(e)}')
+								self.logger.debug(f'Raw response text: {response.text[:200]}...')
 								raise ModelProviderError(
-									message=f'Failed to parse or validate response: {str(e)}',
+									message=f'Model does not support JSON mode and failed to parse JSON from text response: {str(e)}',
 									status_code=500,
 									model=self.model,
 								) from e
 						else:
+							self.logger.error('❌ No response text in fallback mode')
 							raise ModelProviderError(
 								message='No response from model',
 								status_code=500,
 								model=self.model,
 							)
-
-					# Ensure we return the correct type
-					if isinstance(response.parsed, output_format):
-						return ChatInvokeCompletion(
-							completion=response.parsed,
-							usage=usage,
-						)
-					else:
-						# If it's not the expected type, try to validate it
-						return ChatInvokeCompletion(
-							completion=output_format.model_validate(response.parsed),
-							usage=usage,
-						)
-				else:
-					# Fallback: Request JSON in the prompt for models without native JSON mode
-					# Create a copy of messages to modify
-					modified_messages = [m.model_copy(deep=True) for m in messages]
-
-					# Add JSON instruction to the last message
-					if modified_messages and isinstance(modified_messages[-1].content, str):
-						json_instruction = f'\n\nPlease respond with a valid JSON object that matches this schema: {SchemaOptimizer.create_optimized_json_schema(output_format)}'
-						modified_messages[-1].content += json_instruction
-
-					# Re-serialize with modified messages
-					fallback_contents, fallback_system = GoogleMessageSerializer.serialize_messages(
-						modified_messages, include_system_in_user=self.include_system_in_user
-					)
-
-					# Update config with fallback system instruction if present
-					fallback_config = config.copy()
-					if fallback_system:
-						fallback_config['system_instruction'] = fallback_system
-
-					response = await self.get_client().aio.models.generate_content(
-						model=self.model,
-						contents=fallback_contents,  # type: ignore
-						config=fallback_config,
-					)
-
-					usage = self._get_usage(response)
-
-					# Try to extract JSON from the text response
-					if response.text:
-						try:
-							# Try to find JSON in the response
-							text = response.text.strip()
-
-							# Common patterns: JSON wrapped in markdown code blocks
-							if text.startswith('```json') and text.endswith('```'):
-								text = text[7:-3].strip()
-							elif text.startswith('```') and text.endswith('```'):
-								text = text[3:-3].strip()
-
-							# Parse and validate
-							parsed_data = json.loads(text)
-							return ChatInvokeCompletion(
-								completion=output_format.model_validate(parsed_data),
-								usage=usage,
-							)
-						except (json.JSONDecodeError, ValueError) as e:
-							raise ModelProviderError(
-								message=f'Model does not support JSON mode and failed to parse JSON from text response: {str(e)}',
-								status_code=500,
-								model=self.model,
-							) from e
-					else:
-						raise ModelProviderError(
-							message='No response from model',
-							status_code=500,
-							model=self.model,
-						)
+			except Exception as e:
+				elapsed = time.time() - start_time
+				self.logger.error(f'💥 API call failed after {elapsed:.2f}s: {type(e).__name__}: {str(e)}')
+				# Re-raise to let the retry logic handle it
+				raise
 
 		try:
 			# Use manual retry loop for Google API calls
 			last_exception = None
+			total_start_time = time.time()
+
 			for attempt in range(10):  # Match our 10 retry attempts from other providers
 				try:
+					self.logger.debug(f'🔄 Attempt {attempt + 1}/10 for {self.model}')
 					return await _make_api_call()
 				except Exception as e:
 					last_exception = e
+					elapsed = time.time() - total_start_time
+
+					# Log the specific error type and details
+					if 'timeout' in str(e).lower() or 'cancelled' in str(e).lower():
+						self.logger.warning(
+							f'⏰ Timeout/cancellation on attempt {attempt + 1}/10 after {elapsed:.2f}s: {type(e).__name__}'
+						)
+						if hasattr(e, '__cause__') and e.__cause__:
+							self.logger.debug(f'   Caused by: {type(e.__cause__).__name__}: {str(e.__cause__)}')
+					else:
+						self.logger.warning(f'⚠️ API error on attempt {attempt + 1}/10: {type(e).__name__}: {str(e)}')
+
 					if not _is_retryable_error(e) or attempt == 9:  # Last attempt
+						self.logger.error(f'❌ Giving up after {attempt + 1} attempts, total time: {elapsed:.2f}s')
 						break
 
 					# Simple exponential backoff
-					import asyncio
-
 					delay = min(60.0, 1.0 * (2.0**attempt))  # Cap at 60s
+					self.logger.debug(f'⏳ Waiting {delay:.1f}s before retry {attempt + 2}/10...')
 					await asyncio.sleep(delay)
 
 			# Re-raise the last exception if all retries failed
 			if last_exception:
+				total_elapsed = time.time() - total_start_time
+				self.logger.error(f'💥 All retries failed after {total_elapsed:.2f}s total')
 				raise last_exception
 			else:
 				# This should never happen, but ensure we don't return None
@@ -383,8 +513,23 @@ class ChatGoogle(BaseChatModel):
 			error_message = str(e)
 			status_code: int | None = None
 
+			# Enhanced timeout error handling
+			if 'timeout' in error_message.lower() or 'cancelled' in error_message.lower():
+				# Check if it's specifically a CancelledError which indicates timeout
+				if isinstance(e, asyncio.CancelledError) or 'CancelledError' in str(type(e)):
+					total_elapsed = time.time() - total_start_time
+					enhanced_message = f'Request timed out after {total_elapsed:.2f}s. '
+					enhanced_message += 'This suggests the Gemini API is taking too long to respond. '
+					enhanced_message += (
+						'Consider: 1) Reducing input size, 2) Using a different model, 3) Checking network connectivity.'
+					)
+					error_message = enhanced_message
+					status_code = 504  # Gateway timeout
+					self.logger.error(f'🕐 Timeout diagnosis: Total time {total_elapsed:.2f}s, Model: {self.model}')
+				else:
+					status_code = 408  # Request timeout
 			# Check if this is a rate limit error
-			if any(
+			elif any(
 				indicator in error_message.lower()
 				for indicator in ['rate limit', 'resource exhausted', 'quota exceeded', 'too many requests', '429']
 			):
