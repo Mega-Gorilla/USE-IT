@@ -28,7 +28,7 @@ class SystemPrompt:
 		self.use_thinking = use_thinking
 		self.flash_mode = flash_mode
 		prompt = ''
-		if override_system_message:
+		if override_system_message is not None:
 			prompt = override_system_message
 		else:
 			self._load_prompt_template()
