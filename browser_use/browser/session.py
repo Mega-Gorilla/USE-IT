@@ -1045,7 +1045,6 @@ class BrowserSession(BaseModel):
 	@observe_debug(ignore_input=True, ignore_output=True, name='get_browser_state_summary')
 	async def get_browser_state_summary(
 		self,
-		cache_clickable_elements_hashes: bool = True,
 		include_screenshot: bool = True,
 		cached: bool = False,
 		include_recent_events: bool = False,
@@ -1072,7 +1071,6 @@ class BrowserSession(BaseModel):
 				BrowserStateRequestEvent(
 					include_dom=True,
 					include_screenshot=include_screenshot,
-					cache_clickable_elements_hashes=cache_clickable_elements_hashes,
 					include_recent_events=include_recent_events,
 				)
 			),
