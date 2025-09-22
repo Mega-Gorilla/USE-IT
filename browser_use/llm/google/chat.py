@@ -76,7 +76,7 @@ class ChatGoogle(BaseChatModel):
 	top_p: float | None = None
 	seed: int | None = None
 	thinking_budget: int | None = None  # for flash and flash-lite models, default will be set to 0
-	max_output_tokens: int | None = 4096
+	max_output_tokens: int | None = 8192
 	config: types.GenerateContentConfigDict | None = None
 	include_system_in_user: bool = False
 	supports_structured_output: bool = True  # New flag
