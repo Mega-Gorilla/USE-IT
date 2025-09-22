@@ -722,6 +722,8 @@ You will be given a query and the markdown of a webpage that has been filtered t
 			Optional if there are multiple scroll containers, use frame_element_index parameter with an element inside the container you want to scroll in. For that you must use indices that exist in your browser_state (works well for dropdowns and custom UI components). 
 			Instead of scrolling step after step, use a high number of pages at once like 10 to get to the bottom of the page.
 			If you know where you want to scroll to, use scroll_to_text instead of this tool.
+			
+			Note: For multiple pages (>=1.0), scrolls are performed one page at a time to ensure reliability. Page height is detected from viewport, fallback is 1000px per page.
 			""",
 			param_model=ScrollAction,
 		)
@@ -737,27 +739,90 @@ You will be given a query and the markdown of a webpage that has been filtered t
 						msg = f'Element index {params.frame_element_index} not found in browser state'
 						return ActionResult(error=msg)
 
-				# Dispatch scroll event with node - the complex logic is handled in the event handler
-				# Convert pages to pixels (assuming 1000px per page as standard viewport height)
-				pixels = int(params.num_pages * 1000)
-				event = browser_session.event_bus.dispatch(
-					ScrollEvent(direction='down' if params.down else 'up', amount=pixels, node=node)
-				)
-				await event
-				await event.event_result(raise_if_any=True, raise_if_none=False)
 				direction = 'down' if params.down else 'up'
-
-				# If index is 0 or None, we're scrolling the page
 				target = (
 					'the page'
 					if params.frame_element_index is None or params.frame_element_index == 0
 					else f'element {params.frame_element_index}'
 				)
 
-				if params.num_pages == 1.0:
-					long_term_memory = f'Scrolled {direction} {target} by one page'
+				# Get actual viewport height for more accurate scrolling
+				try:
+					cdp_session = await browser_session.get_or_create_cdp_session()
+					metrics = await cdp_session.cdp_client.send.Page.getLayoutMetrics(session_id=cdp_session.session_id)
+
+					# Use cssVisualViewport for the most accurate representation
+					css_viewport = metrics.get('cssVisualViewport', {})
+					css_layout_viewport = metrics.get('cssLayoutViewport', {})
+
+					# Get viewport height, prioritizing cssVisualViewport
+					viewport_height = int(css_viewport.get('clientHeight') or css_layout_viewport.get('clientHeight', 1000))
+
+					logger.debug(f'Detected viewport height: {viewport_height}px')
+				except Exception as e:
+					viewport_height = 1000  # Fallback to 1000px
+					logger.debug(f'Failed to get viewport height, using fallback 1000px: {e}')
+
+				# For multiple pages (>=1.0), scroll one page at a time to ensure each scroll completes
+				if params.num_pages >= 1.0:
+					import asyncio
+
+					num_full_pages = int(params.num_pages)
+					remaining_fraction = params.num_pages - num_full_pages
+
+					completed_scrolls = 0
+
+					# Scroll one page at a time
+					for i in range(num_full_pages):
+						try:
+							pixels = viewport_height  # Use actual viewport height
+							if not params.down:
+								pixels = -pixels
+
+							event = browser_session.event_bus.dispatch(
+								ScrollEvent(direction=direction, amount=abs(pixels), node=node)
+							)
+							await event
+							await event.event_result(raise_if_any=True, raise_if_none=False)
+							completed_scrolls += 1
+
+							# Small delay to ensure scroll completes before next one
+							await asyncio.sleep(0.3)
+
+						except Exception as e:
+							logger.warning(f'Scroll {i + 1}/{num_full_pages} failed: {e}')
+							# Continue with remaining scrolls even if one fails
+
+					# Handle fractional page if present
+					if remaining_fraction > 0:
+						try:
+							pixels = int(remaining_fraction * viewport_height)
+							if not params.down:
+								pixels = -pixels
+
+							event = browser_session.event_bus.dispatch(
+								ScrollEvent(direction=direction, amount=abs(pixels), node=node)
+							)
+							await event
+							await event.event_result(raise_if_any=True, raise_if_none=False)
+							completed_scrolls += remaining_fraction
+
+						except Exception as e:
+							logger.warning(f'Fractional scroll failed: {e}')
+
+					if params.num_pages == 1.0:
+						long_term_memory = f'Scrolled {direction} {target} by one page ({viewport_height}px)'
+					else:
+						long_term_memory = f'Scrolled {direction} {target} by {completed_scrolls:.1f} pages (requested: {params.num_pages}, {viewport_height}px per page)'
 				else:
-					long_term_memory = f'Scrolled {direction} {target} by {params.num_pages} pages'
+					# For fractional pages <1.0, do single scroll
+					pixels = int(params.num_pages * viewport_height)
+					event = browser_session.event_bus.dispatch(
+						ScrollEvent(direction='down' if params.down else 'up', amount=pixels, node=node)
+					)
+					await event
+					await event.event_result(raise_if_any=True, raise_if_none=False)
+					long_term_memory = f'Scrolled {direction} {target} by {params.num_pages} pages ({viewport_height}px per page)'
 
 				msg = f'🔍 {long_term_memory}'
 				logger.info(msg)
