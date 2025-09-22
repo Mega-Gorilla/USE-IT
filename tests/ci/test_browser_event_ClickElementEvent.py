@@ -143,7 +143,7 @@ class TestClickElementEvent:
 		await asyncio.sleep(0.5)  # Give page time to load
 
 		# Initialize the DOM state to populate the selector map
-		await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
+		await browser_session.get_browser_state_summary()
 
 		# Get the selector map
 		selector_map = await browser_session.get_selector_map()
@@ -406,7 +406,7 @@ class TestClickElementEvent:
 		await asyncio.sleep(0.5)
 
 		# Get the clickable elements
-		await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
+		await browser_session.get_browser_state_summary()
 		selector_map = await browser_session.get_selector_map()
 
 		# Find the inline element
@@ -488,7 +488,7 @@ class TestClickElementEvent:
 		await asyncio.sleep(0.5)
 
 		# Get the clickable elements
-		await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
+		await browser_session.get_browser_state_summary()
 		selector_map = await browser_session.get_selector_map()
 
 		# Find the block element inside inline
@@ -576,7 +576,7 @@ class TestClickElementEvent:
 		await asyncio.sleep(0.5)
 
 		# Get the clickable elements
-		await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
+		await browser_session.get_browser_state_summary()
 		selector_map = await browser_session.get_selector_map()
 
 		# Find the target element
@@ -636,7 +636,7 @@ class TestClickElementEvent:
 		await asyncio.sleep(0.5)
 
 		# Get the clickable elements
-		await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
+		await browser_session.get_browser_state_summary()
 		selector_map = await browser_session.get_selector_map()
 
 		# Find the file input
@@ -699,7 +699,7 @@ class TestClickElementEvent:
 		await asyncio.sleep(0.5)
 
 		# Get the clickable elements
-		await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
+		await browser_session.get_browser_state_summary()
 		selector_map = await browser_session.get_selector_map()
 
 		# Find the select element
@@ -1098,7 +1098,7 @@ class TestClickElementEvent:
 			await asyncio.sleep(0.5)
 
 			# Initialize the DOM state to populate the selector map
-			await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
+			await browser_session.get_browser_state_summary()
 
 			# Get the selector map
 			selector_map = await browser_session.get_selector_map()

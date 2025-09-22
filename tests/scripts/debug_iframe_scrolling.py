@@ -132,7 +132,7 @@ async def debug_iframe_scrolling():
 			print(f'\n📸 Capturing DOM state: {label}')
 			state_event = browser_session.event_bus.dispatch(
 				BrowserStateRequestEvent(
-					include_dom=True, include_screenshot=False, cache_clickable_elements_hashes=True, include_recent_events=False
+					include_dom=True, include_screenshot=False, include_recent_events=False
 				)
 			)
 			browser_state = await state_event.event_result()
