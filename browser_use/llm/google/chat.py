@@ -75,7 +75,7 @@ class ChatGoogle(BaseChatModel):
 	temperature: float | None = 0.2
 	top_p: float | None = None
 	seed: int | None = None
-	thinking_budget: int | None = None
+	thinking_budget: int | None = None  # for flash and flash-lite models, default will be set to 0
 	max_output_tokens: int | None = 4096
 	config: types.GenerateContentConfigDict | None = None
 	include_system_in_user: bool = False
@@ -198,8 +198,9 @@ class ChatGoogle(BaseChatModel):
 		if self.seed is not None:
 			config['seed'] = self.seed
 
+		# set default for flash and falsh-lite
 		if self.thinking_budget is None and 'gemini-2.5-flash' in self.model:
-			self.thinking_budget = -1
+			self.thinking_budget = 0
 
 		if self.thinking_budget is not None:
 			thinking_config_dict: types.ThinkingConfigDict = {'thinking_budget': self.thinking_budget}
