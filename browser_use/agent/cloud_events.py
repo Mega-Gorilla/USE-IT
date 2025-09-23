@@ -188,7 +188,7 @@ class CreateAgentTaskEvent(BaseEvent):
 	user_id: str = Field(max_length=255)  # Added for authorization checks
 	device_id: str | None = Field(None, max_length=255)  # Device ID for auth lookup
 	agent_session_id: str
-	llm_model: str = Field(max_length=100)  # LLMModel enum value as string
+	llm_model: str = Field(max_length=200)  # LLMModel enum value as string
 	stopped: bool = False
 	paused: bool = False
 	task: str = Field(max_length=MAX_TASK_LENGTH)
