@@ -354,6 +354,10 @@ class Registry(Generic[Context]):
 				'file_system': file_system,
 			}
 
+			# Only pass sensitive_data to actions that explicitly need it (input_text)
+			if action_name == 'input_text':
+				special_context['sensitive_data'] = sensitive_data
+
 			# Add CDP-related parameters if browser_session is available
 			if browser_session:
 				# Add page_url

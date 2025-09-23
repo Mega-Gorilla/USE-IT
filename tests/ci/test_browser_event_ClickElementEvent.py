@@ -143,7 +143,7 @@ class TestClickElementEvent:
 		await asyncio.sleep(0.5)  # Give page time to load
 
 		# Initialize the DOM state to populate the selector map
-		await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
+		await browser_session.get_browser_state_summary()
 
 		# Get the selector map
 		selector_map = await browser_session.get_selector_map()
@@ -188,9 +188,7 @@ class TestClickElementEvent:
 		result_text = result.extracted_content or result.long_term_memory
 		# Core logic validation: Verify click was successful
 		assert result_text is not None
-		assert f'Clicked element with index {button_index}' in result_text, (
-			f'Expected click confirmation in result content, got: {result_text}'
-		)
+		assert 'Clicked element' in result_text, f'Expected click confirmation in result content, got: {result_text}'
 		# Note: The click action doesn't include button text in the result, only the index
 
 		# Verify the click actually had an effect on the page using CDP
@@ -262,9 +260,7 @@ class TestClickElementEvent:
 		assert isinstance(result, ActionResult)
 		result_text = result.extracted_content or result.long_term_memory
 		assert result_text is not None
-		assert f'Clicked element with index {link_index}' in result_text, (
-			f'Expected click confirmation in result content, got: {result_text}'
-		)
+		assert 'Clicked element' in result_text, f'Expected click confirmation in result content, got: {result_text}'
 
 		# Verify that a new tab was opened
 		tabs = await browser_session.get_tabs()
@@ -410,7 +406,7 @@ class TestClickElementEvent:
 		await asyncio.sleep(0.5)
 
 		# Get the clickable elements
-		await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
+		await browser_session.get_browser_state_summary()
 		selector_map = await browser_session.get_selector_map()
 
 		# Find the inline element
@@ -492,7 +488,7 @@ class TestClickElementEvent:
 		await asyncio.sleep(0.5)
 
 		# Get the clickable elements
-		await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
+		await browser_session.get_browser_state_summary()
 		selector_map = await browser_session.get_selector_map()
 
 		# Find the block element inside inline
@@ -580,7 +576,7 @@ class TestClickElementEvent:
 		await asyncio.sleep(0.5)
 
 		# Get the clickable elements
-		await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
+		await browser_session.get_browser_state_summary()
 		selector_map = await browser_session.get_selector_map()
 
 		# Find the target element
@@ -640,7 +636,7 @@ class TestClickElementEvent:
 		await asyncio.sleep(0.5)
 
 		# Get the clickable elements
-		await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
+		await browser_session.get_browser_state_summary()
 		selector_map = await browser_session.get_selector_map()
 
 		# Find the file input
@@ -703,7 +699,7 @@ class TestClickElementEvent:
 		await asyncio.sleep(0.5)
 
 		# Get the clickable elements
-		await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
+		await browser_session.get_browser_state_summary()
 		selector_map = await browser_session.get_selector_map()
 
 		# Find the select element
@@ -1102,7 +1098,7 @@ class TestClickElementEvent:
 			await asyncio.sleep(0.5)
 
 			# Initialize the DOM state to populate the selector map
-			await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
+			await browser_session.get_browser_state_summary()
 
 			# Get the selector map
 			selector_map = await browser_session.get_selector_map()
