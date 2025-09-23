@@ -624,7 +624,10 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		self._message_manager.add_new_task(new_task)
 		# Mark as follow-up task and recreate eventbus (gets shut down after each run)
 		self.state.follow_up_task = True
-		self.eventbus = EventBus(name=f'Agent_{str(self.id)[-self.state.n_steps :]}')
+		agent_id_suffix = str(self.id)[-4:].replace('-', '_')
+		if agent_id_suffix and agent_id_suffix[0].isdigit():
+			agent_id_suffix = 'a' + agent_id_suffix
+		self.eventbus = EventBus(name=f'Agent_{agent_id_suffix}')
 
 		# Re-register cloud sync handler if it exists (if not disabled)
 		if hasattr(self, 'cloud_sync') and self.cloud_sync and self.enable_cloud_sync:
@@ -681,7 +684,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# Always take screenshots for all steps
 		self.logger.debug('📸 Requesting browser state with include_screenshot=True')
 		browser_state_summary = await self.browser_session.get_browser_state_summary(
-			cache_clickable_elements_hashes=True,
 			include_screenshot=True,  # always capture even if use_vision=False so that cloud sync is useful (it's fast now anyway)
 			include_recent_events=self.include_recent_events,
 		)
@@ -1662,7 +1664,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			# This prevents stale element detection but doesn't refresh before execution
 			if action.get_index() is not None and i != 0:
 				new_browser_state_summary = await self.browser_session.get_browser_state_summary(
-					cache_clickable_elements_hashes=False,
 					include_screenshot=False,
 				)
 				new_selector_map = new_browser_state_summary.dom_state.selector_map
@@ -1888,9 +1889,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 	async def _execute_history_step(self, history_item: AgentHistory, delay: float) -> list[ActionResult]:
 		"""Execute a single step from history with element validation"""
 		assert self.browser_session is not None, 'BrowserSession is not set up'
-		state = await self.browser_session.get_browser_state_summary(
-			cache_clickable_elements_hashes=False, include_screenshot=False
-		)
+		state = await self.browser_session.get_browser_state_summary(include_screenshot=False)
 		if not state or not history_item.model_output:
 			raise ValueError('Invalid state or model output')
 		updated_actions = []
