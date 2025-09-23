@@ -19,11 +19,11 @@ llm = ChatGoogle(model='gemini-2.5-flash', api_key=api_key)
 
 async def run_search():
 	agent = Agent(
-		task='Go to google.com/travel/flights and find the cheapest flight from New York to Paris on 2025-07-15',
+		task='How many stars does the browser-use repo have?',
 		llm=llm,
 	)
 
-	await agent.run(max_steps=25)
+	await agent.run()
 
 
 if __name__ == '__main__':

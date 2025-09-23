@@ -15,7 +15,7 @@ from browser_use.tools.views import (
 	DoneAction,
 	GoToUrlAction,
 	NoParamsAction,
-	SearchGoogleAction,
+	SearchAction,
 )
 
 
@@ -97,7 +97,7 @@ class TestToolsIntegration:
 		# Check that common actions are registered
 		common_actions = [
 			'go_to_url',
-			'search_google',
+			'search',
 			'click_element_by_index',
 			'input_text',
 			'scroll',
@@ -286,28 +286,28 @@ class TestToolsIntegration:
 	async def test_excluded_actions(self, browser_session):
 		"""Test that excluded actions are not registered."""
 		# Create tools with excluded actions
-		excluded_tools = Tools(exclude_actions=['search_google', 'scroll'])
+		excluded_tools = Tools(exclude_actions=['search', 'scroll'])
 
 		# Verify excluded actions are not in the registry
-		assert 'search_google' not in excluded_tools.registry.registry.actions
+		assert 'search' not in excluded_tools.registry.registry.actions
 		assert 'scroll' not in excluded_tools.registry.registry.actions
 
 		# But other actions are still there
 		assert 'go_to_url' in excluded_tools.registry.registry.actions
 		assert 'click_element_by_index' in excluded_tools.registry.registry.actions
 
-	async def test_search_google_action(self, tools, browser_session, base_url):
-		"""Test the search_google action."""
+	async def test_search_action(self, tools, browser_session, base_url):
+		"""Test the search action."""
 
 		await browser_session.get_current_page_url()
 
-		# Execute search_google action - it will actually navigate to our search results page
-		search_action = {'search_google': SearchGoogleAction(query='Python web automation')}
+		# Execute search action - it will actually navigate to our search results page
+		search_action = {'search': SearchAction(query='Python web automation')}
 
-		class SearchGoogleActionModel(ActionModel):
-			search_google: SearchGoogleAction | None = None
+		class SearchActionModel(ActionModel):
+			search: SearchAction | None = None
 
-		result = await tools.act(SearchGoogleActionModel(**search_action), browser_session)
+		result = await tools.act(SearchActionModel(**search_action), browser_session)
 
 		# Verify the result
 		assert isinstance(result, ActionResult)
@@ -413,7 +413,7 @@ class TestToolsIntegration:
 			await asyncio.sleep(1.0)
 
 		# Initialize the DOM state to populate the selector map
-		await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
+		await browser_session.get_browser_state_summary()
 
 		# Get the selector map
 		selector_map = await browser_session.get_selector_map()
@@ -540,7 +540,7 @@ class TestToolsIntegration:
 			await asyncio.sleep(1.0)
 
 		# populate the selector map with highlight indices
-		await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
+		await browser_session.get_browser_state_summary()
 
 		# Now get the selector map which should contain our dropdown
 		selector_map = await browser_session.get_selector_map()
