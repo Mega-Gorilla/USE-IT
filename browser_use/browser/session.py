@@ -740,10 +740,26 @@ class BrowserSession(BaseModel):
 
 	async def on_CloseTabEvent(self, event: CloseTabEvent) -> None:
 		"""Handle tab closure - update focus if needed."""
+		try:
+			# Remove from session pool first to prevent further use
+			stale_session = self._cdp_session_pool.pop(event.target_id, None)
+			if stale_session and stale_session.owns_cdp_client:
+				try:
+					await stale_session.disconnect()
+				except Exception:
+					pass
 
-		cdp_session = await self.get_or_create_cdp_session(target_id=None, focus=False)
-		await self.event_bus.dispatch(TabClosedEvent(target_id=event.target_id))
-		await cdp_session.cdp_client.send.Target.closeTarget(params={'targetId': event.target_id})
+			# Dispatch tab closed event
+			await self.event_bus.dispatch(TabClosedEvent(target_id=event.target_id))
+
+			# Try to close the target, but don't fail if it's already closed
+			try:
+				cdp_session = await self.get_or_create_cdp_session(target_id=None, focus=False)
+				await cdp_session.cdp_client.send.Target.closeTarget(params={'targetId': event.target_id})
+			except Exception as e:
+				self.logger.debug(f'Target may already be closed: {e}')
+		except Exception as e:
+			self.logger.warning(f'Error during tab close cleanup: {e}')
 
 	async def on_TabCreatedEvent(self, event: TabCreatedEvent) -> None:
 		"""Handle tab creation - apply viewport settings to new tab."""
@@ -1665,18 +1681,38 @@ class BrowserSession(BaseModel):
 
 	async def get_target_id_from_tab_id(self, tab_id: str) -> TargetID:
 		"""Get the full-length TargetID from the truncated 4-char tab_id."""
+		# First check cached sessions
 		for full_target_id in self._cdp_session_pool.keys():
 			if full_target_id.endswith(tab_id):
-				return full_target_id
+				# Verify target still exists
+				if await self._is_target_valid(full_target_id):
+					return full_target_id
+				else:
+					# Remove stale session from pool
+					self.logger.debug(f'Removing stale session for target {full_target_id}')
+					stale_session = self._cdp_session_pool.pop(full_target_id, None)
+					if stale_session and stale_session.owns_cdp_client:
+						try:
+							await stale_session.disconnect()
+						except Exception:
+							pass
 
-		# may not have a cached session, so we need to get all pages and find the target id
+		# Get all current targets and find the one matching tab_id
 		all_targets = await self.cdp_client.send.Target.getTargets()
 		# Filter for valid page/tab targets only
 		for target in all_targets.get('targetInfos', []):
-			if target['targetId'].endswith(tab_id):
+			if target['targetId'].endswith(tab_id) and target.get('type') == 'page':
 				return target['targetId']
 
 		raise ValueError(f'No TargetID found ending in tab_id=...{tab_id}')
+
+	async def _is_target_valid(self, target_id: TargetID) -> bool:
+		"""Check if a target ID is still valid."""
+		try:
+			await self.cdp_client.send.Target.getTargetInfo(params={'targetId': target_id})
+			return True
+		except Exception:
+			return False
 
 	async def get_target_id_from_url(self, url: str) -> TargetID:
 		"""Get the TargetID from a URL."""

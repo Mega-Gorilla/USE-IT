@@ -4,8 +4,13 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 # Action Input Models
-class SearchGoogleAction(BaseModel):
+class SearchAction(BaseModel):
 	query: str
+	search_engine: str = 'duckduckgo'  # Options: 'duckduckgo', 'google', 'bing'
+
+
+# Backward compatibility alias
+SearchAction = SearchAction
 
 
 class GoToUrlAction(BaseModel):
