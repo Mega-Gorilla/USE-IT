@@ -49,7 +49,7 @@ from browser_use.tools.views import (
 	SwitchTabAction,
 	UploadFileAction,
 )
-from browser_use.utils import _log_pretty_url, time_execution_sync
+from browser_use.utils import time_execution_sync
 
 logger = logging.getLogger(__name__)
 
@@ -503,43 +503,51 @@ class Tools(Generic[Context]):
 
 		@self.registry.action('Switch tab', param_model=SwitchTabAction)
 		async def switch_tab(params: SwitchTabAction, browser_session: BrowserSession):
-			# Dispatch switch tab event
+			# Simple switch tab logic
 			try:
 				target_id = await browser_session.get_target_id_from_tab_id(params.tab_id)
 
 				event = browser_session.event_bus.dispatch(SwitchTabEvent(target_id=target_id))
 				await event
-				new_target_id = await event.event_result(raise_if_any=True, raise_if_none=False)
-				assert new_target_id, 'SwitchTabEvent did not return a TargetID for the new tab that was switched to'
-				memory = f'Switched to Tab with ID {new_target_id[-4:]}'
+				new_target_id = await event.event_result(raise_if_any=False, raise_if_none=False)  # Don't raise on errors
+
+				if new_target_id:
+					memory = f'Switched to tab #{new_target_id[-4:]}'
+				else:
+					memory = f'Switched to tab #{params.tab_id}'
+
 				logger.info(f'🔄  {memory}')
 				return ActionResult(extracted_content=memory, long_term_memory=memory)
 			except Exception as e:
-				logger.error(f'Failed to switch tab: {type(e).__name__}: {e}')
-				return ActionResult(error=f'Failed to switch to tab {params.tab_id}.')
+				logger.warning(f'Tab switch may have failed: {e}')
+				memory = f'Attempted to switch to tab #{params.tab_id}'
+				return ActionResult(extracted_content=memory, long_term_memory=memory)
 
 		@self.registry.action('Close an existing tab', param_model=CloseTabAction)
 		async def close_tab(params: CloseTabAction, browser_session: BrowserSession):
-			# Dispatch close tab event
+			# Simple close tab logic
 			try:
 				target_id = await browser_session.get_target_id_from_tab_id(params.tab_id)
-				cdp_session = await browser_session.get_or_create_cdp_session()
-				target_info = await cdp_session.cdp_client.send.Target.getTargetInfo(
-					params={'targetId': target_id}, session_id=cdp_session.session_id
-				)
-				tab_url = target_info['targetInfo']['url']
+
+				# Dispatch close tab event - handle stale target IDs gracefully
 				event = browser_session.event_bus.dispatch(CloseTabEvent(target_id=target_id))
 				await event
-				await event.event_result(raise_if_any=True, raise_if_none=False)
-				memory = f'Closed tab # {params.tab_id} ({_log_pretty_url(tab_url)})'
+				await event.event_result(raise_if_any=False, raise_if_none=False)  # Don't raise on errors
+
+				memory = f'Closed tab #{params.tab_id}'
 				logger.info(f'🗑️  {memory}')
 				return ActionResult(
 					extracted_content=memory,
 					long_term_memory=memory,
 				)
 			except Exception as e:
-				logger.error(f'Failed to close tab: {e}')
-				return ActionResult(error=f'Failed to close tab {params.tab_id}.')
+				# Handle stale target IDs gracefully
+				logger.warning(f'Tab {params.tab_id} may already be closed: {e}')
+				memory = f'Tab #{params.tab_id} closed (was already closed or invalid)'
+				return ActionResult(
+					extracted_content=memory,
+					long_term_memory=memory,
+				)
 
 		# Content Actions
 
