@@ -21,6 +21,7 @@ from browser_use.browser.events import (
 from browser_use.browser.views import BrowserError, URLNotAllowedError
 from browser_use.browser.watchdog_base import BaseWatchdog
 from browser_use.dom.service import EnhancedDOMTreeNode
+from browser_use.observability import observe_debug
 
 # Import EnhancedDOMTreeNode and rebuild event models that have forward references to it
 # This must be done after all imports are complete
@@ -35,6 +36,7 @@ UploadFileEvent.model_rebuild()
 class DefaultActionWatchdog(BaseWatchdog):
 	"""Handles default browser actions like click, type, and scroll using CDP."""
 
+	@observe_debug(ignore_input=True, ignore_output=True, name='click_element_event')
 	async def on_ClickElementEvent(self, event: ClickElementEvent) -> dict | None:
 		"""Handle click request with CDP."""
 		try:
@@ -1125,7 +1127,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 					)
 
 					# Small delay to emulate human typing speed
-					await asyncio.sleep(0.001)
+					await asyncio.sleep(0.005)
 
 					# Step 2: Send char event (WITH text parameter) - this is crucial for text input
 					await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
@@ -1152,12 +1154,131 @@ class DefaultActionWatchdog(BaseWatchdog):
 				# Small delay between characters to look human (realistic typing speed)
 				await asyncio.sleep(0.001)
 
+			# Step 4: Trigger framework-aware DOM events after typing completion
+			# Modern JavaScript frameworks (React, Vue, Angular) rely on these events
+			# to update their internal state and trigger re-renders
+			await self._trigger_framework_events(object_id=object_id, cdp_session=cdp_session)
+
 			# Return coordinates metadata if available
 			return input_coordinates
 
 		except Exception as e:
 			self.logger.error(f'Failed to input text via CDP: {type(e).__name__}: {e}')
 			raise BrowserError(f'Failed to input text into element: {repr(element_node)}')
+
+	async def _trigger_framework_events(self, object_id: str, cdp_session) -> None:
+		"""
+		Trigger framework-aware DOM events after text input completion.
+
+		This is critical for modern JavaScript frameworks (React, Vue, Angular, etc.)
+		that rely on DOM events to update their internal state and trigger re-renders.
+
+		Args:
+			object_id: CDP object ID of the input element
+			cdp_session: CDP session for the element's context
+		"""
+		try:
+			# Execute JavaScript to trigger comprehensive event sequence
+			framework_events_script = """
+			(function() {
+				// Find the target element (available as 'this' when using objectId)
+				const element = this;
+				if (!element) return false;
+
+				// Ensure element is focused
+				element.focus();
+
+				// Comprehensive event sequence for maximum framework compatibility
+				const events = [
+					// Input event - primary event for React controlled components
+					{ type: 'input', bubbles: true, cancelable: true },
+					// Change event - important for form validation and Vue v-model
+					{ type: 'change', bubbles: true, cancelable: true },
+					// Blur event - triggers validation in many frameworks
+					{ type: 'blur', bubbles: true, cancelable: true }
+				];
+
+				let success = true;
+
+				events.forEach(eventConfig => {
+					try {
+						const event = new Event(eventConfig.type, {
+							bubbles: eventConfig.bubbles,
+							cancelable: eventConfig.cancelable
+						});
+
+						// Special handling for InputEvent (more specific than Event)
+						if (eventConfig.type === 'input') {
+							const inputEvent = new InputEvent('input', {
+								bubbles: true,
+								cancelable: true,
+								data: element.value,
+								inputType: 'insertText'
+							});
+							element.dispatchEvent(inputEvent);
+						} else {
+							element.dispatchEvent(event);
+						}
+					} catch (e) {
+						success = false;
+						console.warn('Framework event dispatch failed:', eventConfig.type, e);
+					}
+				});
+
+				// Special React synthetic event handling
+				// React uses internal fiber properties for event system
+				if (element._reactInternalFiber || element._reactInternalInstance || element.__reactInternalInstance) {
+					try {
+						// Trigger React's synthetic event system
+						const syntheticInputEvent = new InputEvent('input', {
+							bubbles: true,
+							cancelable: true,
+							data: element.value
+						});
+
+						// Force React to process this as a synthetic event
+						Object.defineProperty(syntheticInputEvent, 'isTrusted', { value: true });
+						element.dispatchEvent(syntheticInputEvent);
+					} catch (e) {
+						console.warn('React synthetic event failed:', e);
+					}
+				}
+
+				// Special Vue reactivity trigger
+				// Vue uses __vueParentComponent or __vue__ for component access
+				if (element.__vue__ || element._vnode || element.__vueParentComponent) {
+					try {
+						// Vue often needs explicit input event with proper timing
+						const vueEvent = new Event('input', { bubbles: true });
+						setTimeout(() => element.dispatchEvent(vueEvent), 0);
+					} catch (e) {
+						console.warn('Vue reactivity trigger failed:', e);
+					}
+				}
+
+				return success;
+			})();
+			"""
+
+			# Execute the framework events script
+			result = await cdp_session.cdp_client.send.Runtime.callFunctionOn(
+				params={
+					'objectId': object_id,
+					'functionDeclaration': framework_events_script,
+					'returnByValue': True,
+				},
+				session_id=cdp_session.session_id,
+			)
+
+			success = result.get('result', {}).get('value', False)
+			if success:
+				self.logger.debug('✅ Framework events triggered successfully')
+			else:
+				self.logger.warning('⚠️ Some framework events may have failed to trigger')
+
+		except Exception as e:
+			self.logger.warning(f'⚠️ Failed to trigger framework events: {type(e).__name__}: {e}')
+			# Don't raise - framework events are a best-effort enhancement
 
 	async def _scroll_with_cdp_gesture(self, pixels: int) -> bool:
 		"""
@@ -1397,6 +1518,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 		except Exception as e:
 			raise
 
+	@observe_debug(ignore_input=True, ignore_output=True, name='wait_event_handler')
 	async def on_WaitEvent(self, event: WaitEvent) -> None:
 		"""Handle wait request."""
 		try:
@@ -1860,7 +1982,12 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			if not dropdown_data.get('options'):
 				msg = f'No options found in dropdown at index {index_for_logging}'
-				raise BrowserError(message=msg, long_term_memory=msg)
+				return {
+					'error': msg,
+					'short_term_memory': msg,
+					'long_term_memory': msg,
+					'element_index': str(index_for_logging),
+				}
 
 			# Format options for display
 			formatted_options = []

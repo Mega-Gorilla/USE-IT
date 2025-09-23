@@ -68,6 +68,7 @@ from browser_use.tools.service import Tools
 from browser_use.utils import (
 	URL_PATTERN,
 	_log_pretty_path,
+	check_latest_browser_use_version,
 	get_browser_use_version,
 	get_git_info,
 	time_execution_async,
@@ -175,7 +176,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		display_files_in_done_text: bool = True,
 		include_tool_call_examples: bool = False,
 		vision_detail_level: Literal['auto', 'low', 'high'] = 'auto',
-		llm_timeout: int = 90,
+		llm_timeout: int | None = None,
 		step_timeout: int = 120,
 		directly_open_url: bool = True,
 		include_recent_events: bool = False,
@@ -205,6 +206,21 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			page_extraction_llm = llm
 		if available_file_paths is None:
 			available_file_paths = []
+
+		# Set timeout based on model name if not explicitly provided
+		if llm_timeout is None:
+
+			def _get_model_timeout(llm_model: BaseChatModel) -> int:
+				"""Determine timeout based on model name"""
+				model_name = getattr(llm_model, 'model', '').lower()
+				if 'gemini' in model_name or 'groq' in model_name:
+					return 30
+				elif 'o3' in model_name or 'claude' in model_name or 'sonnet' in model_name or 'deepseek' in model_name:
+					return 90
+				else:
+					return 60  # Default timeout
+
+			llm_timeout = _get_model_timeout(llm)
 
 		self.id = task_id or uuid7str()
 		self.task_id: str = self.id
@@ -663,7 +679,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# Always take screenshots for all steps
 		self.logger.debug('📸 Requesting browser state with include_screenshot=True')
 		browser_state_summary = await self.browser_session.get_browser_state_summary(
-			cache_clickable_elements_hashes=True,
 			include_screenshot=True,  # always capture even if use_vision=False so that cloud sync is useful (it's fast now anyway)
 			include_recent_events=self.include_recent_events,
 		)
@@ -1175,12 +1190,19 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			# Just re-raise - Pydantic's validation errors are already descriptive
 			raise
 
-	def _log_agent_run(self) -> None:
+	async def _log_agent_run(self) -> None:
 		"""Log the agent run"""
 		# Blue color for task
 		self.logger.info(f'\033[34m🚀 Task: {self.task}\033[0m')
 
 		self.logger.debug(f'🤖 Browser-Use Library Version {self.version} ({self.source})')
+
+		# Check for latest version and log upgrade message if needed
+		latest_version = await check_latest_browser_use_version()
+		if latest_version and latest_version != self.version:
+			self.logger.info(
+				f'📦 Newer version available: {latest_version} (current: {self.version}). Upgrade with: uv add browser-use@{latest_version}'
+			)
 
 	def _log_first_step_startup(self) -> None:
 		"""Log startup message only on the first step"""
@@ -1406,7 +1428,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		signal_handler.register()
 
 		try:
-			self._log_agent_run()
+			await self._log_agent_run()
 
 			self.logger.debug(
 				f'🔧 Agent setup: Agent Session ID {self.session_id[-4:]}, Task ID {self.task_id[-4:]}, Browser Session ID {self.browser_session.id[-4:] if self.browser_session else "None"} {"(connecting via CDP)" if (self.browser_session and self.browser_session.cdp_url) else "(launching local browser)"}'
@@ -1625,8 +1647,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			cached_selector_map = {}
 			cached_element_hashes = set()
 
-		# await self.browser_session.remove_highlights()
-
 		for i, action in enumerate(actions):
 			if i > 0:
 				# ONLY ALLOW TO CALL `done` IF IT IS A SINGLE ACTION
@@ -1639,7 +1659,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			# This prevents stale element detection but doesn't refresh before execution
 			if action.get_index() is not None and i != 0:
 				new_browser_state_summary = await self.browser_session.get_browser_state_summary(
-					cache_clickable_elements_hashes=False,
 					include_screenshot=False,
 				)
 				new_selector_map = new_browser_state_summary.dom_state.selector_map
@@ -1865,9 +1884,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 	async def _execute_history_step(self, history_item: AgentHistory, delay: float) -> list[ActionResult]:
 		"""Execute a single step from history with element validation"""
 		assert self.browser_session is not None, 'BrowserSession is not set up'
-		state = await self.browser_session.get_browser_state_summary(
-			cache_clickable_elements_hashes=False, include_screenshot=False
-		)
+		state = await self.browser_session.get_browser_state_summary(include_screenshot=False)
 		if not state or not history_item.model_output:
 			raise ValueError('Invalid state or model output')
 		updated_actions = []

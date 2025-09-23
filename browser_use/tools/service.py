@@ -307,7 +307,7 @@ class Tools(Generic[Context]):
 
 				# Include click coordinates in metadata if available
 				return ActionResult(
-					long_term_memory=memory,
+					extracted_content=memory,
 					metadata=click_metadata if isinstance(click_metadata, dict) else None,
 				)
 			except BrowserError as e:
@@ -320,6 +320,7 @@ class Tools(Generic[Context]):
 						logger.error(
 							f'Failed to get dropdown options as shortcut during click_element_by_index on dropdown: {type(dropdown_error).__name__}: {dropdown_error}'
 						)
+					return ActionResult(error='Can not click on select elements.')
 
 				return handle_browser_error(e)
 			except Exception as e:
@@ -941,19 +942,51 @@ You will be given a query and the markdown of a webpage that has been filtered t
 
 		@self.registry.action(
 			"""This JavaScript code gets executed with Runtime.evaluate and 'returnByValue': True, 'awaitPromise': True
+
+SYNTAX RULES - FAILURE TO FOLLOW CAUSES "Uncaught at line 0" ERRORS:
+- ALWAYS wrap your code in IIFE: (function(){ ... })() or (async function(){ ... })() for async code
+- ALWAYS add try-catch blocks to prevent execution errors
+- ALWAYS use proper semicolons and valid JavaScript syntax
+- NEVER write multiline code without proper IIFE wrapping
+- ALWAYS validate elements exist before accessing them
+
 EXAMPLES:
-Using when other tools fail, filling a form all at once, hovering, dragging, extracting only links, extracting content from the page, Clicking on coordinates, zooming, use this if the user provides custom selecotrs which you can otherwise not interact with ....
+Use this tool when other tools do not work on the first try as expected or when a more general tool is needed, e.g. for filling a form all at once, hovering, dragging, extracting only links, extracting content from the page, press and hold, hovering, clicking on coordinates, zooming, use this if the user provides custom selectors which you can otherwise not interact with ....
 You can also use it to explore the website.
 - Write code to solve problems you could not solve with other tools.
 - Don't write comments in here, no human reads that.
-- Write only valid js code. 
+- Write only valid js code.
 - use this to e.g. extract + filter links, convert the page to json into the format you need etc...
-- wrap your code in (function(){ ... })() or (async function(){ ... })() for async code
-- wrap your code in a try catch block
+
+
 - limit the output otherwise your context will explode
 - think if you deal with special elements like iframes / shadow roots etc
 - Adopt your strategy for React Native Web, React, Angular, Vue, MUI pages etc.
 - e.g. with  synthetic events, keyboard simulation, shadow DOM, etc.
+
+PROPER SYNTAX EXAMPLES:
+CORRECT: (function(){ try { const el = document.querySelector('#id'); return el ? el.value : 'not found'; } catch(e) { return 'Error: ' + e.message; } })()
+CORRECT: (async function(){ try { await new Promise(r => setTimeout(r, 100)); return 'done'; } catch(e) { return 'Error: ' + e.message; } })()
+
+WRONG: const el = document.querySelector('#id'); el ? el.value : '';
+WRONG: document.querySelector('#id').value
+WRONG: Multiline code without IIFE wrapping
+
+SHADOW DOM ACCESS EXAMPLE:
+(function(){
+    try {
+        const hosts = document.querySelectorAll('*');
+        for (let host of hosts) {
+            if (host.shadowRoot) {
+                const el = host.shadowRoot.querySelector('#target');
+                if (el) return el.textContent;
+            }
+        }
+        return 'Not found';
+    } catch(e) {
+        return 'Error: ' + e.message;
+    }
+})()
 
 ## Return values:
 - Async functions (with await, promises, timeouts) are automatically handled
@@ -1025,6 +1058,7 @@ You can also use it to explore the website.
 				return ActionResult(error=error_msg)
 
 	# Custom done action for structured output
+	@observe_debug(ignore_input=True, ignore_output=True, name='extract_clean_markdown')
 	async def extract_clean_markdown(
 		self, browser_session: BrowserSession, extract_links: bool = False
 	) -> tuple[str, dict[str, Any]]:
