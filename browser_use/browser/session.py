@@ -821,6 +821,17 @@ class BrowserSession(BaseModel):
 				self.agent_focus = await self.get_or_create_cdp_session(target_id=last_target_id, focus=True)
 				raise
 
+		# Dispatch NavigationCompleteEvent when tab focus changes
+		# This ensures PDF detection and downloads work when switching tabs
+		if event.target_id and event.url:
+			self.logger.debug(f'🔄 Dispatching NavigationCompleteEvent for tab switch to {event.url[:50]}...')
+			await self.event_bus.dispatch(
+				NavigationCompleteEvent(
+					target_id=event.target_id,
+					url=event.url,
+				)
+			)
+
 		# self.logger.debug('🔄 AgentFocusChangedEvent handler completed successfully')
 
 	async def on_FileDownloadedEvent(self, event: FileDownloadedEvent) -> None:
