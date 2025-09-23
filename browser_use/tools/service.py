@@ -42,7 +42,7 @@ from browser_use.tools.views import (
 	InputTextAction,
 	NoParamsAction,
 	ScrollAction,
-	SearchGoogleAction,
+	SearchAction,
 	SelectDropdownOptionAction,
 	SendKeysAction,
 	StructuredOutputAction,
@@ -115,66 +115,29 @@ class Tools(Generic[Context]):
 
 		# Basic Navigation Actions
 		@self.registry.action(
-			'Search the query in Google, the query should be a search query like humans search in Google, concrete and not vague or super long.',
-			param_model=SearchGoogleAction,
+			'Search the query using the specified search engine. Defaults to DuckDuckGo (recommended) to avoid reCAPTCHA. Options: duckduckgo, google, bing. Query should be concrete and not vague or super long.',
+			param_model=SearchAction,
 		)
-		async def search_google(params: SearchGoogleAction, browser_session: BrowserSession):
-			search_url = f'https://www.google.com/search?q={params.query}&udm=14'
+		async def search(params: SearchAction, browser_session: BrowserSession):
+			import urllib.parse
 
-			# Check if there's already a tab open on Google or agent's about:blank
-			use_new_tab = True
-			try:
-				tabs = await browser_session.get_tabs()
-				# Get last 4 chars of browser session ID to identify agent's tabs
-				browser_session_label = str(browser_session.id)[-4:]
-				logger.debug(f'Checking {len(tabs)} tabs for reusable tab (browser_session_label: {browser_session_label})')
+			# Encode query for URL safety
+			encoded_query = urllib.parse.quote_plus(params.query)
 
-				for i, tab in enumerate(tabs):
-					logger.debug(f'Tab {i}: url="{tab.url}", title="{tab.title}"')
-					# Check if tab is on Google domain
-					if tab.url and tab.url.strip('/').lower() in ('https://www.google.com', 'https://google.com'):
-						# Found existing Google tab, navigate in it
-						logger.debug(f'Found existing Google tab at index {i}: {tab.url}, reusing it')
+			# Build search URL based on search engine
+			search_engines = {
+				'duckduckgo': f'https://duckduckgo.com/?q={encoded_query}',
+				'google': f'https://www.google.com/search?q={encoded_query}&udm=14',
+				'bing': f'https://www.bing.com/search?q={encoded_query}',
+			}
 
-						# Switch to this tab first if it's not the current one
-						from browser_use.browser.events import SwitchTabEvent
+			if params.search_engine.lower() not in search_engines:
+				return ActionResult(error=f'Unsupported search engine: {params.search_engine}. Options: duckduckgo, google, bing')
 
-						if browser_session.agent_focus and tab.target_id != browser_session.agent_focus.target_id:
-							try:
-								switch_event = browser_session.event_bus.dispatch(SwitchTabEvent(target_id=tab.target_id))
-								await switch_event
-								await switch_event.event_result(raise_if_none=False)
-							except Exception as e:
-								logger.warning(f'Failed to switch to existing Google tab: {e}, will use new tab')
-								continue
+			search_url = search_engines[params.search_engine.lower()]
 
-						use_new_tab = False
-						break
-					# Check if it's an agent-owned about:blank page (has "Starting agent XXXX..." title)
-					# IMPORTANT: about:blank is also used briefly for new tabs the agent is trying to open, dont take over those!
-					elif tab.url == 'about:blank' and tab.title:
-						# Check if this is our agent's about:blank page with DVD animation
-						# The title should be "Starting agent XXXX..." where XXXX is the browser_session_label
-						if browser_session_label in tab.title:
-							# This is our agent's about:blank page
-							logger.debug(f'Found agent-owned about:blank tab at index {i} with title: "{tab.title}", reusing it')
-
-							# Switch to this tab first
-							from browser_use.browser.events import SwitchTabEvent
-
-							if browser_session.agent_focus and tab.target_id != browser_session.agent_focus.target_id:
-								try:
-									switch_event = browser_session.event_bus.dispatch(SwitchTabEvent(target_id=tab.target_id))
-									await switch_event
-									await switch_event.event_result()
-								except Exception as e:
-									logger.warning(f'Failed to switch to agent-owned tab: {e}, will use new tab')
-									continue
-
-							use_new_tab = False
-							break
-			except Exception as e:
-				logger.debug(f'Could not check for existing tabs: {e}, using new tab')
+			# Simple tab logic: use current tab by default
+			use_new_tab = False
 
 			# Dispatch navigation event
 			try:
@@ -186,13 +149,13 @@ class Tools(Generic[Context]):
 				)
 				await event
 				await event.event_result(raise_if_any=True, raise_if_none=False)
-				memory = f"Searched Google for '{params.query}'"
+				memory = f"Searched {params.search_engine.title()} for '{params.query}'"
 				msg = f'🔍  {memory}'
 				logger.info(msg)
 				return ActionResult(extracted_content=memory, long_term_memory=memory)
 			except Exception as e:
-				logger.error(f'Failed to search Google: {e}')
-				return ActionResult(error=f'Failed to search Google for "{params.query}": {str(e)}')
+				logger.error(f'Failed to search {params.search_engine}: {e}')
+				return ActionResult(error=f'Failed to search {params.search_engine} for "{params.query}": {str(e)}')
 
 		@self.registry.action(
 			'Navigate to URL, set new_tab=True to open in new tab, False to navigate in current tab', param_model=GoToUrlAction
