@@ -4,7 +4,7 @@ import asyncio
 import logging
 from functools import cached_property
 from pathlib import Path
-from typing import Any, Literal, Self, cast
+from typing import TYPE_CHECKING, Any, Literal, Self, Union, cast
 
 import httpx
 from bubus import EventBus
@@ -14,6 +14,8 @@ from cdp_use.cdp.network import Cookie
 from cdp_use.cdp.target import AttachedToTargetEvent, SessionID, TargetID
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 from uuid_extensions import uuid7str
+
+from browser_use.browser.cloud import CloudBrowserAuthError, CloudBrowserError, get_cloud_browser_cdp_url
 
 # CDP logging is now handled by setup_logging() in logging_config.py
 # It automatically sets CDP logs to the same level as browser_use logs
@@ -41,6 +43,9 @@ from browser_use.browser.views import BrowserStateSummary, TabInfo
 from browser_use.dom.views import EnhancedDOMTreeNode, TargetInfo
 from browser_use.observability import observe_debug
 from browser_use.utils import _log_pretty_url, is_new_tab_page
+
+if TYPE_CHECKING:
+	from browser_use.actor.page import Page
 
 DEFAULT_BROWSER_PROFILE = BrowserProfile()
 
@@ -251,6 +256,8 @@ class BrowserSession(BaseModel):
 		# From BrowserNewContextArgs
 		storage_state: str | Path | dict[str, Any] | None = None,
 		# BrowserProfile specific fields
+		use_cloud: bool | None = None,
+		cloud_browser: bool | None = None,  # Backward compatibility alias
 		disable_security: bool | None = None,
 		deterministic_rendering: bool | None = None,
 		allowed_domains: list[str] | None = None,
@@ -259,19 +266,28 @@ class BrowserSession(BaseModel):
 		enable_default_extensions: bool | None = None,
 		window_size: dict | None = None,
 		window_position: dict | None = None,
-		cross_origin_iframes: bool | None = None,
 		minimum_wait_page_load_time: float | None = None,
 		wait_for_network_idle_page_load_time: float | None = None,
 		wait_between_actions: float | None = None,
-		highlight_elements: bool | None = None,
 		filter_highlight_ids: bool | None = None,
 		auto_download_pdfs: bool | None = None,
 		profile_directory: str | None = None,
 		cookie_whitelist_domains: list[str] | None = None,
+		# DOM extraction layer configuration
+		cross_origin_iframes: bool | None = None,
+		highlight_elements: bool | None = None,
+		paint_order_filtering: bool | None = None,
+		# Iframe processing limits
+		max_iframes: int | None = None,
+		max_iframe_depth: int | None = None,
 	):
 		# Following the same pattern as AgentSettings in service.py
 		# Only pass non-None values to avoid validation errors
 		profile_kwargs = {k: v for k, v in locals().items() if k not in ['self', 'browser_profile', 'id'] and v is not None}
+
+		# Handle backward compatibility: map cloud_browser to use_cloud
+		if 'cloud_browser' in profile_kwargs:
+			profile_kwargs['use_cloud'] = profile_kwargs.pop('cloud_browser')
 
 		# if is_local is False but executable_path is provided, set is_local to True
 		if is_local is False and executable_path is not None:
@@ -312,6 +328,11 @@ class BrowserSession(BaseModel):
 	def is_local(self) -> bool:
 		"""Whether this is a local browser instance from browser profile."""
 		return self.browser_profile.is_local
+
+	@property
+	def cloud_browser(self) -> bool:
+		"""Whether to use cloud browser service from browser profile."""
+		return self.browser_profile.use_cloud
 
 	# Main shared event bus for all browser session + all watchdogs
 	event_bus: EventBus = Field(default_factory=EventBus)
@@ -432,6 +453,7 @@ class BrowserSession(BaseModel):
 		BaseWatchdog.attach_handler_to_session(self, FileDownloadedEvent, self.on_FileDownloadedEvent)
 		BaseWatchdog.attach_handler_to_session(self, CloseTabEvent, self.on_CloseTabEvent)
 
+	@observe_debug(ignore_input=True, ignore_output=True, name='browser_session_start')
 	async def start(self) -> None:
 		"""Start the browser session."""
 		start_event = self.event_bus.dispatch(BrowserStartEvent())
@@ -478,6 +500,7 @@ class BrowserSession(BaseModel):
 		# Create fresh event bus
 		self.event_bus = EventBus()
 
+	@observe_debug(ignore_input=True, ignore_output=True, name='browser_start_event_handler')
 	async def on_BrowserStartEvent(self, event: BrowserStartEvent) -> dict[str, str]:
 		"""Handle browser start request.
 
@@ -491,9 +514,22 @@ class BrowserSession(BaseModel):
 		await self.attach_all_watchdogs()
 
 		try:
-			# If no CDP URL, launch local browser
+			# If no CDP URL, launch local browser or cloud browser
 			if not self.cdp_url:
-				if self.is_local:
+				if self.browser_profile.use_cloud:
+					# Use cloud browser service
+					try:
+						cloud_cdp_url = await get_cloud_browser_cdp_url()
+						self.browser_profile.cdp_url = cloud_cdp_url
+						self.browser_profile.is_local = False
+						self.logger.info('🌤️ Successfully connected to cloud browser service')
+					except CloudBrowserAuthError:
+						raise CloudBrowserAuthError(
+							'Authentication failed for cloud browser service. Set BROWSER_USE_API_KEY environment variable. You can also create an API key at https://cloud.browser-use.com'
+						)
+					except CloudBrowserError as e:
+						raise CloudBrowserError(f'Failed to create cloud browser: {e}')
+				elif self.is_local:
 					# Launch local browser using event-driven approach
 					launch_event = self.event_bus.dispatch(BrowserLaunchEvent())
 					await launch_event
@@ -785,6 +821,17 @@ class BrowserSession(BaseModel):
 				self.agent_focus = await self.get_or_create_cdp_session(target_id=last_target_id, focus=True)
 				raise
 
+		# Dispatch NavigationCompleteEvent when tab focus changes
+		# This ensures PDF detection and downloads work when switching tabs
+		if event.target_id and event.url:
+			self.logger.debug(f'🔄 Dispatching NavigationCompleteEvent for tab switch to {event.url[:50]}...')
+			await self.event_bus.dispatch(
+				NavigationCompleteEvent(
+					target_id=event.target_id,
+					url=event.url,
+				)
+			)
+
 		# self.logger.debug('🔄 AgentFocusChangedEvent handler completed successfully')
 
 	async def on_FileDownloadedEvent(self, event: FileDownloadedEvent) -> None:
@@ -808,6 +855,16 @@ class BrowserSession(BaseModel):
 				self.event_bus.dispatch(BrowserStoppedEvent(reason='Kept alive due to keep_alive=True'))
 				return
 
+			# Clean up cloud browser session if using cloud browser
+			if self.browser_profile.use_cloud:
+				try:
+					from browser_use.browser.cloud import cleanup_cloud_client
+
+					await cleanup_cloud_client()
+					self.logger.info('🌤️ Cloud browser session cleaned up')
+				except Exception as e:
+					self.logger.debug(f'Failed to cleanup cloud browser session: {e}')
+
 			# Clear CDP session cache before stopping
 			await self.reset()
 
@@ -829,11 +886,89 @@ class BrowserSession(BaseModel):
 				)
 			)
 
+	# region - ========== CDP-based replacements for browser_context operations ==========
 	@property
 	def cdp_client(self) -> CDPClient:
 		"""Get the cached root CDP cdp_session.cdp_client. The client is created and started in self.connect()."""
 		assert self._cdp_client_root is not None, 'CDP client not initialized - browser may not be connected yet'
 		return self._cdp_client_root
+
+	async def new_page(self, url: str | None = None) -> 'Page':
+		"""Create a new page (tab)."""
+		from cdp_use.cdp.target.commands import CreateTargetParameters
+
+		params: CreateTargetParameters = {'url': url or 'about:blank'}
+		result = await self.cdp_client.send.Target.createTarget(params)
+
+		target_id = result['targetId']
+
+		# Import here to avoid circular import
+		from browser_use.actor.page import Page as Target
+
+		return Target(self, target_id)
+
+	async def get_current_page(self) -> 'Page | None':
+		"""Get the current page as an actor Page."""
+		target_info = await self.get_current_target_info()
+
+		if not target_info:
+			return None
+
+		from browser_use.actor.page import Page as Target
+
+		return Target(self, target_info['targetId'])
+
+	async def must_get_current_page(self) -> 'Page':
+		"""Get the current page as an actor Page."""
+		page = await self.get_current_page()
+		if not page:
+			raise RuntimeError('No current target found')
+
+		return page
+
+	async def get_pages(self) -> list['Page']:
+		"""Get all available pages."""
+		result = await self.cdp_client.send.Target.getTargets()
+
+		targets = []
+		# Import here to avoid circular import
+		from browser_use.actor.page import Page as Target
+
+		for target_info in result['targetInfos']:
+			if target_info['type'] in ['page', 'iframe']:
+				targets.append(Target(self, target_info['targetId']))
+
+		return targets
+
+	async def close_page(self, page: 'Union[Page, str]') -> None:
+		"""Close a page by Page object or target ID."""
+		from cdp_use.cdp.target.commands import CloseTargetParameters
+
+		# Import here to avoid circular import
+		from browser_use.actor.page import Page as Target
+
+		if isinstance(page, Target):
+			target_id = page._target_id
+		else:
+			target_id = str(page)
+
+		params: CloseTargetParameters = {'targetId': target_id}
+		await self.cdp_client.send.Target.closeTarget(params)
+
+	async def cookies(self, urls: list[str] | None = None) -> list['Cookie']:
+		"""Get cookies, optionally filtered by URLs."""
+		from cdp_use.cdp.network.library import GetCookiesParameters
+
+		params: GetCookiesParameters = {}
+		if urls:
+			params['urls'] = urls
+
+		result = await self.cdp_client.send.Network.getCookies(params)
+		return result['cookies']
+
+	async def clear_cookies(self) -> None:
+		"""Clear all cookies."""
+		await self.cdp_client.send.Network.clearBrowserCookies()
 
 	async def get_or_create_cdp_session(
 		self, target_id: TargetID | None = None, focus: bool = True, new_socket: bool | None = None
@@ -915,11 +1050,12 @@ class BrowserSession(BaseModel):
 	def current_session_id(self) -> str | None:
 		return self.agent_focus.session_id if self.agent_focus else None
 
-	# ========== Helper Methods ==========
+	# endregion - ========== CDP-based ... ==========
+
+	# region - ========== Helper Methods ==========
 	@observe_debug(ignore_input=True, ignore_output=True, name='get_browser_state_summary')
 	async def get_browser_state_summary(
 		self,
-		cache_clickable_elements_hashes: bool = True,
 		include_screenshot: bool = True,
 		cached: bool = False,
 		include_recent_events: bool = False,
@@ -946,7 +1082,6 @@ class BrowserSession(BaseModel):
 				BrowserStateRequestEvent(
 					include_dom=True,
 					include_screenshot=include_screenshot,
-					cache_clickable_elements_hashes=cache_clickable_elements_hashes,
 					include_recent_events=include_recent_events,
 				)
 			),
@@ -1450,8 +1585,9 @@ class BrowserSession(BaseModel):
 
 		return tabs
 
-	# ========== ID Lookup Methods ==========
+	# endregion - ========== Helper Methods ==========
 
+	# region - ========== ID Lookup Methods ==========
 	async def get_current_target_info(self) -> TargetInfo | None:
 		"""Get info about the current active target using CDP."""
 		if not self.agent_focus or not self.agent_focus.target_id:
@@ -1491,7 +1627,9 @@ class BrowserSession(BaseModel):
 		await event
 		await event.event_result(raise_if_any=True, raise_if_none=False)
 
-	# ========== DOM Helper Methods ==========
+	# endregion - ========== ID Lookup Methods ==========
+
+	# region - ========== DOM Helper Methods ==========
 
 	async def get_dom_element_by_index(self, index: int) -> EnhancedDOMTreeNode | None:
 		"""Get DOM element by index.
@@ -1611,18 +1749,18 @@ class BrowserSession(BaseModel):
 				const highlights = document.querySelectorAll('[data-browser-use-highlight]');
 				console.log('Removing', highlights.length, 'browser-use highlight elements');
 				highlights.forEach(el => el.remove());
-				
+
 				// Also remove by ID in case selector missed anything
 				const highlightContainer = document.getElementById('browser-use-debug-highlights');
 				if (highlightContainer) {
 					console.log('Removing highlight container by ID');
 					highlightContainer.remove();
 				}
-				
+
 				// Final cleanup - remove any orphaned tooltips
 				const orphanedTooltips = document.querySelectorAll('[data-browser-use-highlight="tooltip"]');
 				orphanedTooltips.forEach(el => el.remove());
-				
+
 				return { removed: highlights.length };
 			})();
 			"""
@@ -1672,7 +1810,9 @@ class BrowserSession(BaseModel):
 		"""
 		return self._downloaded_files.copy()
 
-	# ========== CDP-based replacements for browser_context operations ==========
+	# endregion - ========== Helper Methods ==========
+
+	# region - ========== CDP-based replacements for browser_context operations ==========
 
 	async def _cdp_get_all_pages(
 		self,
@@ -2250,3 +2390,126 @@ class BrowserSession(BaseModel):
 				self.logger.debug(f'Failed to get CDP client for target {node.target_id}: {e}, using main session')
 
 		return await self.get_or_create_cdp_session()
+
+	@observe_debug(ignore_input=True, ignore_output=True, name='take_screenshot')
+	async def take_screenshot(
+		self,
+		path: str | None = None,
+		full_page: bool = False,
+		format: str = 'png',
+		quality: int | None = None,
+		clip: dict | None = None,
+	) -> bytes:
+		"""Take a screenshot using CDP.
+
+		Args:
+			path: Optional file path to save screenshot
+			full_page: Capture entire scrollable page beyond viewport
+			format: Image format ('png', 'jpeg', 'webp')
+			quality: Quality 0-100 for JPEG format
+			clip: Region to capture {'x': int, 'y': int, 'width': int, 'height': int}
+
+		Returns:
+			Screenshot data as bytes
+		"""
+		import base64
+
+		from cdp_use.cdp.page import CaptureScreenshotParameters
+
+		cdp_session = await self.get_or_create_cdp_session()
+
+		# Build parameters dict explicitly to satisfy TypedDict expectations
+		params: CaptureScreenshotParameters = {
+			'format': format,
+			'captureBeyondViewport': full_page,
+		}
+
+		if quality is not None and format == 'jpeg':
+			params['quality'] = quality
+
+		if clip:
+			params['clip'] = {
+				'x': clip['x'],
+				'y': clip['y'],
+				'width': clip['width'],
+				'height': clip['height'],
+				'scale': 1,
+			}
+
+		params = CaptureScreenshotParameters(**params)
+
+		result = await cdp_session.cdp_client.send.Page.captureScreenshot(params=params, session_id=cdp_session.session_id)
+
+		if not result or 'data' not in result:
+			raise Exception('Screenshot failed - no data returned')
+
+		screenshot_data = base64.b64decode(result['data'])
+
+		if path:
+			Path(path).write_bytes(screenshot_data)
+
+		return screenshot_data
+
+	async def screenshot_element(
+		self,
+		selector: str,
+		path: str | None = None,
+		format: str = 'png',
+		quality: int | None = None,
+	) -> bytes:
+		"""Take a screenshot of a specific element.
+
+		Args:
+			selector: CSS selector for the element
+			path: Optional file path to save screenshot
+			format: Image format ('png', 'jpeg', 'webp')
+			quality: Quality 0-100 for JPEG format
+
+		Returns:
+			Screenshot data as bytes
+		"""
+
+		bounds = await self._get_element_bounds(selector)
+		if not bounds:
+			raise ValueError(f"Element '{selector}' not found or has no bounds")
+
+		return await self.take_screenshot(
+			path=path,
+			format=format,
+			quality=quality,
+			clip=bounds,
+		)
+
+	async def _get_element_bounds(self, selector: str) -> dict | None:
+		"""Get element bounding box using CDP."""
+
+		cdp_session = await self.get_or_create_cdp_session()
+
+		# Get document
+		doc = await cdp_session.cdp_client.send.DOM.getDocument(params={'depth': 1}, session_id=cdp_session.session_id)
+
+		# Query selector
+		node_result = await cdp_session.cdp_client.send.DOM.querySelector(
+			params={'nodeId': doc['root']['nodeId'], 'selector': selector}, session_id=cdp_session.session_id
+		)
+
+		node_id = node_result.get('nodeId')
+		if not node_id:
+			return None
+
+		# Get bounding box
+		box_result = await cdp_session.cdp_client.send.DOM.getBoxModel(
+			params={'nodeId': node_id}, session_id=cdp_session.session_id
+		)
+
+		box_model = box_result.get('model')
+		if not box_model:
+			return None
+
+		content = box_model['content']
+		return {
+			'x': min(content[0], content[2], content[4], content[6]),
+			'y': min(content[1], content[3], content[5], content[7]),
+			'width': max(content[0], content[2], content[4], content[6]) - min(content[0], content[2], content[4], content[6]),
+			'height': max(content[1], content[3], content[5], content[7]) - min(content[1], content[3], content[5], content[7]),
+		}

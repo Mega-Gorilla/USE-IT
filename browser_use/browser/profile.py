@@ -550,7 +550,15 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	# Session/connection configuration
 	cdp_url: str | None = Field(default=None, description='CDP URL for connecting to existing browser instance')
 	is_local: bool = Field(default=False, description='Whether this is a local browser instance')
-	# label: str = 'default'
+	use_cloud: bool = Field(
+		default=False,
+		description='Use browser-use cloud browser service instead of local browser',
+	)
+
+	@property
+	def cloud_browser(self) -> bool:
+		"""Alias for use_cloud field for compatibility."""
+		return self.use_cloud
 
 	# custom options we provide that aren't native playwright kwargs
 	disable_security: bool = Field(default=False, description='Disable browser security features.')
@@ -558,6 +566,10 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	allowed_domains: list[str] | None = Field(
 		default=None,
 		description='List of allowed domains for navigation e.g. ["*.google.com", "https://example.com", "chrome-extension://*"]',
+	)
+	prohibited_domains: list[str] | None = Field(
+		default=None,
+		description='List of prohibited domains for navigation e.g. ["*.google.com", "https://example.com", "chrome-extension://*"]. Allowed domains take precedence over prohibited domains.',
 	)
 	keep_alive: bool | None = Field(default=None, description='Keep browser alive after agent run.')
 
@@ -587,8 +599,17 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		description='Window position to use for the browser x,y from the top left when headless=False.',
 	)
 	cross_origin_iframes: bool = Field(
-		default=False,
-		description='Enable cross-origin iframe support (OOPIF/Out-of-Process iframes). When False (default), only same-origin frames are processed to avoid complexity and hanging.',
+		default=True,
+		description='Enable cross-origin iframe support (OOPIF/Out-of-Process iframes). When False, only same-origin frames are processed to avoid complexity and hanging.',
+	)
+	max_iframes: int = Field(
+		default=100,
+		description='Maximum number of iframe documents to process to prevent crashes.',
+	)
+	max_iframe_depth: int = Field(
+		ge=0,
+		default=5,
+		description='Maximum depth for cross-origin iframe recursion (default: 5 levels deep).',
 	)
 
 	# --- Page load/wait timings ---
@@ -604,6 +625,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	filter_highlight_ids: bool = Field(
 		default=True, description='Only show element IDs in highlights if llm_representation is less than 10 characters.'
 	)
+	paint_order_filtering: bool = Field(default=True, description='Enable paint order filtering. Slightly experimental.')
 
 	# --- Downloads ---
 	auto_download_pdfs: bool = Field(default=True, description='Automatically download PDFs when navigating to PDF viewer pages.')

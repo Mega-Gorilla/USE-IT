@@ -21,6 +21,7 @@ from browser_use.browser.events import (
 from browser_use.browser.views import BrowserError, URLNotAllowedError
 from browser_use.browser.watchdog_base import BaseWatchdog
 from browser_use.dom.service import EnhancedDOMTreeNode
+from browser_use.observability import observe_debug
 
 # Import EnhancedDOMTreeNode and rebuild event models that have forward references to it
 # This must be done after all imports are complete
@@ -35,6 +36,7 @@ UploadFileEvent.model_rebuild()
 class DefaultActionWatchdog(BaseWatchdog):
 	"""Handles default browser actions like click, type, and scroll using CDP."""
 
+	@observe_debug(ignore_input=True, ignore_output=True, name='click_element_event')
 	async def on_ClickElementEvent(self, event: ClickElementEvent) -> dict | None:
 		"""Handle click request with CDP."""
 		try:
@@ -71,7 +73,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				msg = f'Downloaded file to {download_path}'
 				self.logger.info(f'💾 {msg}')
 			else:
-				msg = f'Clicked button with index {index_for_logging}: {element_node.get_all_children_text(max_depth=2)}'
+				msg = f'Clicked button {element_node.node_name}: {element_node.get_all_children_text(max_depth=2)}'
 				self.logger.debug(f'🖱️ {msg}')
 			self.logger.debug(f'Element xpath: {element_node.xpath}')
 
@@ -127,15 +129,32 @@ class DefaultActionWatchdog(BaseWatchdog):
 			if not element_node.element_index or element_node.element_index == 0:
 				# Type to the page without focusing any specific element
 				await self._type_to_page(event.text)
-				self.logger.info(f'⌨️ Typed "{event.text}" to the page (current focus)')
+				# Log with sensitive data protection
+				if event.is_sensitive:
+					if event.sensitive_key_name:
+						self.logger.info(f'⌨️ Typed <{event.sensitive_key_name}> to the page (current focus)')
+					else:
+						self.logger.info('⌨️ Typed <sensitive> to the page (current focus)')
+				else:
+					self.logger.info(f'⌨️ Typed "{event.text}" to the page (current focus)')
 				return None  # No coordinates available for page typing
 			else:
 				try:
 					# Try to type to the specific element
 					input_metadata = await self._input_text_element_node_impl(
-						element_node, event.text, clear_existing=event.clear_existing or (not event.text)
+						element_node,
+						event.text,
+						clear_existing=event.clear_existing or (not event.text),
+						is_sensitive=event.is_sensitive,
 					)
-					self.logger.info(f'⌨️ Typed "{event.text}" into element with index {index_for_logging}')
+					# Log with sensitive data protection
+					if event.is_sensitive:
+						if event.sensitive_key_name:
+							self.logger.info(f'⌨️ Typed <{event.sensitive_key_name}> into element with index {index_for_logging}')
+						else:
+							self.logger.info(f'⌨️ Typed <sensitive> into element with index {index_for_logging}')
+					else:
+						self.logger.info(f'⌨️ Typed "{event.text}" into element with index {index_for_logging}')
 					self.logger.debug(f'Element xpath: {element_node.xpath}')
 					return input_metadata  # Return coordinates if available
 				except Exception as e:
@@ -146,7 +165,14 @@ class DefaultActionWatchdog(BaseWatchdog):
 					except Exception as e:
 						pass
 					await self._type_to_page(event.text)
-					self.logger.info(f'⌨️ Typed "{event.text}" to the page as fallback')
+					# Log with sensitive data protection
+					if event.is_sensitive:
+						if event.sensitive_key_name:
+							self.logger.info(f'⌨️ Typed <{event.sensitive_key_name}> to the page as fallback')
+						else:
+							self.logger.info('⌨️ Typed <sensitive> to the page as fallback')
+					else:
+						self.logger.info(f'⌨️ Typed "{event.text}" to the page as fallback')
 					return None  # No coordinates available for fallback typing
 
 			# Note: We don't clear cached state here - let multi_act handle DOM change detection
@@ -563,30 +589,62 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Type the text character by character to the focused element
 			for char in text:
-				# Send keydown
-				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
-					params={
-						'type': 'keyDown',
-						'key': char,
-					},
-					session_id=cdp_session.session_id,
-				)
-				# Send char for actual text input
-				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
-					params={
-						'type': 'char',
-						'text': char,
-					},
-					session_id=cdp_session.session_id,
-				)
-				# Send keyup
-				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
-					params={
-						'type': 'keyUp',
-						'key': char,
-					},
-					session_id=cdp_session.session_id,
-				)
+				# Handle newline characters as Enter key
+				if char == '\n':
+					# Send proper Enter key sequence
+					await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+						params={
+							'type': 'keyDown',
+							'key': 'Enter',
+							'code': 'Enter',
+							'windowsVirtualKeyCode': 13,
+						},
+						session_id=cdp_session.session_id,
+					)
+					# Send char event with carriage return
+					await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+						params={
+							'type': 'char',
+							'text': '\r',
+						},
+						session_id=cdp_session.session_id,
+					)
+					# Send keyup
+					await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+						params={
+							'type': 'keyUp',
+							'key': 'Enter',
+							'code': 'Enter',
+							'windowsVirtualKeyCode': 13,
+						},
+						session_id=cdp_session.session_id,
+					)
+				else:
+					# Handle regular characters
+					# Send keydown
+					await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+						params={
+							'type': 'keyDown',
+							'key': char,
+						},
+						session_id=cdp_session.session_id,
+					)
+					# Send char for actual text input
+					await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+						params={
+							'type': 'char',
+							'text': char,
+						},
+						session_id=cdp_session.session_id,
+					)
+					# Send keyup
+					await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+						params={
+							'type': 'keyUp',
+							'key': char,
+						},
+						session_id=cdp_session.session_id,
+					)
 				# Add 18ms delay between keystrokes
 				await asyncio.sleep(0.018)
 
@@ -934,7 +992,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 		return False
 
 	async def _input_text_element_node_impl(
-		self, element_node: EnhancedDOMTreeNode, text: str, clear_existing: bool = True
+		self, element_node: EnhancedDOMTreeNode, text: str, clear_existing: bool = True, is_sensitive: bool = False
 	) -> dict | None:
 		"""
 		Input text into an element using pure CDP with improved focus fallbacks.
@@ -1004,54 +1062,102 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Step 3: Type the text character by character using proper human-like key events
 			# This emulates exactly how a human would type, which modern websites expect
-			self.logger.debug(f'🎯 Typing text character by character: "{text}"')
+			if is_sensitive:
+				# Note: sensitive_key_name is not passed to this low-level method,
+				# but we could extend the signature if needed for more granular logging
+				self.logger.debug('🎯 Typing <sensitive> character by character')
+			else:
+				self.logger.debug(f'🎯 Typing text character by character: "{text}"')
 
 			for i, char in enumerate(text):
-				# Get proper modifiers, VK code, and base key for the character
-				modifiers, vk_code, base_key = self._get_char_modifiers_and_vk(char)
-				key_code = self._get_key_code_for_char(base_key)
+				# Handle newline characters as Enter key
+				if char == '\n':
+					# Send proper Enter key sequence
+					await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+						params={
+							'type': 'keyDown',
+							'key': 'Enter',
+							'code': 'Enter',
+							'windowsVirtualKeyCode': 13,
+						},
+						session_id=cdp_session.session_id,
+					)
 
-				# self.logger.debug(f'🎯 Typing character {i + 1}/{len(text)}: "{char}" (base_key: {base_key}, code: {key_code}, modifiers: {modifiers}, vk: {vk_code})')
+					# Small delay to emulate human typing speed
+					await asyncio.sleep(0.001)
 
-				# Step 1: Send keyDown event (NO text parameter)
-				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
-					params={
-						'type': 'keyDown',
-						'key': base_key,
-						'code': key_code,
-						'modifiers': modifiers,
-						'windowsVirtualKeyCode': vk_code,
-					},
-					session_id=cdp_session.session_id,
-				)
+					# Send char event with carriage return
+					await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+						params={
+							'type': 'char',
+							'text': '\r',
+							'key': 'Enter',
+						},
+						session_id=cdp_session.session_id,
+					)
 
-				# Small delay to emulate human typing speed
-				await asyncio.sleep(0.001)
+					# Send keyUp event
+					await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+						params={
+							'type': 'keyUp',
+							'key': 'Enter',
+							'code': 'Enter',
+							'windowsVirtualKeyCode': 13,
+						},
+						session_id=cdp_session.session_id,
+					)
+				else:
+					# Handle regular characters
+					# Get proper modifiers, VK code, and base key for the character
+					modifiers, vk_code, base_key = self._get_char_modifiers_and_vk(char)
+					key_code = self._get_key_code_for_char(base_key)
 
-				# Step 2: Send char event (WITH text parameter) - this is crucial for text input
-				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
-					params={
-						'type': 'char',
-						'text': char,
-						'key': char,
-					},
-					session_id=cdp_session.session_id,
-				)
+					# self.logger.debug(f'🎯 Typing character {i + 1}/{len(text)}: "{char}" (base_key: {base_key}, code: {key_code}, modifiers: {modifiers}, vk: {vk_code})')
 
-				# Step 3: Send keyUp event (NO text parameter)
-				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
-					params={
-						'type': 'keyUp',
-						'key': base_key,
-						'code': key_code,
-						'modifiers': modifiers,
-						'windowsVirtualKeyCode': vk_code,
-					},
-					session_id=cdp_session.session_id,
-				)
+					# Step 1: Send keyDown event (NO text parameter)
+					await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+						params={
+							'type': 'keyDown',
+							'key': base_key,
+							'code': key_code,
+							'modifiers': modifiers,
+							'windowsVirtualKeyCode': vk_code,
+						},
+						session_id=cdp_session.session_id,
+					)
+
+					# Small delay to emulate human typing speed
+					await asyncio.sleep(0.005)
+
+					# Step 2: Send char event (WITH text parameter) - this is crucial for text input
+					await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+						params={
+							'type': 'char',
+							'text': char,
+							'key': char,
+						},
+						session_id=cdp_session.session_id,
+					)
+
+					# Step 3: Send keyUp event (NO text parameter)
+					await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+						params={
+							'type': 'keyUp',
+							'key': base_key,
+							'code': key_code,
+							'modifiers': modifiers,
+							'windowsVirtualKeyCode': vk_code,
+						},
+						session_id=cdp_session.session_id,
+					)
 
 				# Small delay between characters to look human (realistic typing speed)
 				await asyncio.sleep(0.001)
+
+			# Step 4: Trigger framework-aware DOM events after typing completion
+			# Modern JavaScript frameworks (React, Vue, Angular) rely on these events
+			# to update their internal state and trigger re-renders
+			await self._trigger_framework_events(object_id=object_id, cdp_session=cdp_session)
 
 			# Return coordinates metadata if available
 			return input_coordinates
@@ -1059,6 +1165,120 @@ class DefaultActionWatchdog(BaseWatchdog):
 		except Exception as e:
 			self.logger.error(f'Failed to input text via CDP: {type(e).__name__}: {e}')
 			raise BrowserError(f'Failed to input text into element: {repr(element_node)}')
+
+	async def _trigger_framework_events(self, object_id: str, cdp_session) -> None:
+		"""
+		Trigger framework-aware DOM events after text input completion.
+
+		This is critical for modern JavaScript frameworks (React, Vue, Angular, etc.)
+		that rely on DOM events to update their internal state and trigger re-renders.
+
+		Args:
+			object_id: CDP object ID of the input element
+			cdp_session: CDP session for the element's context
+		"""
+		try:
+			# Execute JavaScript to trigger comprehensive event sequence
+			framework_events_script = """
+			(function() {
+				// Find the target element (available as 'this' when using objectId)
+				const element = this;
+				if (!element) return false;
+
+				// Ensure element is focused
+				element.focus();
+
+				// Comprehensive event sequence for maximum framework compatibility
+				const events = [
+					// Input event - primary event for React controlled components
+					{ type: 'input', bubbles: true, cancelable: true },
+					// Change event - important for form validation and Vue v-model
+					{ type: 'change', bubbles: true, cancelable: true },
+					// Blur event - triggers validation in many frameworks
+					{ type: 'blur', bubbles: true, cancelable: true }
+				];
+
+				let success = true;
+
+				events.forEach(eventConfig => {
+					try {
+						const event = new Event(eventConfig.type, {
+							bubbles: eventConfig.bubbles,
+							cancelable: eventConfig.cancelable
+						});
+
+						// Special handling for InputEvent (more specific than Event)
+						if (eventConfig.type === 'input') {
+							const inputEvent = new InputEvent('input', {
+								bubbles: true,
+								cancelable: true,
+								data: element.value,
+								inputType: 'insertText'
+							});
+							element.dispatchEvent(inputEvent);
+						} else {
+							element.dispatchEvent(event);
+						}
+					} catch (e) {
+						success = false;
+						console.warn('Framework event dispatch failed:', eventConfig.type, e);
+					}
+				});
+
+				// Special React synthetic event handling
+				// React uses internal fiber properties for event system
+				if (element._reactInternalFiber || element._reactInternalInstance || element.__reactInternalInstance) {
+					try {
+						// Trigger React's synthetic event system
+						const syntheticInputEvent = new InputEvent('input', {
+							bubbles: true,
+							cancelable: true,
+							data: element.value
+						});
+
+						// Force React to process this as a synthetic event
+						Object.defineProperty(syntheticInputEvent, 'isTrusted', { value: true });
+						element.dispatchEvent(syntheticInputEvent);
+					} catch (e) {
+						console.warn('React synthetic event failed:', e);
+					}
+				}
+
+				// Special Vue reactivity trigger
+				// Vue uses __vueParentComponent or __vue__ for component access
+				if (element.__vue__ || element._vnode || element.__vueParentComponent) {
+					try {
+						// Vue often needs explicit input event with proper timing
+						const vueEvent = new Event('input', { bubbles: true });
+						setTimeout(() => element.dispatchEvent(vueEvent), 0);
+					} catch (e) {
+						console.warn('Vue reactivity trigger failed:', e);
+					}
+				}
+
+				return success;
+			})();
+			"""
+
+			# Execute the framework events script
+			result = await cdp_session.cdp_client.send.Runtime.callFunctionOn(
+				params={
+					'objectId': object_id,
+					'functionDeclaration': framework_events_script,
+					'returnByValue': True,
+				},
+				session_id=cdp_session.session_id,
+			)
+
+			success = result.get('result', {}).get('value', False)
+			if success:
+				self.logger.debug('✅ Framework events triggered successfully')
+			else:
+				self.logger.warning('⚠️ Some framework events may have failed to trigger')
+
+		except Exception as e:
+			self.logger.warning(f'⚠️ Failed to trigger framework events: {type(e).__name__}: {e}')
+			# Don't raise - framework events are a best-effort enhancement
 
 	async def _scroll_with_cdp_gesture(self, pixels: int) -> bool:
 		"""
@@ -1298,6 +1518,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 		except Exception as e:
 			raise
 
+	@observe_debug(ignore_input=True, ignore_output=True, name='wait_event_handler')
 	async def on_WaitEvent(self, event: WaitEvent) -> None:
 		"""Handle wait request."""
 		try:
@@ -1761,7 +1982,12 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			if not dropdown_data.get('options'):
 				msg = f'No options found in dropdown at index {index_for_logging}'
-				raise BrowserError(message=msg, long_term_memory=msg)
+				return {
+					'error': msg,
+					'short_term_memory': msg,
+					'long_term_memory': msg,
+					'element_index': str(index_for_logging),
+				}
 
 			# Format options for display
 			formatted_options = []
@@ -1813,7 +2039,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			self.logger.error(msg)
 			raise BrowserError(message=msg, long_term_memory=msg)
 		except Exception as e:
-			msg = f'Failed to get dropdown options for element with index {index_for_logging}'
+			msg = 'Failed to get dropdown options'
 			error_msg = f'{msg}: {str(e)}'
 			self.logger.error(error_msg)
 			raise BrowserError(

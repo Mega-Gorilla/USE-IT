@@ -5,14 +5,19 @@ icon: "cloud"
 mode: "wide"
 ---
 
+
+### Browser-Use Cloud Browser or CDP URL
+
+The easiest way to use a cloud browser is with the built-in Browser-Use cloud service:
+
 ```python
 from browser_use import Agent, Browser, ChatOpenAI
 
-# Connect to remote browser
+# Use Browser-Use cloud browser service
 browser = Browser(
-    cdp_url='http://remote-server:9222'
+    use_cloud=True,  # Automatically provisions a cloud browser
+    # cdp_url="http://remote-server:9222" # CDP URL from your favorite browser provider like AnchorBrowser, HyperBrowser, BrowserBase, Steel.dev, etc.
 )
-
 
 agent = Agent(
     task="Your task here",
@@ -21,10 +26,19 @@ agent = Agent(
 )
 ```
 
+**Prerequisites:**
+1. Get an API key from [cloud.browser-use.com](https://cloud.browser-use.com)
+2. Set BROWSER_USE_API_KEY environment variable
 
-## Get a CDP URL
-### Cloud Browser
-Get a cdp url from your favorite browser provider like AnchorBorwser, HyperBrowser, BrowserBase, Steel.dev, etc.
+**Benefits:**
+- ✅ No local browser setup required
+- ✅ Scalable and fast cloud infrastructure
+- ✅ Automatic provisioning and teardown
+- ✅ Built-in authentication handling
+- ✅ Optimized for browser automation
+
+### Third-Party Cloud Browsers
+Get a CDP URL from your favorite browser provider like AnchorBrowser, HyperBrowser, BrowserBase, Steel.dev, etc.
 
 
 

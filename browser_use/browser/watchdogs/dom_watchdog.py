@@ -85,6 +85,7 @@ class DOMWatchdog(BaseWatchdog):
 
 		return json.dumps([])  # Return empty JSON array on error
 
+	@observe_debug(ignore_input=True, ignore_output=True, name='browser_state_request_event')
 	async def on_BrowserStateRequestEvent(self, event: BrowserStateRequestEvent) -> 'BrowserStateSummary':
 		"""Handle browser state request by coordinating DOM building and screenshot capture.
 
@@ -360,6 +361,9 @@ class DOMWatchdog(BaseWatchdog):
 					browser_session=self.browser_session,
 					logger=self.logger,
 					cross_origin_iframes=self.browser_session.browser_profile.cross_origin_iframes,
+					paint_order_filtering=self.browser_session.browser_profile.paint_order_filtering,
+					max_iframes=self.browser_session.browser_profile.max_iframes,
+					max_iframe_depth=self.browser_session.browser_profile.max_iframe_depth,
 				)
 
 			# Get serialized DOM tree using the service
