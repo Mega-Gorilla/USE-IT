@@ -286,7 +286,7 @@ class TestGetDropdownOptionsEvent:
 		await tools.act(GoToUrlActionModel(**goto_action), browser_session)
 
 		# Initialize the DOM state to populate the selector map
-		await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
+		await browser_session.get_browser_state_summary()
 
 		# Get the selector map and find the select element
 		selector_map = await browser_session.get_selector_map()
@@ -344,7 +344,7 @@ class TestGetDropdownOptionsEvent:
 		await tools.act(GoToUrlActionModel(**goto_action), browser_session)
 
 		# Initialize the DOM state
-		await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
+		await browser_session.get_browser_state_summary()
 
 		# Get the selector map and find the ARIA menu
 		selector_map = await browser_session.get_selector_map()
@@ -406,7 +406,7 @@ class TestGetDropdownOptionsEvent:
 		await tools.act(GoToUrlActionModel(**goto_action), browser_session)
 
 		# Initialize the DOM state
-		await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
+		await browser_session.get_browser_state_summary()
 
 		# Get the selector map and find the custom dropdown
 		selector_map = await browser_session.get_selector_map()
@@ -495,7 +495,7 @@ class TestSelectDropdownOptionEvent:
 		await browser_session.event_bus.expect(NavigationCompleteEvent, timeout=10.0)
 
 		# Initialize the DOM state
-		await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
+		await browser_session.get_browser_state_summary()
 
 		# Get the selector map and find the select element
 		selector_map = await browser_session.get_selector_map()
@@ -543,7 +543,7 @@ class TestSelectDropdownOptionEvent:
 		await browser_session.event_bus.expect(NavigationCompleteEvent, timeout=10.0)
 
 		# Initialize the DOM state
-		await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
+		await browser_session.get_browser_state_summary()
 
 		# Get the selector map and find the ARIA menu
 		selector_map = await browser_session.get_selector_map()
@@ -595,7 +595,7 @@ class TestSelectDropdownOptionEvent:
 		await browser_session.event_bus.expect(NavigationCompleteEvent, timeout=10.0)
 
 		# Initialize the DOM state
-		await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
+		await browser_session.get_browser_state_summary()
 
 		# Get the selector map and find the custom dropdown
 		selector_map = await browser_session.get_selector_map()
@@ -643,7 +643,7 @@ class TestSelectDropdownOptionEvent:
 		await browser_session.event_bus.expect(NavigationCompleteEvent, timeout=10.0)
 
 		# Initialize the DOM state
-		await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
+		await browser_session.get_browser_state_summary()
 
 		# Get the selector map and find the select element
 		selector_map = await browser_session.get_selector_map()

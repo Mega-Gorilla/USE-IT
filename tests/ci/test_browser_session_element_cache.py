@@ -88,7 +88,7 @@ async def test_assumption_1_dom_processing_works(browser_session, httpserver):
 	await event.event_result(raise_if_any=True, raise_if_none=False)
 
 	# Trigger DOM processing
-	state = await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=False)
+	state = await browser_session.get_browser_state_summary()
 
 	print('DOM processing result:')
 	print(f'  - Elements found: {len(state.dom_state.selector_map)}')
@@ -109,7 +109,7 @@ async def test_assumption_2_cached_selector_map_persists(browser_session, httpse
 	await event.event_result(raise_if_any=True, raise_if_none=False)
 
 	# Trigger DOM processing and cache
-	state = await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=False)
+	state = await browser_session.get_browser_state_summary()
 	initial_selector_map = dict(state.dom_state.selector_map)
 
 	# Check if cached selector map is still available
@@ -136,7 +136,7 @@ async def test_assumption_3_action_gets_same_selector_map(browser_session, tools
 	await event.event_result(raise_if_any=True, raise_if_none=False)
 
 	# Trigger DOM processing and cache
-	await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=False)
+	await browser_session.get_browser_state_summary()
 	cached_selector_map = await browser_session.get_selector_map()
 
 	print('Pre-action state:')
@@ -174,7 +174,7 @@ async def test_assumption_4_click_action_specific_issue(browser_session, tools, 
 	await event.event_result(raise_if_any=True, raise_if_none=False)
 
 	# Trigger DOM processing and cache
-	await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=False)
+	await browser_session.get_browser_state_summary()
 	cached_selector_map = await browser_session.get_selector_map()
 
 	print('Pre-click state:')
@@ -224,7 +224,7 @@ async def test_assumption_5_multiple_get_selector_map_calls(browser_session, htt
 	await event.event_result(raise_if_any=True, raise_if_none=False)
 
 	# Trigger DOM processing and cache
-	await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=False)
+	await browser_session.get_browser_state_summary()
 
 	# Call get_selector_map multiple times
 	map1 = await browser_session.get_selector_map()
