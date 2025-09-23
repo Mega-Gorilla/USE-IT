@@ -190,7 +190,6 @@ class BrowserStateRequestEvent(BaseEvent[BrowserStateSummary]):
 
 	include_dom: bool = True
 	include_screenshot: bool = True
-	cache_clickable_elements_hashes: bool = True
 	include_recent_events: bool = False
 
 	event_timeout: float | None = _get_timeout('TIMEOUT_BrowserStateRequestEvent', 30.0)  # seconds

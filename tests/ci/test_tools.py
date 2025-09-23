@@ -413,7 +413,7 @@ class TestToolsIntegration:
 			await asyncio.sleep(1.0)
 
 		# Initialize the DOM state to populate the selector map
-		await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
+		await browser_session.get_browser_state_summary()
 
 		# Get the selector map
 		selector_map = await browser_session.get_selector_map()
@@ -540,7 +540,7 @@ class TestToolsIntegration:
 			await asyncio.sleep(1.0)
 
 		# populate the selector map with highlight indices
-		await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
+		await browser_session.get_browser_state_summary()
 
 		# Now get the selector map which should contain our dropdown
 		selector_map = await browser_session.get_selector_map()
