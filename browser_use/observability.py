@@ -119,7 +119,7 @@ def observe(
 		'ignore_output': ignore_output,
 		'metadata': metadata,
 		'span_type': span_type,
-		'tags': ['observe', 'observe_debug'], # important: tags need to be created on laminar first
+		'tags': ['observe', 'observe_debug'],  # important: tags need to be created on laminar first
 		**kwargs,
 	}
 
@@ -171,7 +171,7 @@ def observe_debug(
 		'ignore_output': ignore_output,
 		'metadata': metadata,
 		'span_type': span_type,
-		'tags': ['observe_debug'], # important: tags need to be created on laminar first
+		'tags': ['observe_debug'],  # important: tags need to be created on laminar first
 		**kwargs,
 	}
 
