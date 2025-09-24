@@ -28,7 +28,7 @@ from browser_use.tools.views import (
 	ClickElementAction,
 	InputTextAction,
 	NoParamsAction,
-	SearchGoogleAction,
+	SearchAction,
 )
 from tests.ci.conftest import create_mock_llm
 
@@ -485,8 +485,8 @@ class TestExistingToolsActions:
 	async def test_existing_action_models(self, registry, browser_session):
 		"""Test that existing action parameter models work correctly"""
 
-		@registry.action('Test search', param_model=SearchGoogleAction)
-		async def test_search(params: SearchGoogleAction, browser_session: BrowserSession):
+		@registry.action('Test search', param_model=SearchAction)
+		async def test_search(params: SearchAction, browser_session: BrowserSession):
 			return ActionResult(extracted_content=f'Searched for: {params.query}')
 
 		@registry.action('Test click', param_model=ClickElementAction)

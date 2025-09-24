@@ -213,7 +213,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			def _get_model_timeout(llm_model: BaseChatModel) -> int:
 				"""Determine timeout based on model name"""
 				model_name = getattr(llm_model, 'model', '').lower()
-				if 'gemini' in model_name or 'groq' in model_name:
+				if 'gemini' in model_name:
+					return 45
+				elif 'groq' in model_name:
 					return 30
 				elif 'o3' in model_name or 'claude' in model_name or 'sonnet' in model_name or 'deepseek' in model_name:
 					return 90
@@ -622,7 +624,10 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		self._message_manager.add_new_task(new_task)
 		# Mark as follow-up task and recreate eventbus (gets shut down after each run)
 		self.state.follow_up_task = True
-		self.eventbus = EventBus(name=f'Agent_{str(self.id)[-self.state.n_steps :]}')
+		agent_id_suffix = str(self.id)[-4:].replace('-', '_')
+		if agent_id_suffix and agent_id_suffix[0].isdigit():
+			agent_id_suffix = 'a' + agent_id_suffix
+		self.eventbus = EventBus(name=f'Agent_{agent_id_suffix}')
 
 		# Re-register cloud sync handler if it exists (if not disabled)
 		if hasattr(self, 'cloud_sync') and self.cloud_sync and self.enable_cloud_sync:

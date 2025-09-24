@@ -187,6 +187,7 @@ class MessageManager:
 		action_results = ''
 		result_len = len(result)
 		read_state_idx = 0
+
 		for idx, action_result in enumerate(result):
 			if action_result.include_extracted_content_only_once and action_result.extracted_content:
 				self.state.read_state_description += (
@@ -210,11 +211,24 @@ class MessageManager:
 				action_results += f'{error_text}\n'
 				logger.debug(f'Added error to action_results: {error_text}')
 
+		# Simple 60k character limit for read_state_description
+		MAX_CONTENT_SIZE = 60000
+		if len(self.state.read_state_description) > MAX_CONTENT_SIZE:
+			self.state.read_state_description = (
+				self.state.read_state_description[:MAX_CONTENT_SIZE] + '\n... [Content truncated at 60k characters]'
+			)
+			logger.debug(f'Truncated read_state_description to {MAX_CONTENT_SIZE} characters')
+
 		self.state.read_state_description = self.state.read_state_description.strip('\n')
 
 		if action_results:
 			action_results = f'Result:\n{action_results}'
 		action_results = action_results.strip('\n') if action_results else None
+
+		# Simple 60k character limit for action_results
+		if action_results and len(action_results) > MAX_CONTENT_SIZE:
+			action_results = action_results[:MAX_CONTENT_SIZE] + '\n... [Content truncated at 60k characters]'
+			logger.debug(f'Truncated action_results to {MAX_CONTENT_SIZE} characters')
 
 		# Build the history item
 		if model_output is None:

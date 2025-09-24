@@ -42,14 +42,14 @@ from browser_use.tools.views import (
 	InputTextAction,
 	NoParamsAction,
 	ScrollAction,
-	SearchGoogleAction,
+	SearchAction,
 	SelectDropdownOptionAction,
 	SendKeysAction,
 	StructuredOutputAction,
 	SwitchTabAction,
 	UploadFileAction,
 )
-from browser_use.utils import _log_pretty_url, time_execution_sync
+from browser_use.utils import time_execution_sync
 
 logger = logging.getLogger(__name__)
 
@@ -115,66 +115,29 @@ class Tools(Generic[Context]):
 
 		# Basic Navigation Actions
 		@self.registry.action(
-			'Search the query in Google, the query should be a search query like humans search in Google, concrete and not vague or super long.',
-			param_model=SearchGoogleAction,
+			'Search the query using the specified search engine. Defaults to DuckDuckGo (recommended) to avoid reCAPTCHA. Options: duckduckgo, google, bing. Query should be concrete and not vague or super long.',
+			param_model=SearchAction,
 		)
-		async def search_google(params: SearchGoogleAction, browser_session: BrowserSession):
-			search_url = f'https://www.google.com/search?q={params.query}&udm=14'
+		async def search(params: SearchAction, browser_session: BrowserSession):
+			import urllib.parse
 
-			# Check if there's already a tab open on Google or agent's about:blank
-			use_new_tab = True
-			try:
-				tabs = await browser_session.get_tabs()
-				# Get last 4 chars of browser session ID to identify agent's tabs
-				browser_session_label = str(browser_session.id)[-4:]
-				logger.debug(f'Checking {len(tabs)} tabs for reusable tab (browser_session_label: {browser_session_label})')
+			# Encode query for URL safety
+			encoded_query = urllib.parse.quote_plus(params.query)
 
-				for i, tab in enumerate(tabs):
-					logger.debug(f'Tab {i}: url="{tab.url}", title="{tab.title}"')
-					# Check if tab is on Google domain
-					if tab.url and tab.url.strip('/').lower() in ('https://www.google.com', 'https://google.com'):
-						# Found existing Google tab, navigate in it
-						logger.debug(f'Found existing Google tab at index {i}: {tab.url}, reusing it')
+			# Build search URL based on search engine
+			search_engines = {
+				'duckduckgo': f'https://duckduckgo.com/?q={encoded_query}',
+				'google': f'https://www.google.com/search?q={encoded_query}&udm=14',
+				'bing': f'https://www.bing.com/search?q={encoded_query}',
+			}
 
-						# Switch to this tab first if it's not the current one
-						from browser_use.browser.events import SwitchTabEvent
+			if params.search_engine.lower() not in search_engines:
+				return ActionResult(error=f'Unsupported search engine: {params.search_engine}. Options: duckduckgo, google, bing')
 
-						if browser_session.agent_focus and tab.target_id != browser_session.agent_focus.target_id:
-							try:
-								switch_event = browser_session.event_bus.dispatch(SwitchTabEvent(target_id=tab.target_id))
-								await switch_event
-								await switch_event.event_result(raise_if_none=False)
-							except Exception as e:
-								logger.warning(f'Failed to switch to existing Google tab: {e}, will use new tab')
-								continue
+			search_url = search_engines[params.search_engine.lower()]
 
-						use_new_tab = False
-						break
-					# Check if it's an agent-owned about:blank page (has "Starting agent XXXX..." title)
-					# IMPORTANT: about:blank is also used briefly for new tabs the agent is trying to open, dont take over those!
-					elif tab.url == 'about:blank' and tab.title:
-						# Check if this is our agent's about:blank page with DVD animation
-						# The title should be "Starting agent XXXX..." where XXXX is the browser_session_label
-						if browser_session_label in tab.title:
-							# This is our agent's about:blank page
-							logger.debug(f'Found agent-owned about:blank tab at index {i} with title: "{tab.title}", reusing it')
-
-							# Switch to this tab first
-							from browser_use.browser.events import SwitchTabEvent
-
-							if browser_session.agent_focus and tab.target_id != browser_session.agent_focus.target_id:
-								try:
-									switch_event = browser_session.event_bus.dispatch(SwitchTabEvent(target_id=tab.target_id))
-									await switch_event
-									await switch_event.event_result()
-								except Exception as e:
-									logger.warning(f'Failed to switch to agent-owned tab: {e}, will use new tab')
-									continue
-
-							use_new_tab = False
-							break
-			except Exception as e:
-				logger.debug(f'Could not check for existing tabs: {e}, using new tab')
+			# Simple tab logic: use current tab by default
+			use_new_tab = False
 
 			# Dispatch navigation event
 			try:
@@ -186,13 +149,13 @@ class Tools(Generic[Context]):
 				)
 				await event
 				await event.event_result(raise_if_any=True, raise_if_none=False)
-				memory = f"Searched Google for '{params.query}'"
+				memory = f"Searched {params.search_engine.title()} for '{params.query}'"
 				msg = f'🔍  {memory}'
 				logger.info(msg)
 				return ActionResult(extracted_content=memory, long_term_memory=memory)
 			except Exception as e:
-				logger.error(f'Failed to search Google: {e}')
-				return ActionResult(error=f'Failed to search Google for "{params.query}": {str(e)}')
+				logger.error(f'Failed to search {params.search_engine}: {e}')
+				return ActionResult(error=f'Failed to search {params.search_engine} for "{params.query}": {str(e)}')
 
 		@self.registry.action(
 			'Navigate to URL, set new_tab=True to open in new tab, False to navigate in current tab', param_model=GoToUrlAction
@@ -540,43 +503,51 @@ class Tools(Generic[Context]):
 
 		@self.registry.action('Switch tab', param_model=SwitchTabAction)
 		async def switch_tab(params: SwitchTabAction, browser_session: BrowserSession):
-			# Dispatch switch tab event
+			# Simple switch tab logic
 			try:
 				target_id = await browser_session.get_target_id_from_tab_id(params.tab_id)
 
 				event = browser_session.event_bus.dispatch(SwitchTabEvent(target_id=target_id))
 				await event
-				new_target_id = await event.event_result(raise_if_any=True, raise_if_none=False)
-				assert new_target_id, 'SwitchTabEvent did not return a TargetID for the new tab that was switched to'
-				memory = f'Switched to Tab with ID {new_target_id[-4:]}'
+				new_target_id = await event.event_result(raise_if_any=False, raise_if_none=False)  # Don't raise on errors
+
+				if new_target_id:
+					memory = f'Switched to tab #{new_target_id[-4:]}'
+				else:
+					memory = f'Switched to tab #{params.tab_id}'
+
 				logger.info(f'🔄  {memory}')
 				return ActionResult(extracted_content=memory, long_term_memory=memory)
 			except Exception as e:
-				logger.error(f'Failed to switch tab: {type(e).__name__}: {e}')
-				return ActionResult(error=f'Failed to switch to tab {params.tab_id}.')
+				logger.warning(f'Tab switch may have failed: {e}')
+				memory = f'Attempted to switch to tab #{params.tab_id}'
+				return ActionResult(extracted_content=memory, long_term_memory=memory)
 
 		@self.registry.action('Close an existing tab', param_model=CloseTabAction)
 		async def close_tab(params: CloseTabAction, browser_session: BrowserSession):
-			# Dispatch close tab event
+			# Simple close tab logic
 			try:
 				target_id = await browser_session.get_target_id_from_tab_id(params.tab_id)
-				cdp_session = await browser_session.get_or_create_cdp_session()
-				target_info = await cdp_session.cdp_client.send.Target.getTargetInfo(
-					params={'targetId': target_id}, session_id=cdp_session.session_id
-				)
-				tab_url = target_info['targetInfo']['url']
+
+				# Dispatch close tab event - handle stale target IDs gracefully
 				event = browser_session.event_bus.dispatch(CloseTabEvent(target_id=target_id))
 				await event
-				await event.event_result(raise_if_any=True, raise_if_none=False)
-				memory = f'Closed tab # {params.tab_id} ({_log_pretty_url(tab_url)})'
+				await event.event_result(raise_if_any=False, raise_if_none=False)  # Don't raise on errors
+
+				memory = f'Closed tab #{params.tab_id}'
 				logger.info(f'🗑️  {memory}')
 				return ActionResult(
 					extracted_content=memory,
 					long_term_memory=memory,
 				)
 			except Exception as e:
-				logger.error(f'Failed to close tab: {e}')
-				return ActionResult(error=f'Failed to close tab {params.tab_id}.')
+				# Handle stale target IDs gracefully
+				logger.warning(f'Tab {params.tab_id} may already be closed: {e}')
+				memory = f'Tab #{params.tab_id} closed (was already closed or invalid)'
+				return ActionResult(
+					extracted_content=memory,
+					long_term_memory=memory,
+				)
 
 		# Content Actions
 
@@ -722,6 +693,8 @@ You will be given a query and the markdown of a webpage that has been filtered t
 			Optional if there are multiple scroll containers, use frame_element_index parameter with an element inside the container you want to scroll in. For that you must use indices that exist in your browser_state (works well for dropdowns and custom UI components). 
 			Instead of scrolling step after step, use a high number of pages at once like 10 to get to the bottom of the page.
 			If you know where you want to scroll to, use scroll_to_text instead of this tool.
+			
+			Note: For multiple pages (>=1.0), scrolls are performed one page at a time to ensure reliability. Page height is detected from viewport, fallback is 1000px per page.
 			""",
 			param_model=ScrollAction,
 		)
@@ -737,27 +710,90 @@ You will be given a query and the markdown of a webpage that has been filtered t
 						msg = f'Element index {params.frame_element_index} not found in browser state'
 						return ActionResult(error=msg)
 
-				# Dispatch scroll event with node - the complex logic is handled in the event handler
-				# Convert pages to pixels (assuming 1000px per page as standard viewport height)
-				pixels = int(params.num_pages * 1000)
-				event = browser_session.event_bus.dispatch(
-					ScrollEvent(direction='down' if params.down else 'up', amount=pixels, node=node)
-				)
-				await event
-				await event.event_result(raise_if_any=True, raise_if_none=False)
 				direction = 'down' if params.down else 'up'
-
-				# If index is 0 or None, we're scrolling the page
 				target = (
 					'the page'
 					if params.frame_element_index is None or params.frame_element_index == 0
 					else f'element {params.frame_element_index}'
 				)
 
-				if params.num_pages == 1.0:
-					long_term_memory = f'Scrolled {direction} {target} by one page'
+				# Get actual viewport height for more accurate scrolling
+				try:
+					cdp_session = await browser_session.get_or_create_cdp_session()
+					metrics = await cdp_session.cdp_client.send.Page.getLayoutMetrics(session_id=cdp_session.session_id)
+
+					# Use cssVisualViewport for the most accurate representation
+					css_viewport = metrics.get('cssVisualViewport', {})
+					css_layout_viewport = metrics.get('cssLayoutViewport', {})
+
+					# Get viewport height, prioritizing cssVisualViewport
+					viewport_height = int(css_viewport.get('clientHeight') or css_layout_viewport.get('clientHeight', 1000))
+
+					logger.debug(f'Detected viewport height: {viewport_height}px')
+				except Exception as e:
+					viewport_height = 1000  # Fallback to 1000px
+					logger.debug(f'Failed to get viewport height, using fallback 1000px: {e}')
+
+				# For multiple pages (>=1.0), scroll one page at a time to ensure each scroll completes
+				if params.num_pages >= 1.0:
+					import asyncio
+
+					num_full_pages = int(params.num_pages)
+					remaining_fraction = params.num_pages - num_full_pages
+
+					completed_scrolls = 0
+
+					# Scroll one page at a time
+					for i in range(num_full_pages):
+						try:
+							pixels = viewport_height  # Use actual viewport height
+							if not params.down:
+								pixels = -pixels
+
+							event = browser_session.event_bus.dispatch(
+								ScrollEvent(direction=direction, amount=abs(pixels), node=node)
+							)
+							await event
+							await event.event_result(raise_if_any=True, raise_if_none=False)
+							completed_scrolls += 1
+
+							# Small delay to ensure scroll completes before next one
+							await asyncio.sleep(0.3)
+
+						except Exception as e:
+							logger.warning(f'Scroll {i + 1}/{num_full_pages} failed: {e}')
+							# Continue with remaining scrolls even if one fails
+
+					# Handle fractional page if present
+					if remaining_fraction > 0:
+						try:
+							pixels = int(remaining_fraction * viewport_height)
+							if not params.down:
+								pixels = -pixels
+
+							event = browser_session.event_bus.dispatch(
+								ScrollEvent(direction=direction, amount=abs(pixels), node=node)
+							)
+							await event
+							await event.event_result(raise_if_any=True, raise_if_none=False)
+							completed_scrolls += remaining_fraction
+
+						except Exception as e:
+							logger.warning(f'Fractional scroll failed: {e}')
+
+					if params.num_pages == 1.0:
+						long_term_memory = f'Scrolled {direction} {target} by one page ({viewport_height}px)'
+					else:
+						long_term_memory = f'Scrolled {direction} {target} by {completed_scrolls:.1f} pages (requested: {params.num_pages}, {viewport_height}px per page)'
 				else:
-					long_term_memory = f'Scrolled {direction} {target} by {params.num_pages} pages'
+					# For fractional pages <1.0, do single scroll
+					pixels = int(params.num_pages * viewport_height)
+					event = browser_session.event_bus.dispatch(
+						ScrollEvent(direction='down' if params.down else 'up', amount=pixels, node=node)
+					)
+					await event
+					await event.event_result(raise_if_any=True, raise_if_none=False)
+					long_term_memory = f'Scrolled {direction} {target} by {params.num_pages} pages ({viewport_height}px per page)'
 
 				msg = f'🔍 {long_term_memory}'
 				logger.info(msg)
