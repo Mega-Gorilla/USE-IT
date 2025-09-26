@@ -89,6 +89,9 @@ class ChatGoogle(BaseChatModel):
 	location: str | None = None
 	http_options: types.HttpOptions | types.HttpOptionsDict | None = None
 
+	# Internal client cache to prevent connection issues
+	_client: genai.Client | None = None
+
 	# Static
 	@property
 	def provider(self) -> str:
@@ -123,8 +126,12 @@ class ChatGoogle(BaseChatModel):
 		Returns:
 			genai.Client: An instance of the Google genai client.
 		"""
+		if self._client is not None:
+			return self._client
+
 		client_params = self._get_client_params()
-		return genai.Client(**client_params)
+		self._client = genai.Client(**client_params)
+		return self._client
 
 	@property
 	def name(self) -> str:
