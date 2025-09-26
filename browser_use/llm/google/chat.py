@@ -206,7 +206,7 @@ class ChatGoogle(BaseChatModel):
 			config['seed'] = self.seed
 
 		# set default for flash and flash-lite models
-		if self.thinking_budget is None and 'gemini-2.5-flash' in self.model:
+		if self.thinking_budget is None and ('gemini-2.5-flash' in self.model or 'gemini-flash-latest' in self.model):
 			self.thinking_budget = 0
 
 		if self.thinking_budget is not None:
