@@ -121,7 +121,7 @@
     },
     {
       "source": "/cloud/v2/quickstart",
-      "destination": "/cloud/v1/quickstart"
+      "destination": "https://docs.cloud.browser-use.com/get-started/quickstart"
     }
   ],
   "navigation": {
