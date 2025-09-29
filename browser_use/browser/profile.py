@@ -620,9 +620,8 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	wait_between_actions: float = Field(default=0.5, description='Time to wait between actions.')
 
 	# --- UI/viewport/DOM ---
-
 	highlight_elements: bool = Field(default=True, description='Highlight interactive elements on the page.')
-	debug_highlight_elements: bool = Field(default=False, description='Debug highlight elements on the page (only for debugging).')
+	dom_highlight_elements: bool = Field(default=False, description='Highlight interactive elements in the DOM (only for debugging purposes).')
 	filter_highlight_ids: bool = Field(
 		default=True, description='Only show element IDs in highlights if llm_representation is less than 10 characters.'
 	)
