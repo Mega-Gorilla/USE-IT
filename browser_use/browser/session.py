@@ -276,6 +276,7 @@ class BrowserSession(BaseModel):
 		# DOM extraction layer configuration
 		cross_origin_iframes: bool | None = None,
 		highlight_elements: bool | None = None,
+		dom_highlight_elements: bool | None = None,
 		paint_order_filtering: bool | None = None,
 		# Iframe processing limits
 		max_iframes: int | None = None,
