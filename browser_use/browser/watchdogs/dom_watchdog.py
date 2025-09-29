@@ -248,7 +248,7 @@ class DOMWatchdog(BaseWatchdog):
 					self.logger.warning(f'🔍 DOMWatchdog.on_BrowserStateRequestEvent: Python highlighting failed: {e}')
 
 			# Add browser-side highlights for user visibility
-			if content and content.selector_map and self.browser_session.browser_profile.highlight_elements:
+			if content and content.selector_map and self.browser_session.browser_profile.debug_highlight_elements:
 				try:
 					self.logger.debug('🔍 DOMWatchdog.on_BrowserStateRequestEvent: 🎨 Adding browser-side highlights...')
 					await self.browser_session.add_highlights(content.selector_map)
