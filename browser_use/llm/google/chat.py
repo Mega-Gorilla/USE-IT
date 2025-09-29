@@ -28,6 +28,8 @@ VerifiedGeminiModels = Literal[
 	'Gemini-2.0-exp',
 	'gemini-2.5-flash',
 	'gemini-2.5-flash-lite',
+	'gemini-flash-latest',
+	'gemini-flash-lite-latest',
 	'gemini-2.5-pro',
 	'gemma-3-27b-it',
 	'gemma-3-4b',
@@ -75,8 +77,8 @@ class ChatGoogle(BaseChatModel):
 	temperature: float | None = 0.2
 	top_p: float | None = None
 	seed: int | None = None
-	thinking_budget: int | None = None
-	max_output_tokens: int | None = 4096
+	thinking_budget: int | None = None  # for gemini-2.5 flash and flash-lite models, default will be set to 0
+	max_output_tokens: int | None = 8192
 	config: types.GenerateContentConfigDict | None = None
 	include_system_in_user: bool = False
 	supports_structured_output: bool = True  # New flag
@@ -88,6 +90,9 @@ class ChatGoogle(BaseChatModel):
 	project: str | None = None
 	location: str | None = None
 	http_options: types.HttpOptions | types.HttpOptionsDict | None = None
+
+	# Internal client cache to prevent connection issues
+	_client: genai.Client | None = None
 
 	# Static
 	@property
@@ -123,8 +128,12 @@ class ChatGoogle(BaseChatModel):
 		Returns:
 			genai.Client: An instance of the Google genai client.
 		"""
+		if self._client is not None:
+			return self._client
+
 		client_params = self._get_client_params()
-		return genai.Client(**client_params)
+		self._client = genai.Client(**client_params)
+		return self._client
 
 	@property
 	def name(self) -> str:
@@ -198,7 +207,8 @@ class ChatGoogle(BaseChatModel):
 		if self.seed is not None:
 			config['seed'] = self.seed
 
-		if self.thinking_budget is None and 'gemini-2.5-flash' in self.model:
+		# set default for flash, flash-lite, gemini-flash-lite-latest, and gemini-flash-latest models
+		if self.thinking_budget is None and ('gemini-2.5-flash' in self.model or 'gemini-flash' in self.model):
 			self.thinking_budget = 0
 
 		if self.thinking_budget is not None:
