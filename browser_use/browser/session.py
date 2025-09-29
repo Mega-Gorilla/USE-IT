@@ -1817,7 +1817,7 @@ class BrowserSession(BaseModel):
 
 	async def add_highlights(self, selector_map: dict[int, 'EnhancedDOMTreeNode']) -> None:
 		"""Add visual highlights to the browser DOM for user visibility."""
-		if not self.browser_profile.highlight_elements or not selector_map:
+		if not self.browser_profile.dom_highlight_elements or not selector_map:
 			return
 
 		try:
