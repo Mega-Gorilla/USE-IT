@@ -118,6 +118,22 @@ class SecurityWatchdog(BaseWatchdog):
 				'Note: Patterns like "*.example.com" will match both subdomains AND the main domain.'
 			)
 
+	def _get_domain_variants(self, host: str) -> tuple[str, str]:
+		"""Get both variants of a domain (with and without www prefix).
+
+		Args:
+			host: The hostname to process
+
+		Returns:
+			Tuple of (original_host, variant_host)
+			- If host starts with www., variant is without www.
+			- Otherwise, variant is with www. prefix
+		"""
+		if host.startswith('www.'):
+			return (host, host[4:])  # ('www.example.com', 'example.com')
+		else:
+			return (host, f'www.{host}')  # ('example.com', 'www.example.com')
+
 	def _is_url_allowed(self, url: str) -> bool:
 		"""Check if a URL is allowed based on the allowed_domains configuration.
 
@@ -153,21 +169,35 @@ class SecurityWatchdog(BaseWatchdog):
 		if not host:
 			return False
 
-		# Check each allowed domain pattern
+		# Check allowed domains (fast path for sets, slow path for lists with patterns)
 		if self.browser_session.browser_profile.allowed_domains:
-			for pattern in self.browser_session.browser_profile.allowed_domains:
-				if self._is_url_match(url, host, parsed.scheme, pattern):
-					return True
+			allowed_domains = self.browser_session.browser_profile.allowed_domains
 
-			return False
+			if isinstance(allowed_domains, set):
+				# Fast path: O(1) exact hostname match - check both www and non-www variants
+				host_variant, host_alt = self._get_domain_variants(host)
+				return host_variant in allowed_domains or host_alt in allowed_domains
+			else:
+				# Slow path: O(n) pattern matching for lists
+				for pattern in allowed_domains:
+					if self._is_url_match(url, host, parsed.scheme, pattern):
+						return True
+				return False
 
-		# Check each prohibited domain pattern
+		# Check prohibited domains (fast path for sets, slow path for lists with patterns)
 		if self.browser_session.browser_profile.prohibited_domains:
-			for pattern in self.browser_session.browser_profile.prohibited_domains:
-				if self._is_url_match(url, host, parsed.scheme, pattern):
-					return False
+			prohibited_domains = self.browser_session.browser_profile.prohibited_domains
 
-			return True
+			if isinstance(prohibited_domains, set):
+				# Fast path: O(1) exact hostname match - check both www and non-www variants
+				host_variant, host_alt = self._get_domain_variants(host)
+				return host_variant not in prohibited_domains and host_alt not in prohibited_domains
+			else:
+				# Slow path: O(n) pattern matching for lists
+				for pattern in prohibited_domains:
+					if self._is_url_match(url, host, parsed.scheme, pattern):
+						return False
+				return True
 
 		return True
 
