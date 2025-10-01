@@ -1563,7 +1563,7 @@ class BrowserSession(BaseModel):
 				if is_new_tab_page(url) or url.startswith('chrome://'):
 					# Use URL as title for chrome pages, or mark new tabs as unusable
 					if is_new_tab_page(url):
-						title = 'ignore this tab and do not use it'
+						title = ''
 					elif not title:
 						# For chrome:// pages without a title, use the URL itself
 						title = url
@@ -1585,7 +1585,7 @@ class BrowserSession(BaseModel):
 				self.logger.debug(f'⚠️ Failed to get target info for tab #{i}: {_log_pretty_url(url)} - {type(e).__name__}')
 
 				if is_new_tab_page(url):
-					title = 'ignore this tab and do not use it'
+					title = ''
 				elif url.startswith('chrome://'):
 					title = url
 				else:

@@ -48,7 +48,7 @@ class SecurityWatchdog(BaseWatchdog):
 			raise ValueError(f'Navigation to {event.url} blocked by security policy')
 
 	async def on_NavigationCompleteEvent(self, event: NavigationCompleteEvent) -> None:
-		"""Check if navigated URL is allowed and close tab if not."""
+		"""Check if navigated URL is allowed (catches redirects to blocked domains)."""
 		# Check if the navigated URL is allowed (in case of redirects)
 		if not self._is_url_allowed(event.url):
 			self.logger.warning(f'⛔️ Navigation to non-allowed URL detected: {event.url}')
@@ -57,17 +57,19 @@ class SecurityWatchdog(BaseWatchdog):
 			self.event_bus.dispatch(
 				BrowserErrorEvent(
 					error_type='NavigationBlocked',
-					message=f'Navigation to non-allowed URL: {event.url}',
+					message=f'Navigation blocked to non-allowed URL: {event.url} - redirecting to about:blank',
 					details={'url': event.url, 'target_id': event.target_id},
 				)
 			)
-
-			# Close the target that navigated to the disallowed URL
+			# Navigate to about:blank to keep session alive
+			# Agent will see the error and can continue with other tasks
 			try:
-				await self.browser_session._cdp_close_page(event.target_id)
-				self.logger.info(f'⛔️ Closed target with non-allowed URL: {event.url}')
+				session = await self.browser_session.get_or_create_cdp_session(target_id=event.target_id)
+				await session.cdp_client.send.Page.navigate(params={'url': 'about:blank'}, session_id=session.session_id)
+				self.logger.info(f'⛔️ Navigated to about:blank after blocked URL: {event.url}')
 			except Exception as e:
-				self.logger.error(f'⛔️ Failed to close target with non-allowed URL: {type(e).__name__} {e}')
+				pass
+				self.logger.error(f'⛔️ Failed to navigate to about:blank: {type(e).__name__} {e}')
 
 	async def on_TabCreatedEvent(self, event: TabCreatedEvent) -> None:
 		"""Check if new tab URL is allowed."""
