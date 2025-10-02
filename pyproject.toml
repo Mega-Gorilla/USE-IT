@@ -67,7 +67,7 @@ video = [
     "numpy>=2.3.2",
 ]
 examples = [
-    "agentmail>=0.0.66",
+    "agentmail==0.0.59",
     # botocore: only needed for Bedrock Claude boto3 examples/models/bedrock_claude.py
     "botocore>=1.37.23",
     "imgcat>=0.6.0",
