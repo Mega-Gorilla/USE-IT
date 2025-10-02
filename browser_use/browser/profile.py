@@ -128,8 +128,6 @@ CHROME_DEFAULT_ARGS = [
 	# '--force-color-profile=srgb',  # moved to CHROME_DETERMINISTIC_RENDERING_ARGS
 	'--metrics-recording-only',
 	'--no-first-run',
-	'--password-store=basic',
-	'--use-mock-keychain',
 	# // See https://chromium-review.googlesource.com/c/chromium/src/+/2436773
 	'--no-service-autorun',
 	'--export-tagged-pdf',
