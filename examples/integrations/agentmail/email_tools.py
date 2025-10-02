@@ -99,7 +99,7 @@ class EmailTools(Tools):
 		"""
 		Wait for a message to be received in the inbox
 		"""
-		async with self.email_client.websockets.connect() as ws:
+		async with self.email_client.websockets.connect() as ws:  # type: ignore[attr-defined]
 			await ws.send_subscribe(message=Subscribe(inbox_ids=[inbox_id]))
 
 			try:
