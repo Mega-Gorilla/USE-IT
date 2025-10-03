@@ -23,8 +23,8 @@ from browser_use.agent.cloud_events import (
 )
 from browser_use.agent.message_manager.utils import save_conversation
 from browser_use.llm.base import BaseChatModel
+from browser_use.llm.google.chat import ChatGoogle
 from browser_use.llm.messages import BaseMessage, ContentPartImageParam, ContentPartTextParam, UserMessage
-from browser_use.llm.openai.chat import ChatOpenAI
 from browser_use.tokens.service import TokenCost
 
 load_dotenv()
@@ -196,12 +196,12 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				except (ImportError, ValueError) as e:
 					# Use the logger that's already imported at the top of the module
 					logger.warning(
-						f'Failed to create default LLM "{default_llm_name}": {e}. Falling back to ChatOpenAI(model="gpt-4.1-mini")'
+						f'Failed to create default LLM "{default_llm_name}": {e}. Falling back to ChatGoogle(model="gemini-flash-latest")'
 					)
-					llm = ChatOpenAI(model='gpt-4.1-mini')
+					llm = ChatGoogle(model='gemini-flash-latest')
 			else:
 				# No default LLM specified, use the original default
-				llm = ChatOpenAI(model='gpt-4.1-mini')
+				llm = ChatGoogle(model='gemini-flash-latest')
 
 		if page_extraction_llm is None:
 			page_extraction_llm = llm
