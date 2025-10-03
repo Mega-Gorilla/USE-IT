@@ -305,10 +305,24 @@ class MessageManager:
 			self.sensitive_data = effective_sensitive_data
 			self.sensitive_data_description = self._get_sensitive_data_description(browser_state_summary.url)
 
-		# Use only the current screenshot
+		# Use only the current screenshot, but check if action results request screenshot inclusion
 		screenshots = []
-		if browser_state_summary.screenshot:
+		include_screenshot_requested = False
+
+		# Check if any action results request screenshot inclusion
+		if result:
+			for action_result in result:
+				if action_result.metadata and action_result.metadata.get('include_screenshot'):
+					include_screenshot_requested = True
+					logger.debug('Screenshot inclusion requested by action result')
+					break
+
+		# Include screenshot if either use_vision is True, or if explicitly requested by an action
+		if (use_vision or include_screenshot_requested) and browser_state_summary.screenshot:
 			screenshots.append(browser_state_summary.screenshot)
+
+		# Override use_vision if screenshot was explicitly requested
+		effective_use_vision = use_vision or include_screenshot_requested
 
 		# Create single state message with all content
 		assert browser_state_summary
@@ -327,7 +341,7 @@ class MessageManager:
 			vision_detail_level=self.vision_detail_level,
 			include_recent_events=self.include_recent_events,
 			sample_images=self.sample_images,
-		).get_user_message(use_vision)
+		).get_user_message(effective_use_vision)
 
 		# Set the state message with caching enabled
 		self._set_message_with_type(state_message, 'state')
