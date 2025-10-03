@@ -136,6 +136,26 @@ class SecurityWatchdog(BaseWatchdog):
 		else:
 			return (host, f'www.{host}')  # ('example.com', 'www.example.com')
 
+	def _is_ip_address(self, host: str) -> bool:
+		"""Check if a hostname is an IP address (IPv4 or IPv6).
+
+		Args:
+			host: The hostname to check
+
+		Returns:
+			True if the host is an IP address, False otherwise
+		"""
+		import ipaddress
+
+		try:
+			# Try to parse as IP address (handles both IPv4 and IPv6)
+			ipaddress.ip_address(host)
+			return True
+		except ValueError:
+			return False
+		except Exception:
+			return False
+
 	def _is_url_allowed(self, url: str) -> bool:
 		"""Check if a URL is allowed based on the allowed_domains configuration.
 
@@ -146,14 +166,7 @@ class SecurityWatchdog(BaseWatchdog):
 			True if the URL is allowed, False otherwise
 		"""
 
-		# If no allowed_domains specified, allow all URLs
-		if (
-			not self.browser_session.browser_profile.allowed_domains
-			and not self.browser_session.browser_profile.prohibited_domains
-		):
-			return True
-
-		# Always allow internal browser targets
+		# Always allow internal browser targets (before any other checks)
 		if url in ['about:blank', 'chrome://new-tab-page/', 'chrome://new-tab-page', 'chrome://newtab/']:
 			return True
 
@@ -170,6 +183,18 @@ class SecurityWatchdog(BaseWatchdog):
 		host = parsed.hostname
 		if not host:
 			return False
+
+		# Check if IP addresses should be blocked (before domain checks)
+		if self.browser_session.browser_profile.block_ip_addresses:
+			if self._is_ip_address(host):
+				return False
+
+		# If no allowed_domains specified, allow all URLs
+		if (
+			not self.browser_session.browser_profile.allowed_domains
+			and not self.browser_session.browser_profile.prohibited_domains
+		):
+			return True
 
 		# Check allowed domains (fast path for sets, slow path for lists with patterns)
 		if self.browser_session.browser_profile.allowed_domains:
