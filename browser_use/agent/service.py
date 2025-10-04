@@ -154,7 +154,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		register_should_stop_callback: Callable[[], Awaitable[bool]] | None = None,
 		# Agent settings
 		output_model_schema: type[AgentStructuredOutput] | None = None,
-		use_vision: bool = True,
+		use_vision: bool | Literal['auto'] = 'auto',
 		save_conversation_path: str | Path | None = None,
 		save_conversation_path_encoding: str | None = 'utf-8',
 		max_failures: int = 3,
@@ -255,7 +255,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		elif controller is not None:
 			self.tools = controller
 		else:
-			self.tools = Tools(display_files_in_done_text=display_files_in_done_text)
+			# Exclude take_screenshot tool when use_vision=False
+			exclude_actions = ['take_screenshot'] if use_vision is False else []
+			self.tools = Tools(exclude_actions=exclude_actions, display_files_in_done_text=display_files_in_done_text)
 
 		# Structured output
 		self.output_model_schema = output_model_schema
