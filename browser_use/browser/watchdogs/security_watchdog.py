@@ -179,6 +179,10 @@ class SecurityWatchdog(BaseWatchdog):
 			# Invalid URL
 			return False
 
+		# Allow data: and blob: URLs (they don't have hostnames)
+		if parsed.scheme in ['data', 'blob']:
+			return True
+
 		# Get the actual host (domain)
 		host = parsed.hostname
 		if not host:

@@ -48,7 +48,7 @@ USER REQUEST: This is your ultimate objective and always remains visible.
 1. Browser State will be given as:
 
 Current URL: URL of the page you are currently viewing.
-Open Tabs: Open tabs with their indexes.
+Open Tabs: Open tabs with their ids.
 Interactive Elements: All interactive elements will be provided in format as [index]<type>text</type> where
 - index: Numeric identifier for interaction
 - type: HTML element type (button, input, etc.)
