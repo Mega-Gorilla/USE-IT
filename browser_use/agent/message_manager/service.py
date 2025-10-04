@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Literal
+from typing import Literal, Union
 
 from browser_use.agent.message_manager.views import (
 	HistoryItem,
@@ -285,7 +285,7 @@ class MessageManager:
 		model_output: AgentOutput | None = None,
 		result: list[ActionResult] | None = None,
 		step_info: AgentStepInfo | None = None,
-		use_vision=True,
+		use_vision: Union[bool, Literal['auto']] = 'auto',
 		page_filtered_actions: str | None = None,
 		sensitive_data=None,
 		available_file_paths: list[str] | None = None,  # Always pass current available_file_paths
@@ -317,12 +317,24 @@ class MessageManager:
 					logger.debug('Screenshot inclusion requested by action result')
 					break
 
-		# Include screenshot if either use_vision is True, or if explicitly requested by an action
-		if (use_vision or include_screenshot_requested) and browser_state_summary.screenshot:
+		# Handle different use_vision modes:
+		# - "auto": Only include screenshot if explicitly requested by action (e.g., take_screenshot)
+		# - True: Always include screenshot
+		# - False: Never include screenshot
+		include_screenshot = False
+		if use_vision is True:
+			# Always include screenshot when use_vision=True
+			include_screenshot = True
+		elif use_vision == 'auto':
+			# Only include screenshot if explicitly requested by action when use_vision="auto"
+			include_screenshot = include_screenshot_requested
+		# else: use_vision is False, never include screenshot (include_screenshot stays False)
+
+		if include_screenshot and browser_state_summary.screenshot:
 			screenshots.append(browser_state_summary.screenshot)
 
-		# Override use_vision if screenshot was explicitly requested
-		effective_use_vision = use_vision or include_screenshot_requested
+		# Use vision in the user message if screenshots are included
+		effective_use_vision = len(screenshots) > 0
 
 		# Create single state message with all content
 		assert browser_state_summary

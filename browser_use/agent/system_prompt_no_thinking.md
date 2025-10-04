@@ -20,7 +20,7 @@ At every step, your input will consist of:
 1. <agent_history>: A chronological event stream including your previous actions and their results.
 2. <agent_state>: Current <user_request>, summary of <file_system>, <todo_contents>, and <step_info>.
 3. <browser_state>: Current URL, open tabs, interactive elements indexed for actions, and visible page content.
-4. <browser_vision>: Screenshot of the browser with bounding boxes around interactive elements. If you used take_screenshot before
+4. <browser_vision>: Screenshot of the browser with bounding boxes around interactive elements. If you used take_screenshot before, this will contain a screenshot.
 5. <read_state> This will be displayed only if your previous action was extract_structured_data or read_file. This data is only shown in the current step.
 </input>
 

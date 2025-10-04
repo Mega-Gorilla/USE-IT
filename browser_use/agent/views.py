@@ -5,7 +5,7 @@ import logging
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Generic, Literal
+from typing import Any, Generic, Literal, Union
 
 from openai import RateLimitError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model, model_validator
@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 class AgentSettings(BaseModel):
 	"""Configuration options for the Agent"""
 
-	use_vision: bool = True
+	use_vision: Union[bool, Literal['auto']] = 'auto'
 	vision_detail_level: Literal['auto', 'low', 'high'] = 'auto'
 	save_conversation_path: str | Path | None = None
 	save_conversation_path_encoding: str | None = 'utf-8'
