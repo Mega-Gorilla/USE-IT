@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Literal, Union
+from typing import Literal
 
 from browser_use.agent.message_manager.views import (
 	HistoryItem,
@@ -285,7 +285,7 @@ class MessageManager:
 		model_output: AgentOutput | None = None,
 		result: list[ActionResult] | None = None,
 		step_info: AgentStepInfo | None = None,
-		use_vision: Union[bool, Literal['auto']] = 'auto',
+		use_vision: bool | Literal['auto'] = 'auto',
 		page_filtered_actions: str | None = None,
 		sensitive_data=None,
 		available_file_paths: list[str] | None = None,  # Always pass current available_file_paths

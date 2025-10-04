@@ -9,7 +9,7 @@ import time
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Generic, Literal, TypeVar, Union
+from typing import Any, Generic, Literal, TypeVar
 from urllib.parse import urlparse
 
 from dotenv import load_dotenv
@@ -154,7 +154,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		register_should_stop_callback: Callable[[], Awaitable[bool]] | None = None,
 		# Agent settings
 		output_model_schema: type[AgentStructuredOutput] | None = None,
-		use_vision: Union[bool, Literal['auto']] = 'auto',
+		use_vision: bool | Literal['auto'] = 'auto',
 		save_conversation_path: str | Path | None = None,
 		save_conversation_path_encoding: str | None = 'utf-8',
 		max_failures: int = 3,
