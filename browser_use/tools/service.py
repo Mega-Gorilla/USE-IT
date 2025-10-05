@@ -555,7 +555,7 @@ class Tools(Generic[Context]):
 		# This action is temporarily disabled as it needs refactoring to use events
 
 		@self.registry.action(
-			"""Extract page data via LLM. Use when on right page, know what to extract. Can't get interactive elements.""",
+			"""Extract page data via LLM. Use when on right page, know what to extract. Can't get interactive elements. Don't call again on same page with same query.""",
 		)
 		async def extract_structured_data(
 			query: str,
@@ -967,8 +967,8 @@ You will be given a query and the markdown of a webpage that has been filtered t
 
 		@self.registry.action(
 			"""Execute JS. MUST wrap in IIFE: (function(){...})() or async: (async function(){...})()
-Use when other tools fail or need custom logic.
-
+Use when other tools fail. Limit output. For complex objects use JSON.stringify().
+Don't use comments.
 CORRECT: (function(){ try { const el = document.querySelector('#id'); return el ? el.value : 'not found'; } catch(e) { return 'Error: ' + e.message; } })()
 WRONG: document.querySelector('#id').value""",
 		)
