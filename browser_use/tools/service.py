@@ -559,10 +559,10 @@ class Tools(Generic[Context]):
 		)
 		async def extract(
 			query: str,
-			extract_links: bool,
 			browser_session: BrowserSession,
 			page_extraction_llm: BaseChatModel,
 			file_system: FileSystem,
+			extract_links: bool = False,
 			start_from_char: int = 0,
 		):
 			# Constants
