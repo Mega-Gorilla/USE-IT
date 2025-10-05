@@ -1160,10 +1160,10 @@ You will be given a query and the markdown of a webpage that has been filtered t
 					memory += f' - {len_text - len_max_memory} more characters'
 
 				attachments = []
-				if params.files:
+				if params.files_to_display:
 					if self.display_files_in_done_text:
 						file_msg = ''
-						for file_name in params.files:
+						for file_name in params.files_to_display:
 							if file_name == 'todo.md':
 								continue
 							file_content = file_system.display_file(file_name)
@@ -1176,7 +1176,7 @@ You will be given a query and the markdown of a webpage that has been filtered t
 						else:
 							logger.warning('Agent wanted to display files but none were found')
 					else:
-						for file_name in params.files:
+						for file_name in params.files_to_display:
 							if file_name == 'todo.md':
 								continue
 							file_content = file_system.display_file(file_name)
