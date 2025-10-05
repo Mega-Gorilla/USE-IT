@@ -131,10 +131,10 @@ class Tools(Generic[Context]):
 				'bing': f'https://www.bing.com/search?q={encoded_query}',
 			}
 
-			if params.search_engine.lower() not in search_engines:
-				return ActionResult(error=f'Unsupported search engine: {params.search_engine}. Options: duckduckgo, google, bing')
+			if params.engine.lower() not in search_engines:
+				return ActionResult(error=f'Unsupported search engine: {params.engine}. Options: duckduckgo, google, bing')
 
-			search_url = search_engines[params.search_engine.lower()]
+			search_url = search_engines[params.engine.lower()]
 
 			# Simple tab logic: use current tab by default
 			use_new_tab = False
@@ -149,13 +149,13 @@ class Tools(Generic[Context]):
 				)
 				await event
 				await event.event_result(raise_if_any=True, raise_if_none=False)
-				memory = f"Searched {params.search_engine.title()} for '{params.query}'"
+				memory = f"Searched {params.engine.title()} for '{params.query}'"
 				msg = f'🔍  {memory}'
 				logger.info(msg)
 				return ActionResult(extracted_content=memory, long_term_memory=memory)
 			except Exception as e:
-				logger.error(f'Failed to search {params.search_engine}: {e}')
-				return ActionResult(error=f'Failed to search {params.search_engine} for "{params.query}": {str(e)}')
+				logger.error(f'Failed to search {params.engine}: {e}')
+				return ActionResult(error=f'Failed to search {params.engine} for "{params.query}": {str(e)}')
 
 		@self.registry.action(
 			'Navigate to URL.',
@@ -313,7 +313,7 @@ class Tools(Generic[Context]):
 					TypeTextEvent(
 						node=node,
 						text=params.text,
-						clear_existing=params.clear_existing,
+						clear_existing=params.clear,
 						is_sensitive=has_sensitive_data,
 						sensitive_key_name=sensitive_key_name,
 					)
@@ -683,18 +683,18 @@ You will be given a query and the markdown of a webpage that has been filtered t
 				# Look up the node from the selector map if index is provided
 				# Special case: index 0 means scroll the whole page (root/body element)
 				node = None
-				if params.frame_element_index is not None and params.frame_element_index != 0:
-					node = await browser_session.get_element_by_index(params.frame_element_index)
+				if params.frame_idx is not None and params.frame_idx != 0:
+					node = await browser_session.get_element_by_index(params.frame_idx)
 					if node is None:
 						# Element does not exist
-						msg = f'Element index {params.frame_element_index} not found in browser state'
+						msg = f'Element index {params.frame_idx} not found in browser state'
 						return ActionResult(error=msg)
 
 				direction = 'down' if params.down else 'up'
 				target = (
 					'the page'
-					if params.frame_element_index is None or params.frame_element_index == 0
-					else f'element {params.frame_element_index}'
+					if params.frame_idx is None or params.frame_idx == 0
+					else f'element {params.frame_idx}'
 				)
 
 				# Get actual viewport height for more accurate scrolling
@@ -715,11 +715,11 @@ You will be given a query and the markdown of a webpage that has been filtered t
 					logger.debug(f'Failed to get viewport height, using fallback 1000px: {e}')
 
 				# For multiple pages (>=1.0), scroll one page at a time to ensure each scroll completes
-				if params.num_pages >= 1.0:
+				if params.pages >= 1.0:
 					import asyncio
 
-					num_full_pages = int(params.num_pages)
-					remaining_fraction = params.num_pages - num_full_pages
+					num_full_pages = int(params.pages)
+					remaining_fraction = params.pages - num_full_pages
 
 					completed_scrolls = 0
 
@@ -761,19 +761,19 @@ You will be given a query and the markdown of a webpage that has been filtered t
 						except Exception as e:
 							logger.warning(f'Fractional scroll failed: {e}')
 
-					if params.num_pages == 1.0:
+					if params.pages == 1.0:
 						long_term_memory = f'Scrolled {direction} {target} by one page ({viewport_height}px)'
 					else:
-						long_term_memory = f'Scrolled {direction} {target} by {completed_scrolls:.1f} pages (requested: {params.num_pages}, {viewport_height}px per page)'
+						long_term_memory = f'Scrolled {direction} {target} by {completed_scrolls:.1f} pages (requested: {params.pages}, {viewport_height}px per page)'
 				else:
 					# For fractional pages <1.0, do single scroll
-					pixels = int(params.num_pages * viewport_height)
+					pixels = int(params.pages * viewport_height)
 					event = browser_session.event_bus.dispatch(
 						ScrollEvent(direction='down' if params.down else 'up', amount=pixels, node=node)
 					)
 					await event
 					await event.event_result(raise_if_any=True, raise_if_none=False)
-					long_term_memory = f'Scrolled {direction} {target} by {params.num_pages} pages ({viewport_height}px per page)'
+					long_term_memory = f'Scrolled {direction} {target} by {params.pages} pages ({viewport_height}px per page)'
 
 				msg = f'🔍 {long_term_memory}'
 				logger.info(msg)
@@ -1170,10 +1170,10 @@ WRONG: document.querySelector('#id').value""",
 					memory += f' - {len_text - len_max_memory} more characters'
 
 				attachments = []
-				if params.files_to_display:
+				if params.files:
 					if self.display_files_in_done_text:
 						file_msg = ''
-						for file_name in params.files_to_display:
+						for file_name in params.files:
 							if file_name == 'todo.md':
 								continue
 							file_content = file_system.display_file(file_name)
@@ -1186,7 +1186,7 @@ WRONG: document.querySelector('#id').value""",
 						else:
 							logger.warning('Agent wanted to display files but none were found')
 					else:
-						for file_name in params.files_to_display:
+						for file_name in params.files:
 							if file_name == 'todo.md':
 								continue
 							file_content = file_system.display_file(file_name)

@@ -31,14 +31,14 @@ class ClickElementAction(BaseModel):
 
 
 class InputTextAction(BaseModel):
-	index: int = Field(ge=1, description='from browser_state')
+	index: int = Field(ge=1, description='index')
 	text: str
-	clear_existing: bool = Field(default=True, description='True to clear, False to append')
+	clear: bool = Field(default=True, description='1=clear, 0=append')
 
 
 class DoneAction(BaseModel):
 	text: str = Field(description='summary for user')
-	success: bool = Field(description='True if completed')
+	success: bool = Field(description='True if user_request completed successfully')
 	files_to_display: list[str] | None = Field(default=[], description='files to display')
 
 
@@ -46,22 +46,22 @@ T = TypeVar('T', bound=BaseModel)
 
 
 class StructuredOutputAction(BaseModel, Generic[T]):
-	success: bool = Field(default=True, description='True if finished, False if not')
+	success: bool = Field(default=True, description='1=done')
 	data: T
 
 
 class SwitchTabAction(BaseModel):
-	tab_id: str = Field(min_length=4, max_length=4, description="from browser_state ('Tab <tab_id>')")
+	tab_id: str = Field(min_length=4, max_length=4, description='4-char id')
 
 
 class CloseTabAction(BaseModel):
-	tab_id: str = Field(min_length=4, max_length=4, description="from browser_state ('Tab <tab_id>')")
+	tab_id: str = Field(min_length=4, max_length=4, description='4-char id')
 
 
 class ScrollAction(BaseModel):
-	down: bool = Field(description='True=down, False=up')
-	num_pages: float = Field(default=1.0, description='pages to scroll (0.5=half, 1=page, 10=bottom)')
-	frame_element_index: int | None = Field(default=None, description='index for specific container')
+	down: bool = Field(description='1=down, 0=up')
+	pages: float = Field(default=1.0, description='0.5=half, 1=pg, 10=bottom')
+	frame_index: int | None = Field(default=None, description='container index')
 
 
 class SendKeysAction(BaseModel):
@@ -69,7 +69,7 @@ class SendKeysAction(BaseModel):
 
 
 class UploadFileAction(BaseModel):
-	index: int = Field(description='from browser_state')
+	index: int = Field(description='index')
 	path: str
 
 
@@ -78,15 +78,13 @@ class ExtractPageContentAction(BaseModel):
 
 
 class NoParamsAction(BaseModel):
-	"""Accepts any input, discards it, returns empty model."""
-
 	model_config = ConfigDict(extra='ignore')
 
 
 class GetDropdownOptionsAction(BaseModel):
-	index: int = Field(ge=1, description='dropdown from browser_state')
+	index: int = Field(ge=1, description='index')
 
 
 class SelectDropdownOptionAction(BaseModel):
-	index: int = Field(ge=1, description='dropdown from browser_state')
-	text: str = Field(description='exact text/value to select')
+	index: int = Field(ge=1, description='index')
+	text: str = Field(description='exact text/value')
