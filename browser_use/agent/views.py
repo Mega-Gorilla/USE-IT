@@ -187,7 +187,6 @@ class AgentOutput(BaseModel):
 			),
 			__module__=AgentOutput.__module__,
 		)
-		model_.__doc__ = 'AgentOutput model with custom actions'
 		return model_
 
 	@staticmethod
@@ -212,7 +211,6 @@ class AgentOutput(BaseModel):
 			__module__=AgentOutputNoThinking.__module__,
 		)
 
-		model.__doc__ = 'AgentOutput model with custom actions'
 		return model
 
 	@staticmethod
@@ -241,7 +239,6 @@ class AgentOutput(BaseModel):
 			__module__=AgentOutputFlashMode.__module__,
 		)
 
-		model.__doc__ = 'AgentOutput model with custom actions'
 		return model
 
 
