@@ -556,13 +556,13 @@ class TestToolsIntegration:
 			f'Could not find select element in selector map. Available elements: {[f"{idx}: {element.tag_name}" for idx, element in selector_map.items()]}'
 		)
 
-		# Create a model for the standard select_dropdown_option action
-		class SelectDropdownOptionModel(ActionModel):
-			select_dropdown_option: dict
+		# Create a model for the standard select_dropdown action
+		class SelectDropdownModel(ActionModel):
+			select_dropdown: dict
 
 		# Execute the action with the dropdown index
 		result = await tools.act(
-			SelectDropdownOptionModel(select_dropdown_option={'index': dropdown_index, 'text': 'Second Option'}),
+			SelectDropdownModel(select_dropdown={'index': dropdown_index, 'text': 'Second Option'}),
 			browser_session,
 		)
 
