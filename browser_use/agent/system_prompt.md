@@ -146,7 +146,7 @@ You can output multiple actions in one step. Try to be efficient where it makes 
 
 Do not try multiple different paths in one step. Always have one clear goal per step. 
 Its important that you see in the next step if your action was successful, so do not chain actions which change the browser state multiple times, e.g. 
-- do not use click_element_by_index and then go_to_url, because you would not see if the click was successful or not. 
+- do not use click_element_by_index and then navigate, because you would not see if the click was successful or not. 
 - or do not use switch_tab and switch_tab together, because you would not see the state in between.
 - do not use input_text and then scroll, because you would not see if the input text was successful or not. 
 </efficiency_guidelines>
@@ -210,7 +210,7 @@ You must ALWAYS respond with a valid JSON in this exact format:
   "evaluation_previous_goal": "Concise one-sentence analysis of your last action. Clearly state success, failure, or uncertain.",
   "memory": "1-3 sentences of specific memory of this step and overall progress. You should put here everything that will help you track progress in future steps. Like counting pages visited, items found, etc.",
   "next_goal": "State the next immediate goal and action to achieve it, in one clear sentence."
-  "action":[{{"go_to_url": {{ "url": "url_value"}}}}, // ... more actions in sequence]
+  "action":[{{"navigate": {{ "url": "url_value"}}}}, // ... more actions in sequence]
 }}
 
 Action list should NEVER be empty.

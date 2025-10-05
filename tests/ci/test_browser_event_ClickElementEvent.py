@@ -130,12 +130,12 @@ class TestClickElementEvent:
 		)
 
 		# Navigate to the clickable elements test page
-		goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/clickable', new_tab=False)}
+		goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/clickable', new_tab=False)}
 
 		from browser_use.agent.views import ActionModel
 
 		class GoToUrlActionModel(ActionModel):
-			go_to_url: GoToUrlAction | None = None
+			navigate: GoToUrlAction | None = None
 
 		await tools.act(GoToUrlActionModel(**goto_action), browser_session)
 
@@ -218,12 +218,12 @@ class TestClickElementEvent:
 		)
 
 		# Navigate to the new tab test page
-		goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/newTab', new_tab=False)}
+		goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/newTab', new_tab=False)}
 
 		from browser_use.agent.views import ActionModel
 
 		class GoToUrlActionModel(ActionModel):
-			go_to_url: GoToUrlAction | None = None
+			navigate: GoToUrlAction | None = None
 
 		await tools.act(GoToUrlActionModel(**goto_action), browser_session)
 		await asyncio.sleep(1)  # Wait for page to load
@@ -306,12 +306,12 @@ class TestClickElementEvent:
 		)
 
 		# Navigate to the comparison test page
-		goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/comparison', new_tab=False)}
+		goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/comparison', new_tab=False)}
 
 		from browser_use.agent.views import ActionModel
 
 		class GoToUrlActionModel(ActionModel):
-			go_to_url: GoToUrlAction | None = None
+			navigate: GoToUrlAction | None = None
 
 		await tools.act(GoToUrlActionModel(**goto_action), browser_session)
 		await asyncio.sleep(1)
@@ -393,12 +393,12 @@ class TestClickElementEvent:
 		)
 
 		# Navigate to the page
-		goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/inline_offscreen', new_tab=False)}
+		goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/inline_offscreen', new_tab=False)}
 
 		from browser_use.agent.views import ActionModel
 
 		class GoToUrlActionModel(ActionModel):
-			go_to_url: GoToUrlAction | None = None
+			navigate: GoToUrlAction | None = None
 
 		await tools.act(GoToUrlActionModel(**goto_action), browser_session)
 		await asyncio.sleep(0.5)
@@ -475,12 +475,12 @@ class TestClickElementEvent:
 		)
 
 		# Navigate to the page
-		goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/block_in_inline', new_tab=False)}
+		goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/block_in_inline', new_tab=False)}
 
 		from browser_use.agent.views import ActionModel
 
 		class GoToUrlActionModel(ActionModel):
-			go_to_url: GoToUrlAction | None = None
+			navigate: GoToUrlAction | None = None
 
 		await tools.act(GoToUrlActionModel(**goto_action), browser_session)
 		await asyncio.sleep(0.5)
@@ -563,12 +563,12 @@ class TestClickElementEvent:
 		)
 
 		# Navigate to the page
-		goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/covered_element', new_tab=False)}
+		goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/covered_element', new_tab=False)}
 
 		from browser_use.agent.views import ActionModel
 
 		class GoToUrlActionModel(ActionModel):
-			go_to_url: GoToUrlAction | None = None
+			navigate: GoToUrlAction | None = None
 
 		await tools.act(GoToUrlActionModel(**goto_action), browser_session)
 		await asyncio.sleep(0.5)
@@ -623,12 +623,12 @@ class TestClickElementEvent:
 		)
 
 		# Navigate to the page
-		goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/file_input', new_tab=False)}
+		goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/file_input', new_tab=False)}
 
 		from browser_use.agent.views import ActionModel
 
 		class GoToUrlActionModel(ActionModel):
-			go_to_url: GoToUrlAction | None = None
+			navigate: GoToUrlAction | None = None
 
 		await tools.act(GoToUrlActionModel(**goto_action), browser_session)
 		await asyncio.sleep(0.5)
@@ -684,12 +684,12 @@ class TestClickElementEvent:
 		)
 
 		# Navigate to the page
-		goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/select_dropdown', new_tab=False)}
+		goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/select_dropdown', new_tab=False)}
 
 		from browser_use.agent.views import ActionModel
 
 		class GoToUrlActionModel(ActionModel):
-			go_to_url: GoToUrlAction | None = None
+			navigate: GoToUrlAction | None = None
 
 		await tools.act(GoToUrlActionModel(**goto_action), browser_session)
 		await asyncio.sleep(0.5)
@@ -1081,12 +1081,12 @@ class TestClickElementEvent:
 			)
 
 			# Navigate to the file upload test page
-			goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/fileupload', new_tab=False)}
+			goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/fileupload', new_tab=False)}
 
 			from browser_use.agent.views import ActionModel
 
 			class GoToUrlActionModel(ActionModel):
-				go_to_url: GoToUrlAction | None = None
+				navigate: GoToUrlAction | None = None
 
 			await tools.act(GoToUrlActionModel(**goto_action), browser_session)
 
@@ -1227,11 +1227,11 @@ class TestClickElementEvent:
 			)
 
 			# Navigate to the test page
-			goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/upload-test', new_tab=False)}
+			goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/upload-test', new_tab=False)}
 			from browser_use.agent.views import ActionModel
 
 			class GoToUrlActionModel(ActionModel):
-				go_to_url: GoToUrlAction | None = None
+				navigate: GoToUrlAction | None = None
 
 			await tools.act(GoToUrlActionModel(**goto_action), browser_session)
 			await asyncio.sleep(0.5)

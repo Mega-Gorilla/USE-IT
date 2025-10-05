@@ -278,10 +278,10 @@ class TestGetDropdownOptionsEvent:
 	async def test_native_select_dropdown(self, tools, browser_session: BrowserSession, base_url):
 		"""Test get_dropdown_options with native HTML select element."""
 		# Navigate to the native dropdown test page
-		goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/native-dropdown', new_tab=False)}
+		goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/native-dropdown', new_tab=False)}
 
 		class GoToUrlActionModel(ActionModel):
-			go_to_url: GoToUrlAction | None = None
+			navigate: GoToUrlAction | None = None
 
 		await tools.act(GoToUrlActionModel(**goto_action), browser_session)
 
@@ -336,10 +336,10 @@ class TestGetDropdownOptionsEvent:
 	async def test_aria_menu_dropdown(self, tools, browser_session: BrowserSession, base_url):
 		"""Test get_dropdown_options with ARIA role='menu' element."""
 		# Navigate to the ARIA menu test page
-		goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/aria-menu', new_tab=False)}
+		goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/aria-menu', new_tab=False)}
 
 		class GoToUrlActionModel(ActionModel):
-			go_to_url: GoToUrlAction | None = None
+			navigate: GoToUrlAction | None = None
 
 		await tools.act(GoToUrlActionModel(**goto_action), browser_session)
 
@@ -398,10 +398,10 @@ class TestGetDropdownOptionsEvent:
 	async def test_custom_dropdown(self, tools, browser_session: BrowserSession, base_url):
 		"""Test get_dropdown_options with custom dropdown implementation."""
 		# Navigate to the custom dropdown test page
-		goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/custom-dropdown', new_tab=False)}
+		goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/custom-dropdown', new_tab=False)}
 
 		class GoToUrlActionModel(ActionModel):
-			go_to_url: GoToUrlAction | None = None
+			navigate: GoToUrlAction | None = None
 
 		await tools.act(GoToUrlActionModel(**goto_action), browser_session)
 
@@ -456,10 +456,10 @@ class TestGetDropdownOptionsEvent:
 	async def test_element_not_found_error(self, tools, browser_session: BrowserSession, base_url):
 		"""Test get_dropdown_options with invalid element index."""
 		# Navigate to any test page
-		goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/native-dropdown', new_tab=False)}
+		goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/native-dropdown', new_tab=False)}
 
 		class GoToUrlActionModel(ActionModel):
-			go_to_url: GoToUrlAction | None = None
+			navigate: GoToUrlAction | None = None
 
 		await tools.act(GoToUrlActionModel(**goto_action), browser_session)
 		await browser_session.event_bus.expect(NavigationCompleteEvent, timeout=10.0)
@@ -486,10 +486,10 @@ class TestSelectDropdownOptionEvent:
 	async def test_select_native_dropdown_option(self, tools, browser_session: BrowserSession, base_url):
 		"""Test select_dropdown_option with native HTML select element."""
 		# Navigate to the native dropdown test page
-		goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/native-dropdown', new_tab=False)}
+		goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/native-dropdown', new_tab=False)}
 
 		class GoToUrlActionModel(ActionModel):
-			go_to_url: GoToUrlAction | None = None
+			navigate: GoToUrlAction | None = None
 
 		await tools.act(GoToUrlActionModel(**goto_action), browser_session)
 		await browser_session.event_bus.expect(NavigationCompleteEvent, timeout=10.0)
@@ -534,10 +534,10 @@ class TestSelectDropdownOptionEvent:
 	async def test_select_aria_menu_option(self, tools, browser_session: BrowserSession, base_url):
 		"""Test select_dropdown_option with ARIA menu."""
 		# Navigate to the ARIA menu test page
-		goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/aria-menu', new_tab=False)}
+		goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/aria-menu', new_tab=False)}
 
 		class GoToUrlActionModel(ActionModel):
-			go_to_url: GoToUrlAction | None = None
+			navigate: GoToUrlAction | None = None
 
 		await tools.act(GoToUrlActionModel(**goto_action), browser_session)
 		await browser_session.event_bus.expect(NavigationCompleteEvent, timeout=10.0)
@@ -586,10 +586,10 @@ class TestSelectDropdownOptionEvent:
 	async def test_select_custom_dropdown_option(self, tools, browser_session: BrowserSession, base_url):
 		"""Test select_dropdown_option with custom dropdown."""
 		# Navigate to the custom dropdown test page
-		goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/custom-dropdown', new_tab=False)}
+		goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/custom-dropdown', new_tab=False)}
 
 		class GoToUrlActionModel(ActionModel):
-			go_to_url: GoToUrlAction | None = None
+			navigate: GoToUrlAction | None = None
 
 		await tools.act(GoToUrlActionModel(**goto_action), browser_session)
 		await browser_session.event_bus.expect(NavigationCompleteEvent, timeout=10.0)
@@ -634,10 +634,10 @@ class TestSelectDropdownOptionEvent:
 	async def test_select_invalid_option_error(self, tools, browser_session: BrowserSession, base_url):
 		"""Test select_dropdown_option with non-existent option text."""
 		# Navigate to the native dropdown test page
-		goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/native-dropdown', new_tab=False)}
+		goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/native-dropdown', new_tab=False)}
 
 		class GoToUrlActionModel(ActionModel):
-			go_to_url: GoToUrlAction | None = None
+			navigate: GoToUrlAction | None = None
 
 		await tools.act(GoToUrlActionModel(**goto_action), browser_session)
 		await browser_session.event_bus.expect(NavigationCompleteEvent, timeout=10.0)

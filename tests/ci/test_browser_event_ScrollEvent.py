@@ -83,10 +83,10 @@ class TestScrollActions:
 		"""Test basic scroll action functionality."""
 
 		# Navigate to scrollable page
-		goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/scrollable', new_tab=False)}
+		goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/scrollable', new_tab=False)}
 
 		class GoToUrlActionModel(ActionModel):
-			go_to_url: GoToUrlAction | None = None
+			navigate: GoToUrlAction | None = None
 
 		await tools.act(GoToUrlActionModel(**goto_action), browser_session)
 

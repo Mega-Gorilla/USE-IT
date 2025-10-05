@@ -96,7 +96,7 @@ class TestToolsIntegration:
 		"""Test that the registry contains the expected default actions."""
 		# Check that common actions are registered
 		common_actions = [
-			'go_to_url',
+			'navigate',
 			'search',
 			'click',
 			'input_text',
@@ -125,10 +125,10 @@ class TestToolsIntegration:
 			return ActionResult(extracted_content=f'Custom action executed with: {params.text} on {current_url}')
 
 		# Navigate to a page first
-		goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/page1', new_tab=False)}
+		goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/page1', new_tab=False)}
 
 		class GoToUrlActionModel(ActionModel):
-			go_to_url: GoToUrlAction | None = None
+			navigate: GoToUrlAction | None = None
 
 		await tools.act(GoToUrlActionModel(**goto_action), browser_session)
 
@@ -209,10 +209,10 @@ class TestToolsIntegration:
 	async def test_go_back_action(self, tools, browser_session, base_url):
 		"""Test that go_back action navigates to the previous page."""
 		# Navigate to first page
-		goto_action1 = {'go_to_url': GoToUrlAction(url=f'{base_url}/page1', new_tab=False)}
+		goto_action1 = {'navigate': GoToUrlAction(url=f'{base_url}/page1', new_tab=False)}
 
 		class GoToUrlActionModel(ActionModel):
-			go_to_url: GoToUrlAction | None = None
+			navigate: GoToUrlAction | None = None
 
 		await tools.act(GoToUrlActionModel(**goto_action1), browser_session)
 
@@ -221,7 +221,7 @@ class TestToolsIntegration:
 		print(f'First page URL: {first_url}')
 
 		# Navigate to second page
-		goto_action2 = {'go_to_url': GoToUrlAction(url=f'{base_url}/page2', new_tab=False)}
+		goto_action2 = {'navigate': GoToUrlAction(url=f'{base_url}/page2', new_tab=False)}
 		await tools.act(GoToUrlActionModel(**goto_action2), browser_session)
 
 		# Verify we're on the second page
@@ -259,10 +259,10 @@ class TestToolsIntegration:
 
 		# Navigate to each page in sequence
 		for url in urls:
-			action_data = {'go_to_url': GoToUrlAction(url=url, new_tab=False)}
+			action_data = {'navigate': GoToUrlAction(url=url, new_tab=False)}
 
 			class GoToUrlActionModel(ActionModel):
-				go_to_url: GoToUrlAction | None = None
+				navigate: GoToUrlAction | None = None
 
 			await tools.act(GoToUrlActionModel(**action_data), browser_session)
 
@@ -293,7 +293,7 @@ class TestToolsIntegration:
 		assert 'scroll' not in excluded_tools.registry.registry.actions
 
 		# But other actions are still there
-		assert 'go_to_url' in excluded_tools.registry.registry.actions
+		assert 'navigate' in excluded_tools.registry.registry.actions
 		assert 'click' in excluded_tools.registry.registry.actions
 
 	async def test_search_action(self, tools, browser_session, base_url):
@@ -325,10 +325,10 @@ class TestToolsIntegration:
 			file_system = FileSystem(temp_dir)
 
 			# First navigate to a page
-			goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/page1', new_tab=False)}
+			goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/page1', new_tab=False)}
 
 			class GoToUrlActionModel(ActionModel):
-				go_to_url: GoToUrlAction | None = None
+				navigate: GoToUrlAction | None = None
 
 			await tools.act(GoToUrlActionModel(**goto_action), browser_session)
 
@@ -392,10 +392,10 @@ class TestToolsIntegration:
 		)
 
 		# Navigate to the dropdown test page
-		goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/dropdown1', new_tab=False)}
+		goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/dropdown1', new_tab=False)}
 
 		class GoToUrlActionModel(ActionModel):
-			go_to_url: GoToUrlAction | None = None
+			navigate: GoToUrlAction | None = None
 
 		await tools.act(GoToUrlActionModel(**goto_action), browser_session)
 
@@ -519,10 +519,10 @@ class TestToolsIntegration:
 		)
 
 		# Navigate to the dropdown test page
-		goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/dropdown2', new_tab=False)}
+		goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/dropdown2', new_tab=False)}
 
 		class GoToUrlActionModel(ActionModel):
-			go_to_url: GoToUrlAction | None = None
+			navigate: GoToUrlAction | None = None
 
 		await tools.act(GoToUrlActionModel(**goto_action), browser_session)
 

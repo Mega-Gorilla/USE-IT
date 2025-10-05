@@ -161,7 +161,7 @@ class Tools(Generic[Context]):
 			'',
 			param_model=GoToUrlAction,
 		)
-		async def go_to_url(params: GoToUrlAction, browser_session: BrowserSession):
+		async def navigate(params: GoToUrlAction, browser_session: BrowserSession):
 			try:
 				# Dispatch navigation event
 				event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=params.url, new_tab=params.new_tab))
@@ -291,7 +291,7 @@ class Tools(Generic[Context]):
 			'',
 			param_model=InputTextAction,
 		)
-		async def input_text(
+		async def input(
 			params: InputTextAction,
 			browser_session: BrowserSession,
 			has_sensitive_data: bool = False,
@@ -502,7 +502,7 @@ class Tools(Generic[Context]):
 		# Tab Management Actions
 
 		@self.registry.action('', param_model=SwitchTabAction)
-		async def switch_tab(params: SwitchTabAction, browser_session: BrowserSession):
+		async def switch(params: SwitchTabAction, browser_session: BrowserSession):
 			# Simple switch tab logic
 			try:
 				target_id = await browser_session.get_target_id_from_tab_id(params.tab_id)
@@ -524,7 +524,7 @@ class Tools(Generic[Context]):
 				return ActionResult(extracted_content=memory, long_term_memory=memory)
 
 		@self.registry.action('', param_model=CloseTabAction)
-		async def close_tab(params: CloseTabAction, browser_session: BrowserSession):
+		async def close(params: CloseTabAction, browser_session: BrowserSession):
 			# Simple close tab logic
 			try:
 				target_id = await browser_session.get_target_id_from_tab_id(params.tab_id)
@@ -557,7 +557,7 @@ class Tools(Generic[Context]):
 		@self.registry.action(
 			"""Extract page data via LLM. Use when on right page, know what to extract. Can't get interactive elements. Don't call again on same page with same query.""",
 		)
-		async def extract_structured_data(
+		async def extract(
 			query: str,
 			extract_links: bool,
 			browser_session: BrowserSession,
@@ -799,7 +799,7 @@ You will be given a query and the markdown of a webpage that has been filtered t
 				return ActionResult(error=error_msg)
 
 		@self.registry.action('')
-		async def scroll_to_text(text: str, browser_session: BrowserSession):  # type: ignore
+		async def find_text(text: str, browser_session: BrowserSession):  # type: ignore
 			# Dispatch scroll to text event
 			event = browser_session.event_bus.dispatch(ScrollToTextEvent(text=text))
 
@@ -820,7 +820,7 @@ You will be given a query and the markdown of a webpage that has been filtered t
 				)
 
 		@self.registry.action('')
-		async def take_screenshot():
+		async def screenshot():
 			"""Request that a screenshot be included in the next observation"""
 			memory = 'Requested screenshot for next observation'
 			msg = f'📸 {memory}'
@@ -838,7 +838,7 @@ You will be given a query and the markdown of a webpage that has been filtered t
 			'',
 			param_model=GetDropdownOptionsAction,
 		)
-		async def get_dropdown_options(params: GetDropdownOptionsAction, browser_session: BrowserSession):
+		async def dropdown_options(params: GetDropdownOptionsAction, browser_session: BrowserSession):
 			"""Get all options from a native dropdown or ARIA menu"""
 			# Look up the node from the selector map
 			node = await browser_session.get_element_by_index(params.index)
@@ -864,7 +864,7 @@ You will be given a query and the markdown of a webpage that has been filtered t
 			'',
 			param_model=SelectDropdownOptionAction,
 		)
-		async def select_dropdown_option(params: SelectDropdownOptionAction, browser_session: BrowserSession):
+		async def select_dropdown(params: SelectDropdownOptionAction, browser_session: BrowserSession):
 			"""Select dropdown option by the text of the option you want to select"""
 			# Look up the node from the selector map
 			node = await browser_session.get_element_by_index(params.index)
@@ -925,7 +925,7 @@ You will be given a query and the markdown of a webpage that has been filtered t
 			return ActionResult(extracted_content=result, long_term_memory=result)
 
 		@self.registry.action('')
-		async def replace_file_str(file_name: str, old_str: str, new_str: str, file_system: FileSystem):
+		async def replace_file(file_name: str, old_str: str, new_str: str, file_system: FileSystem):
 			result = await file_system.replace_file_str(file_name, old_str, new_str)
 			logger.info(f'💾 {result}')
 			return ActionResult(extracted_content=result, long_term_memory=result)
@@ -962,7 +962,7 @@ You will be given a query and the markdown of a webpage that has been filtered t
 		@self.registry.action(
 			'JS eval. Wrap in IIFE: (function(){...})(). Use try/catch. JSON.stringify() for objects.',
 		)
-		async def execute_js(code: str, browser_session: BrowserSession):
+		async def evaluate(code: str, browser_session: BrowserSession):
 			# Execute JavaScript with proper error handling and promise support
 
 			cdp_session = await browser_session.get_or_create_cdp_session()
