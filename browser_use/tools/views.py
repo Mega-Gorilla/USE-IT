@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 # Action Input Models
 class SearchAction(BaseModel):
 	query: str
-	search_engine: str = 'duckduckgo'  # Options: 'duckduckgo', 'google', 'bing'
+	search_engine: str = Field(default='duckduckgo', description='duckduckgo, google, bing')
 
 
 # Backward compatibility alias
@@ -15,65 +15,59 @@ SearchAction = SearchAction
 
 class GoToUrlAction(BaseModel):
 	url: str
-	new_tab: bool = False  # True to open in new tab, False to navigate in current tab
+	new_tab: bool = Field(default=False)
 
 
 class ClickElementAction(BaseModel):
-	index: int = Field(ge=1, description='index of the element to click')
+	index: int = Field(ge=1, description='from browser_state')
 	ctrl: bool | None = Field(
 		default=None,
-		description='Set to True to open the navigation in a new background tab (Ctrl+Click behavior). Optional.',
+		description='True=New background tab (Ctrl+Click)',
 	)
 	# expect_download: bool = Field(default=False, description='set True if expecting a download, False otherwise')  # moved to downloads_watchdog.py
 	# click_count: int = 1  # TODO
 
 
 class InputTextAction(BaseModel):
-	index: int = Field(ge=0, description='index of the element to input text into, 0 is the page')
+	index: int = Field(ge=1, description='from browser_state')
 	text: str
-	clear_existing: bool = Field(default=True, description='set True to clear existing text, False to append to existing text')
+	clear_existing: bool = Field(default=True, description='True to clear, False to append')
 
 
 class DoneAction(BaseModel):
-	text: str
-	success: bool
-	files_to_display: list[str] | None = []
+	text: str = Field(description='summary for user')
+	success: bool = Field(description='True if completed')
+	files_to_display: list[str] | None = Field(default=[], description='files to display')
 
 
 T = TypeVar('T', bound=BaseModel)
 
 
 class StructuredOutputAction(BaseModel, Generic[T]):
-	success: bool = True
+	success: bool = Field(default=True, description='True if finished, False if not')
 	data: T
 
 
 class SwitchTabAction(BaseModel):
-	tab_id: str = Field(
-		min_length=4,
-		max_length=4,
-		description="tab_id to switch to which is displayed as 'Tab <tab_id>' in the browser_state.",
-	)  # last 4 chars of TargetID
+	tab_id: str = Field(min_length=4, max_length=4, description="from browser_state ('Tab <tab_id>')")
 
 
 class CloseTabAction(BaseModel):
-	tab_id: str = Field(
-		min_length=4, max_length=4, description="tab_id to close which is displayed as 'Tab <tab_id>' in the browser_state."
-	)  # last 4 chars of TargetID
+	tab_id: str = Field(min_length=4, max_length=4, description="from browser_state ('Tab <tab_id>')")
 
 
 class ScrollAction(BaseModel):
-	down: bool  # True to scroll down, False to scroll up
-	num_pages: float = 1.0  # Number of pages to scroll (0.5 = half page, 1.0 = one page, etc.)
-	frame_element_index: int | None = None  # Optional element index to find scroll container for
+	down: bool = Field(description='True=down, False=up')
+	num_pages: float = Field(default=1.0, description='pages to scroll (0.5=half, 1=page, 10=bottom)')
+	frame_element_index: int | None = Field(default=None, description='index for specific container')
 
 
 class SendKeysAction(BaseModel):
-	keys: str
+	keys: str = Field(description='keys (Escape, Enter, PageDown) or shortcuts (Control+o)')
 
 
 class UploadFileAction(BaseModel):
-	index: int
+	index: int = Field(description='from browser_state')
 	path: str
 
 
@@ -82,19 +76,15 @@ class ExtractPageContentAction(BaseModel):
 
 
 class NoParamsAction(BaseModel):
-	"""
-	Accepts absolutely anything in the incoming data
-	and discards it, so the final parsed model is empty.
-	"""
+	"""Accepts any input, discards it, returns empty model."""
 
 	model_config = ConfigDict(extra='ignore')
-	# No fields defined - all inputs are ignored automatically
 
 
 class GetDropdownOptionsAction(BaseModel):
-	index: int = Field(ge=1, description='index of the dropdown element to get the option values for')
+	index: int = Field(ge=1, description='dropdown from browser_state')
 
 
 class SelectDropdownOptionAction(BaseModel):
-	index: int = Field(ge=1, description='index of the dropdown element to select an option for')
-	text: str = Field(description='the text or exact value of the option to select')
+	index: int = Field(ge=1, description='dropdown from browser_state')
+	text: str = Field(description='exact text/value to select')

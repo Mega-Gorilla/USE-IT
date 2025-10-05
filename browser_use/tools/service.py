@@ -115,7 +115,7 @@ class Tools(Generic[Context]):
 
 		# Basic Navigation Actions
 		@self.registry.action(
-			'Search query (defaults DuckDuckGo). Options: duckduckgo, google, bing.',
+			'Search query.',
 			param_model=SearchAction,
 		)
 		async def search(params: SearchAction, browser_session: BrowserSession):
@@ -158,7 +158,7 @@ class Tools(Generic[Context]):
 				return ActionResult(error=f'Failed to search {params.search_engine} for "{params.query}": {str(e)}')
 
 		@self.registry.action(
-			'Navigate to URL. Set new_tab=True to open in new tab.',
+			'Navigate to URL.',
 			param_model=GoToUrlAction,
 		)
 		async def go_to_url(params: GoToUrlAction, browser_session: BrowserSession):
@@ -218,7 +218,7 @@ class Tools(Generic[Context]):
 				error_msg = f'Failed to go back: {str(e)}'
 				return ActionResult(error=error_msg)
 
-		@self.registry.action('Wait x seconds (default 3, max 30). ')
+		@self.registry.action('Wait for page load.')
 		async def wait(seconds: int = 3):
 			# Cap wait time at maximum 30 seconds
 			# Reduce the wait time by 3 seconds to account for the llm call which takes at least 3 seconds
@@ -234,7 +234,7 @@ class Tools(Generic[Context]):
 		# Element Interaction Actions
 
 		@self.registry.action(
-			'Click element by index from browser_state. Set ctrl=True to open in new tab.',
+			'Click element.',
 			param_model=ClickElementAction,
 		)
 		async def click(params: ClickElementAction, browser_session: BrowserSession):
@@ -288,7 +288,7 @@ class Tools(Generic[Context]):
 				return ActionResult(error=error_msg)
 
 		@self.registry.action(
-			'Input text into element by index from browser_state.',
+			'Input text.',
 			param_model=InputTextAction,
 		)
 		async def input_text(
@@ -350,7 +350,7 @@ class Tools(Generic[Context]):
 				return ActionResult(error=error_msg)
 
 		@self.registry.action(
-			'Upload file to element by index from browser_state.',
+			'Upload file.',
 			param_model=UploadFileAction,
 		)
 		async def upload_file(
@@ -501,7 +501,7 @@ class Tools(Generic[Context]):
 
 		# Tab Management Actions
 
-		@self.registry.action('Switch to tab by tab_id.', param_model=SwitchTabAction)
+		@self.registry.action('Switch tab.', param_model=SwitchTabAction)
 		async def switch_tab(params: SwitchTabAction, browser_session: BrowserSession):
 			# Simple switch tab logic
 			try:
@@ -523,7 +523,7 @@ class Tools(Generic[Context]):
 				memory = f'Attempted to switch to tab #{params.tab_id}'
 				return ActionResult(extracted_content=memory, long_term_memory=memory)
 
-		@self.registry.action('Close tab by tab_id.', param_model=CloseTabAction)
+		@self.registry.action('Close tab.', param_model=CloseTabAction)
 		async def close_tab(params: CloseTabAction, browser_session: BrowserSession):
 			# Simple close tab logic
 			try:
@@ -555,11 +555,7 @@ class Tools(Generic[Context]):
 		# This action is temporarily disabled as it needs refactoring to use events
 
 		@self.registry.action(
-			"""Extract semantic data from page markdown via LLM query (e.g. product info, prices).
-Use when: on right page, know what to extract, haven't used on same page before.
-Can't get: interactive elements (buttons, links, dropdowns).
-Set extract_links=True for URLs. Use start_from_char if truncated.
-If fails, use scroll_to_text or scroll instead.""",
+			"""Extract page data via LLM. Use when on right page, know what to extract. Can't get interactive elements.""",
 		)
 		async def extract_structured_data(
 			query: str,
@@ -679,9 +675,7 @@ You will be given a query and the markdown of a webpage that has been filtered t
 				raise RuntimeError(str(e))
 
 		@self.registry.action(
-			"""Scroll page by num_pages (down=True for down, False for up). Default 1 page, use 0.5 for half, 10 for bottom.
-For specific containers, use frame_element_index from browser_state (works with dropdowns, custom UI).
-Multiple pages (>=1.0) scroll sequentially. Page height from viewport or 1000px fallback.""",
+			'Scroll page. Multiple pages scroll sequentially.',
 			param_model=ScrollAction,
 		)
 		async def scroll(params: ScrollAction, browser_session: BrowserSession):
@@ -790,7 +784,7 @@ Multiple pages (>=1.0) scroll sequentially. Page height from viewport or 1000px 
 				return ActionResult(error=error_msg)
 
 		@self.registry.action(
-			'Send special keys (Escape, Enter, PageDown) or shortcuts (Control+o, Control+Shift+T).',
+			'Send keys.',
 			param_model=SendKeysAction,
 		)
 		async def send_keys(params: SendKeysAction, browser_session: BrowserSession):
@@ -809,7 +803,7 @@ Multiple pages (>=1.0) scroll sequentially. Page height from viewport or 1000px 
 				return ActionResult(error=error_msg)
 
 		@self.registry.action(
-			description='Scroll to text on page. Prefer over step-by-step scrolling when target known.',
+			description='Scroll to text.',
 		)
 		async def scroll_to_text(text: str, browser_session: BrowserSession):  # type: ignore
 			# Dispatch scroll to text event
@@ -831,7 +825,7 @@ Multiple pages (>=1.0) scroll sequentially. Page height from viewport or 1000px 
 					long_term_memory=f"Tried scrolling to text '{text}' but it was not found",
 				)
 
-		@self.registry.action('Request screenshot in next browser state. Use for visual confirmation or complex visual content.')
+		@self.registry.action('Request screenshot.')
 		async def take_screenshot():
 			"""Request that a screenshot be included in the next observation"""
 			memory = 'Requested screenshot for next observation'
@@ -847,7 +841,7 @@ Multiple pages (>=1.0) scroll sequentially. Page height from viewport or 1000px 
 		# Dropdown Actions
 
 		@self.registry.action(
-			'Get dropdown values (<select>, ARIA select). Only for dropdown elements.',
+			'Get dropdown options.',
 			param_model=GetDropdownOptionsAction,
 		)
 		async def get_dropdown_options(params: GetDropdownOptionsAction, browser_session: BrowserSession):
@@ -873,7 +867,7 @@ Multiple pages (>=1.0) scroll sequentially. Page height from viewport or 1000px 
 			)
 
 		@self.registry.action(
-			'Select dropdown option by exact text (native <select>, ARIA, custom). Searches element and children.',
+			'Select dropdown option.',
 			param_model=SelectDropdownOptionAction,
 		)
 		async def select_dropdown_option(params: SelectDropdownOptionAction, browser_session: BrowserSession):
@@ -916,7 +910,7 @@ Multiple pages (>=1.0) scroll sequentially. Page height from viewport or 1000px 
 					return ActionResult(error=error_msg)
 
 		# File System Actions
-		@self.registry.action('Write/append to file (.md, .txt, .json, .csv, .pdf). PDF: write markdown, auto-converts to PDF.')
+		@self.registry.action('Write/append file.')
 		async def write_file(
 			file_name: str,
 			content: str,
@@ -936,15 +930,13 @@ Multiple pages (>=1.0) scroll sequentially. Page height from viewport or 1000px 
 			logger.info(f'💾 {result}')
 			return ActionResult(extracted_content=result, long_term_memory=result)
 
-		@self.registry.action(
-			'Replace old_str with new_str in file. old_str must match exactly. For todo.md updates or specific edits.'
-		)
+		@self.registry.action('Replace in file.')
 		async def replace_file_str(file_name: str, old_str: str, new_str: str, file_system: FileSystem):
 			result = await file_system.replace_file_str(file_name, old_str, new_str)
 			logger.info(f'💾 {result}')
 			return ActionResult(extracted_content=result, long_term_memory=result)
 
-		@self.registry.action('Read file from file system.')
+		@self.registry.action('Read file.')
 		async def read_file(file_name: str, available_file_paths: list[str], file_system: FileSystem):
 			if available_file_paths and file_name in available_file_paths:
 				result = await file_system.read_file(file_name, external_file=True)
@@ -974,22 +966,11 @@ Multiple pages (>=1.0) scroll sequentially. Page height from viewport or 1000px 
 			)
 
 		@self.registry.action(
-			"""Execute JavaScript with Runtime.evaluate (returnByValue:true, awaitPromise:true).
+			"""Execute JS. MUST wrap in IIFE: (function(){...})() or async: (async function(){...})()
+Use when other tools fail or need custom logic.
 
-SYNTAX RULES - ALWAYS wrap in IIFE or get "Uncaught at line 0":
-- IIFE: (function(){ ... })() or async: (async function(){ ... })()
-- Add try-catch, proper semicolons, validate elements exist
-
-Use when other tools fail or need custom logic (forms, hover, drag, extract links, custom selectors, shadow DOM, React/Vue/Angular, etc.).
-
-Examples:
 CORRECT: (function(){ try { const el = document.querySelector('#id'); return el ? el.value : 'not found'; } catch(e) { return 'Error: ' + e.message; } })()
-CORRECT: (async function(){ try { await new Promise(r => setTimeout(r, 100)); return 'done'; } catch(e) { return 'Error: ' + e.message; } })()
-WRONG: document.querySelector('#id').value (no IIFE)
-
-Shadow DOM: (function(){ try { const hosts = document.querySelectorAll('*'); for (let host of hosts) { if (host.shadowRoot) { const el = host.shadowRoot.querySelector('#target'); if (el) return el.textContent; } } return 'Not found'; } catch(e) { return 'Error: ' + e.message; } })()
-
-Returns strings, numbers, booleans, objects/arrays. Use JSON.stringify() for complex objects.""",
+WRONG: document.querySelector('#id').value""",
 		)
 		async def execute_js(code: str, browser_session: BrowserSession):
 			# Execute JavaScript with proper error handling and promise support
@@ -1154,7 +1135,7 @@ Returns strings, numbers, booleans, objects/arrays. Use JSON.stringify() for com
 			self.display_files_in_done_text = display_files_in_done_text
 
 			@self.registry.action(
-				'Complete task with return text. Set success=True if finished, False if not (e.g. max steps reached).',
+				'Complete task with structured output.',
 				param_model=StructuredOutputAction[output_model],
 			)
 			async def done(params: StructuredOutputAction):
@@ -1176,7 +1157,7 @@ Returns strings, numbers, booleans, objects/arrays. Use JSON.stringify() for com
 		else:
 
 			@self.registry.action(
-				'Complete task with summary. Set success=True if completed successfully. Include files in files_to_display.',
+				'Complete task.',
 				param_model=DoneAction,
 			)
 			async def done(params: DoneAction, file_system: FileSystem):
