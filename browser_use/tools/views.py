@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 # Action Input Models
 class SearchAction(BaseModel):
 	query: str
-	search_engine: str = Field(
+	engine: str = Field(
 		default='duckduckgo', description='duckduckgo, google, bing (use duckduckgo by default because less captchas)'
 	)
 
@@ -39,7 +39,7 @@ class InputTextAction(BaseModel):
 class DoneAction(BaseModel):
 	text: str = Field(description='summary for user')
 	success: bool = Field(description='True if user_request completed successfully')
-	files_to_display: list[str] | None = Field(default=[], description='files to display')
+	files: list[str] | None = Field(default=[], description='files to display')
 
 
 T = TypeVar('T', bound=BaseModel)
