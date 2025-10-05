@@ -61,7 +61,7 @@ class CloseTabAction(BaseModel):
 class ScrollAction(BaseModel):
 	down: bool = Field(description='1=down, 0=up')
 	pages: float = Field(default=1.0, description='0.5=half, 1=pg, 10=bottom')
-	frame_index: int | None = Field(default=None, description='container index')
+	index: int | None = Field(default=None, description='Use to scroll in specific container with that element')
 
 
 class SendKeysAction(BaseModel):
@@ -69,7 +69,7 @@ class SendKeysAction(BaseModel):
 
 
 class UploadFileAction(BaseModel):
-	index: int = Field(description='index')
+	index: int
 	path: str
 
 
@@ -82,7 +82,7 @@ class NoParamsAction(BaseModel):
 
 
 class GetDropdownOptionsAction(BaseModel):
-	index: int = Field(ge=1, description='index')
+	index: int
 
 
 class SelectDropdownOptionAction(BaseModel):

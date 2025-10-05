@@ -683,15 +683,15 @@ You will be given a query and the markdown of a webpage that has been filtered t
 				# Look up the node from the selector map if index is provided
 				# Special case: index 0 means scroll the whole page (root/body element)
 				node = None
-				if params.frame_index is not None and params.frame_index != 0:
-					node = await browser_session.get_element_by_index(params.frame_index)
+				if params.index is not None and params.index != 0:
+					node = await browser_session.get_element_by_index(params.index)
 					if node is None:
 						# Element does not exist
-						msg = f'Element index {params.frame_index} not found in browser state'
+						msg = f'Element index {params.index} not found in browser state'
 						return ActionResult(error=msg)
 
 				direction = 'down' if params.down else 'up'
-				target = 'the page' if params.frame_index is None or params.frame_index == 0 else f'element {params.frame_index}'
+				target = 'the page' if params.index is None or params.index == 0 else f'element {params.index}'
 
 				# Get actual viewport height for more accurate scrolling
 				try:
