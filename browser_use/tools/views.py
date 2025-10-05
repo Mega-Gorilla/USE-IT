@@ -31,7 +31,7 @@ class ClickElementAction(BaseModel):
 
 
 class InputTextAction(BaseModel):
-	index: int = Field(ge=1, description='index')
+	index: int = Field(ge=1, description='from browser_state')
 	text: str
 	clear: bool = Field(default=True, description='1=clear, 0=append')
 

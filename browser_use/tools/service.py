@@ -115,7 +115,7 @@ class Tools(Generic[Context]):
 
 		# Basic Navigation Actions
 		@self.registry.action(
-			'Search query.',
+			'',
 			param_model=SearchAction,
 		)
 		async def search(params: SearchAction, browser_session: BrowserSession):
@@ -158,7 +158,7 @@ class Tools(Generic[Context]):
 				return ActionResult(error=f'Failed to search {params.engine} for "{params.query}": {str(e)}')
 
 		@self.registry.action(
-			'Navigate to URL.',
+			'',
 			param_model=GoToUrlAction,
 		)
 		async def go_to_url(params: GoToUrlAction, browser_session: BrowserSession):
@@ -218,7 +218,7 @@ class Tools(Generic[Context]):
 				error_msg = f'Failed to go back: {str(e)}'
 				return ActionResult(error=error_msg)
 
-		@self.registry.action('Wait for page.')
+		@self.registry.action('')
 		async def wait(seconds: int = 3):
 			# Cap wait time at maximum 30 seconds
 			# Reduce the wait time by 3 seconds to account for the llm call which takes at least 3 seconds
@@ -234,7 +234,7 @@ class Tools(Generic[Context]):
 		# Element Interaction Actions
 
 		@self.registry.action(
-			'Click element.',
+			'',
 			param_model=ClickElementAction,
 		)
 		async def click(params: ClickElementAction, browser_session: BrowserSession):
@@ -288,7 +288,7 @@ class Tools(Generic[Context]):
 				return ActionResult(error=error_msg)
 
 		@self.registry.action(
-			'Input text.',
+			'',
 			param_model=InputTextAction,
 		)
 		async def input_text(
@@ -350,7 +350,7 @@ class Tools(Generic[Context]):
 				return ActionResult(error=error_msg)
 
 		@self.registry.action(
-			'Upload file.',
+			'',
 			param_model=UploadFileAction,
 		)
 		async def upload_file(
@@ -780,7 +780,7 @@ You will be given a query and the markdown of a webpage that has been filtered t
 				return ActionResult(error=error_msg)
 
 		@self.registry.action(
-			'Send keys.',
+			'',
 			param_model=SendKeysAction,
 		)
 		async def send_keys(params: SendKeysAction, browser_session: BrowserSession):
@@ -835,7 +835,7 @@ You will be given a query and the markdown of a webpage that has been filtered t
 		# Dropdown Actions
 
 		@self.registry.action(
-			'Get dropdown options.',
+			'',
 			param_model=GetDropdownOptionsAction,
 		)
 		async def get_dropdown_options(params: GetDropdownOptionsAction, browser_session: BrowserSession):
@@ -861,7 +861,7 @@ You will be given a query and the markdown of a webpage that has been filtered t
 			)
 
 		@self.registry.action(
-			'Select dropdown option.',
+			'',
 			param_model=SelectDropdownOptionAction,
 		)
 		async def select_dropdown_option(params: SelectDropdownOptionAction, browser_session: BrowserSession):
@@ -904,7 +904,7 @@ You will be given a query and the markdown of a webpage that has been filtered t
 					return ActionResult(error=error_msg)
 
 		# File System Actions
-		@self.registry.action('Write/append file.')
+		@self.registry.action('')
 		async def write_file(
 			file_name: str,
 			content: str,
@@ -924,7 +924,7 @@ You will be given a query and the markdown of a webpage that has been filtered t
 			logger.info(f'💾 {result}')
 			return ActionResult(extracted_content=result, long_term_memory=result)
 
-		@self.registry.action('Replace in file.')
+		@self.registry.action('')
 		async def replace_file_str(file_name: str, old_str: str, new_str: str, file_system: FileSystem):
 			result = await file_system.replace_file_str(file_name, old_str, new_str)
 			logger.info(f'💾 {result}')
