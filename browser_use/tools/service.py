@@ -38,8 +38,8 @@ from browser_use.tools.views import (
 	CloseTabAction,
 	DoneAction,
 	GetDropdownOptionsAction,
-	GoToUrlAction,
 	InputTextAction,
+	NavigateAction,
 	NoParamsAction,
 	ScrollAction,
 	SearchAction,
@@ -159,9 +159,9 @@ class Tools(Generic[Context]):
 
 		@self.registry.action(
 			'',
-			param_model=GoToUrlAction,
+			param_model=NavigateAction,
 		)
-		async def navigate(params: GoToUrlAction, browser_session: BrowserSession):
+		async def navigate(params: NavigateAction, browser_session: BrowserSession):
 			try:
 				# Dispatch navigation event
 				event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=params.url, new_tab=params.new_tab))
