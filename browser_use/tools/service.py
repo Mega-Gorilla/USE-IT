@@ -204,7 +204,7 @@ class Tools(Generic[Context]):
 					# Return error in ActionResult instead of re-raising
 					return ActionResult(error=f'Navigation failed: {str(e)}')
 
-		@self.registry.action('Go back', param_model=NoParamsAction)
+		@self.registry.action('', param_model=NoParamsAction)
 		async def go_back(_: NoParamsAction, browser_session: BrowserSession):
 			try:
 				event = browser_session.event_bus.dispatch(GoBackEvent())
@@ -218,7 +218,7 @@ class Tools(Generic[Context]):
 				error_msg = f'Failed to go back: {str(e)}'
 				return ActionResult(error=error_msg)
 
-		@self.registry.action('Wait for page load.')
+		@self.registry.action('Wait for page.')
 		async def wait(seconds: int = 3):
 			# Cap wait time at maximum 30 seconds
 			# Reduce the wait time by 3 seconds to account for the llm call which takes at least 3 seconds
@@ -501,7 +501,7 @@ class Tools(Generic[Context]):
 
 		# Tab Management Actions
 
-		@self.registry.action('Switch tab.', param_model=SwitchTabAction)
+		@self.registry.action('', param_model=SwitchTabAction)
 		async def switch_tab(params: SwitchTabAction, browser_session: BrowserSession):
 			# Simple switch tab logic
 			try:
@@ -523,7 +523,7 @@ class Tools(Generic[Context]):
 				memory = f'Attempted to switch to tab #{params.tab_id}'
 				return ActionResult(extracted_content=memory, long_term_memory=memory)
 
-		@self.registry.action('Close tab.', param_model=CloseTabAction)
+		@self.registry.action('', param_model=CloseTabAction)
 		async def close_tab(params: CloseTabAction, browser_session: BrowserSession):
 			# Simple close tab logic
 			try:
@@ -798,9 +798,7 @@ You will be given a query and the markdown of a webpage that has been filtered t
 				error_msg = f'Failed to send keys: {str(e)}'
 				return ActionResult(error=error_msg)
 
-		@self.registry.action(
-			description='Scroll to text.',
-		)
+		@self.registry.action('')
 		async def scroll_to_text(text: str, browser_session: BrowserSession):  # type: ignore
 			# Dispatch scroll to text event
 			event = browser_session.event_bus.dispatch(ScrollToTextEvent(text=text))
@@ -821,7 +819,7 @@ You will be given a query and the markdown of a webpage that has been filtered t
 					long_term_memory=f"Tried scrolling to text '{text}' but it was not found",
 				)
 
-		@self.registry.action('Request screenshot.')
+		@self.registry.action('')
 		async def take_screenshot():
 			"""Request that a screenshot be included in the next observation"""
 			memory = 'Requested screenshot for next observation'
@@ -932,7 +930,7 @@ You will be given a query and the markdown of a webpage that has been filtered t
 			logger.info(f'💾 {result}')
 			return ActionResult(extracted_content=result, long_term_memory=result)
 
-		@self.registry.action('Read file.')
+		@self.registry.action('')
 		async def read_file(file_name: str, available_file_paths: list[str], file_system: FileSystem):
 			if available_file_paths and file_name in available_file_paths:
 				result = await file_system.read_file(file_name, external_file=True)
@@ -962,11 +960,7 @@ You will be given a query and the markdown of a webpage that has been filtered t
 			)
 
 		@self.registry.action(
-			"""Execute JS. MUST wrap in IIFE: (function(){...})() or async: (async function(){...})()
-Use when other tools fail. Limit output. For complex objects use JSON.stringify().
-Don't use comments.
-CORRECT: (function(){ try { const el = document.querySelector('#id'); return el ? el.value : 'not found'; } catch(e) { return 'Error: ' + e.message; } })()
-WRONG: document.querySelector('#id').value""",
+			'JS eval. Wrap in IIFE: (function(){...})(). Use try/catch. JSON.stringify() for objects.',
 		)
 		async def execute_js(code: str, browser_session: BrowserSession):
 			# Execute JavaScript with proper error handling and promise support

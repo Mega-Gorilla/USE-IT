@@ -48,9 +48,10 @@ class SchemaOptimizer:
 					if key == 'title' and not in_properties:
 						continue
 
-					# Preserve FULL descriptions without truncation
+					# Preserve FULL descriptions without truncation, skip empty ones
 					elif key == 'description':
-						optimized[key] = value
+						if value:  # Only include non-empty descriptions
+							optimized[key] = value
 
 					# Handle type field
 					elif key == 'type':
