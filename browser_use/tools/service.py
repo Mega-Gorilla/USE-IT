@@ -273,7 +273,7 @@ class Tools(Generic[Context]):
 			except BrowserError as e:
 				if 'Cannot click on <select> elements.' in str(e):
 					try:
-						return await get_dropdown_options(
+						return await dropdown_options(
 							params=GetDropdownOptionsAction(index=params.index), browser_session=browser_session
 						)
 					except Exception as dropdown_error:
