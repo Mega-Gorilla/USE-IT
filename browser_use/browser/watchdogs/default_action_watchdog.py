@@ -258,7 +258,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 			element_type = element_node.attributes.get('type', '').lower() if element_node.attributes else ''
 
 			if tag_name == 'select':
-				msg = f'Cannot click on <select> elements. Use dropdown_options(index={element_node.element_index}) action instead.'
+				msg = (
+					f'Cannot click on <select> elements. Use dropdown_options(index={element_node.element_index}) action instead.'
+				)
 				self.logger.warning(msg)
 				raise BrowserError(
 					message=msg,
@@ -2001,7 +2003,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 				msg = f'Found {dropdown_type} dropdown ({element_info}):\n' + '\n'.join(formatted_options)
 			else:
 				msg = f'Found {dropdown_type} dropdown in {source_info} ({element_info}):\n' + '\n'.join(formatted_options)
-			msg += f'\n\nUse the exact text or value string (without quotes) in select_dropdown(index={index_for_logging}, text=...)'
+			msg += (
+				f'\n\nUse the exact text or value string (without quotes) in select_dropdown(index={index_for_logging}, text=...)'
+			)
 
 			if source_info == 'target':
 				self.logger.info(f'📋 Found {len(dropdown_data["options"])} dropdown options for index {index_for_logging}')
