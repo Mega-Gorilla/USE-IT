@@ -127,10 +127,10 @@ class TestToolsIntegration:
 		# Navigate to a page first
 		goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/page1', new_tab=False)}
 
-		class GoToUrlActionModel(ActionModel):
+		class NavigateActionModel(ActionModel):
 			navigate: GoToUrlAction | None = None
 
-		await tools.act(GoToUrlActionModel(**goto_action), browser_session)
+		await tools.act(NavigateActionModel(**goto_action), browser_session)
 
 		# Create the custom action model
 		custom_action_data = {'custom_action': CustomParams(text='test_value')}
@@ -211,10 +211,10 @@ class TestToolsIntegration:
 		# Navigate to first page
 		goto_action1 = {'navigate': GoToUrlAction(url=f'{base_url}/page1', new_tab=False)}
 
-		class GoToUrlActionModel(ActionModel):
+		class NavigateActionModel(ActionModel):
 			navigate: GoToUrlAction | None = None
 
-		await tools.act(GoToUrlActionModel(**goto_action1), browser_session)
+		await tools.act(NavigateActionModel(**goto_action1), browser_session)
 
 		# Store the first page URL
 		first_url = await browser_session.get_current_page_url()
@@ -222,7 +222,7 @@ class TestToolsIntegration:
 
 		# Navigate to second page
 		goto_action2 = {'navigate': GoToUrlAction(url=f'{base_url}/page2', new_tab=False)}
-		await tools.act(GoToUrlActionModel(**goto_action2), browser_session)
+		await tools.act(NavigateActionModel(**goto_action2), browser_session)
 
 		# Verify we're on the second page
 		second_url = await browser_session.get_current_page_url()
@@ -261,10 +261,10 @@ class TestToolsIntegration:
 		for url in urls:
 			action_data = {'navigate': GoToUrlAction(url=url, new_tab=False)}
 
-			class GoToUrlActionModel(ActionModel):
+			class NavigateActionModel(ActionModel):
 				navigate: GoToUrlAction | None = None
 
-			await tools.act(GoToUrlActionModel(**action_data), browser_session)
+			await tools.act(NavigateActionModel(**action_data), browser_session)
 
 			# Verify current page
 			current_url = await browser_session.get_current_page_url()
@@ -327,10 +327,10 @@ class TestToolsIntegration:
 			# First navigate to a page
 			goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/page1', new_tab=False)}
 
-			class GoToUrlActionModel(ActionModel):
+			class NavigateActionModel(ActionModel):
 				navigate: GoToUrlAction | None = None
 
-			await tools.act(GoToUrlActionModel(**goto_action), browser_session)
+			await tools.act(NavigateActionModel(**goto_action), browser_session)
 
 			success_done_message = 'Successfully completed task'
 
@@ -394,10 +394,10 @@ class TestToolsIntegration:
 		# Navigate to the dropdown test page
 		goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/dropdown1', new_tab=False)}
 
-		class GoToUrlActionModel(ActionModel):
+		class NavigateActionModel(ActionModel):
 			navigate: GoToUrlAction | None = None
 
-		await tools.act(GoToUrlActionModel(**goto_action), browser_session)
+		await tools.act(NavigateActionModel(**goto_action), browser_session)
 
 		# Wait for the page to load using CDP
 		cdp_session = browser_session.agent_focus
@@ -518,10 +518,10 @@ class TestToolsIntegration:
 		# Navigate to the dropdown test page
 		goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/dropdown2', new_tab=False)}
 
-		class GoToUrlActionModel(ActionModel):
+		class NavigateActionModel(ActionModel):
 			navigate: GoToUrlAction | None = None
 
-		await tools.act(GoToUrlActionModel(**goto_action), browser_session)
+		await tools.act(NavigateActionModel(**goto_action), browser_session)
 
 		# Wait for the page to load using CDP
 		cdp_session = browser_session.agent_focus

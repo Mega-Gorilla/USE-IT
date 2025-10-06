@@ -154,10 +154,10 @@ class TestARIAMenuDropdown:
 		# Navigate to the ARIA menu test page
 		goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/aria-menu', new_tab=False)}
 
-		class GoToUrlActionModel(ActionModel):
+		class NavigateActionModel(ActionModel):
 			navigate: GoToUrlAction | None = None
 
-		await tools.act(GoToUrlActionModel(**goto_action), browser_session)
+		await tools.act(NavigateActionModel(**goto_action), browser_session)
 
 		# Wait for the page to load
 		from browser_use.browser.events import NavigationCompleteEvent
@@ -221,10 +221,10 @@ class TestARIAMenuDropdown:
 		# Navigate to the ARIA menu test page
 		goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/aria-menu', new_tab=False)}
 
-		class GoToUrlActionModel(ActionModel):
+		class NavigateActionModel(ActionModel):
 			navigate: GoToUrlAction | None = None
 
-		await tools.act(GoToUrlActionModel(**goto_action), browser_session)
+		await tools.act(NavigateActionModel(**goto_action), browser_session)
 
 		# Wait for the page to load
 		from browser_use.browser.events import NavigationCompleteEvent
@@ -291,10 +291,10 @@ class TestARIAMenuDropdown:
 		# Navigate to the ARIA menu test page
 		goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/aria-menu', new_tab=False)}
 
-		class GoToUrlActionModel(ActionModel):
+		class NavigateActionModel(ActionModel):
 			navigate: GoToUrlAction | None = None
 
-		await tools.act(GoToUrlActionModel(**goto_action), browser_session)
+		await tools.act(NavigateActionModel(**goto_action), browser_session)
 
 		# Wait for the page to load
 		from browser_use.browser.events import NavigationCompleteEvent

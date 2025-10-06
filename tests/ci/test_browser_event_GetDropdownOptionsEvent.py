@@ -280,10 +280,10 @@ class TestGetDropdownOptionsEvent:
 		# Navigate to the native dropdown test page
 		goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/native-dropdown', new_tab=False)}
 
-		class GoToUrlActionModel(ActionModel):
+		class NavigateActionModel(ActionModel):
 			navigate: GoToUrlAction | None = None
 
-		await tools.act(GoToUrlActionModel(**goto_action), browser_session)
+		await tools.act(NavigateActionModel(**goto_action), browser_session)
 
 		# Initialize the DOM state to populate the selector map
 		await browser_session.get_browser_state_summary()
@@ -338,10 +338,10 @@ class TestGetDropdownOptionsEvent:
 		# Navigate to the ARIA menu test page
 		goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/aria-menu', new_tab=False)}
 
-		class GoToUrlActionModel(ActionModel):
+		class NavigateActionModel(ActionModel):
 			navigate: GoToUrlAction | None = None
 
-		await tools.act(GoToUrlActionModel(**goto_action), browser_session)
+		await tools.act(NavigateActionModel(**goto_action), browser_session)
 
 		# Initialize the DOM state
 		await browser_session.get_browser_state_summary()
@@ -400,10 +400,10 @@ class TestGetDropdownOptionsEvent:
 		# Navigate to the custom dropdown test page
 		goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/custom-dropdown', new_tab=False)}
 
-		class GoToUrlActionModel(ActionModel):
+		class NavigateActionModel(ActionModel):
 			navigate: GoToUrlAction | None = None
 
-		await tools.act(GoToUrlActionModel(**goto_action), browser_session)
+		await tools.act(NavigateActionModel(**goto_action), browser_session)
 
 		# Initialize the DOM state
 		await browser_session.get_browser_state_summary()
@@ -458,10 +458,10 @@ class TestGetDropdownOptionsEvent:
 		# Navigate to any test page
 		goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/native-dropdown', new_tab=False)}
 
-		class GoToUrlActionModel(ActionModel):
+		class NavigateActionModel(ActionModel):
 			navigate: GoToUrlAction | None = None
 
-		await tools.act(GoToUrlActionModel(**goto_action), browser_session)
+		await tools.act(NavigateActionModel(**goto_action), browser_session)
 		await browser_session.event_bus.expect(NavigationCompleteEvent, timeout=10.0)
 
 		# Try to get dropdown options with invalid index
@@ -488,10 +488,10 @@ class TestSelectDropdownOptionEvent:
 		# Navigate to the native dropdown test page
 		goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/native-dropdown', new_tab=False)}
 
-		class GoToUrlActionModel(ActionModel):
+		class NavigateActionModel(ActionModel):
 			navigate: GoToUrlAction | None = None
 
-		await tools.act(GoToUrlActionModel(**goto_action), browser_session)
+		await tools.act(NavigateActionModel(**goto_action), browser_session)
 		await browser_session.event_bus.expect(NavigationCompleteEvent, timeout=10.0)
 
 		# Initialize the DOM state
@@ -536,10 +536,10 @@ class TestSelectDropdownOptionEvent:
 		# Navigate to the ARIA menu test page
 		goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/aria-menu', new_tab=False)}
 
-		class GoToUrlActionModel(ActionModel):
+		class NavigateActionModel(ActionModel):
 			navigate: GoToUrlAction | None = None
 
-		await tools.act(GoToUrlActionModel(**goto_action), browser_session)
+		await tools.act(NavigateActionModel(**goto_action), browser_session)
 		await browser_session.event_bus.expect(NavigationCompleteEvent, timeout=10.0)
 
 		# Initialize the DOM state
@@ -588,10 +588,10 @@ class TestSelectDropdownOptionEvent:
 		# Navigate to the custom dropdown test page
 		goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/custom-dropdown', new_tab=False)}
 
-		class GoToUrlActionModel(ActionModel):
+		class NavigateActionModel(ActionModel):
 			navigate: GoToUrlAction | None = None
 
-		await tools.act(GoToUrlActionModel(**goto_action), browser_session)
+		await tools.act(NavigateActionModel(**goto_action), browser_session)
 		await browser_session.event_bus.expect(NavigationCompleteEvent, timeout=10.0)
 
 		# Initialize the DOM state
@@ -636,10 +636,10 @@ class TestSelectDropdownOptionEvent:
 		# Navigate to the native dropdown test page
 		goto_action = {'navigate': GoToUrlAction(url=f'{base_url}/native-dropdown', new_tab=False)}
 
-		class GoToUrlActionModel(ActionModel):
+		class NavigateActionModel(ActionModel):
 			navigate: GoToUrlAction | None = None
 
-		await tools.act(GoToUrlActionModel(**goto_action), browser_session)
+		await tools.act(NavigateActionModel(**goto_action), browser_session)
 		await browser_session.event_bus.expect(NavigationCompleteEvent, timeout=10.0)
 
 		# Initialize the DOM state
