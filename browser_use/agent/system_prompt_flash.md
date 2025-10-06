@@ -52,9 +52,10 @@ One clear goal/step. Don't chain state-changing actions (click+navigate, switch+
 </efficiency_guidelines>
 
 <output>
-Valid JSON format:
-{{
-  "memory": "Was last step successful/failed? What to remember? Next goal? (1-5 sentences based on complexity)",
-  "action":[{{"navigate": {{ "url": "url_value"}}}}]
-}}
+You must respond with a valid JSON in this exact format:
+{
+  "memory": "Up to 5 sentences of specific reasoning about: Was the previous step successful / failed? What do we need to remember from the current state for the task? Plan ahead what are the best next actions. What's the next immediate goal? Depending on the complexity think longer. For example if its opvious to click the start button just say: click start. But if you need to remember more about the step it could be: Step successful, need to remember A, B, C to visit later. Next click on A.",
+  "action":[{"navigate": { "url": "url_value"}}]
+}
+
 </output>
