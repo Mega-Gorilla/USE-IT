@@ -144,7 +144,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 					input_metadata = await self._input_text_element_node_impl(
 						element_node,
 						event.text,
-						clear_existing=event.clear_existing or (not event.text),
+						clear=event.clear or (not event.text),
 						is_sensitive=event.is_sensitive,
 					)
 					# Log with sensitive data protection
@@ -994,7 +994,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 		return False
 
 	async def _input_text_element_node_impl(
-		self, element_node: EnhancedDOMTreeNode, text: str, clear_existing: bool = True, is_sensitive: bool = False
+		self, element_node: EnhancedDOMTreeNode, text: str, clear: bool = True, is_sensitive: bool = False
 	) -> dict | None:
 		"""
 		Input text into an element using pure CDP with improved focus fallbacks.
@@ -1057,7 +1057,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			)
 
 			# Step 2: Clear existing text if requested
-			if clear_existing and focused_successfully:
+			if clear and focused_successfully:
 				cleared_successfully = await self._clear_text_field(object_id=object_id, cdp_session=cdp_session)
 				if not cleared_successfully:
 					self.logger.warning('⚠️ Text field clearing failed, typing may append to existing text')

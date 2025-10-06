@@ -143,7 +143,7 @@ class TypeTextEvent(ElementSelectedEvent[dict | None]):
 
 	node: 'EnhancedDOMTreeNode'
 	text: str
-	clear_existing: bool = True
+	clear: bool = True
 	is_sensitive: bool = False  # Flag to indicate if text contains sensitive data
 	sensitive_key_name: str | None = None  # Name of the sensitive key being typed (e.g., 'username', 'password')
 

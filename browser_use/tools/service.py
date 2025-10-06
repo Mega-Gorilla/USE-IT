@@ -313,7 +313,7 @@ class Tools(Generic[Context]):
 					TypeTextEvent(
 						node=node,
 						text=params.text,
-						clear_existing=params.clear,
+						clear=params.clear,
 						is_sensitive=has_sensitive_data,
 						sensitive_key_name=sensitive_key_name,
 					)
