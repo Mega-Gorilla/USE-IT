@@ -60,7 +60,7 @@ def interactive_llm(httpserver_url):
 			"next_goal": "Navigate to the URL",
 			"action": [
 				{{
-					"go_to_url": {{
+					"navigate": {{
 						"url": "{httpserver_url}",
 						"new_tab": false
 					}}

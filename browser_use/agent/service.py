@@ -255,8 +255,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		elif controller is not None:
 			self.tools = controller
 		else:
-			# Exclude take_screenshot tool when use_vision=False
-			exclude_actions = ['take_screenshot'] if use_vision is False else []
+			# Exclude screenshot tool when use_vision=False
+			exclude_actions = ['screenshot'] if use_vision is False else []
 			self.tools = Tools(exclude_actions=exclude_actions, display_files_in_done_text=display_files_in_done_text)
 
 		# Structured output
@@ -323,7 +323,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			initial_url = self._extract_url_from_task(self.task)
 			if initial_url:
 				self.logger.info(f'🔗 Found URL in task: {initial_url}, adding as initial action...')
-				initial_actions = [{'go_to_url': {'url': initial_url, 'new_tab': False}}]
+				initial_actions = [{'navigate': {'url': initial_url, 'new_tab': False}}]
 
 		self.initial_url = initial_url
 
