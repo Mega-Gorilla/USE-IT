@@ -319,7 +319,7 @@ class TestGetDropdownOptionsEvent:
 			assert option in result.extracted_content, f"Option '{option}' not found in result content"
 
 		# Verify instruction is included
-		assert 'Use the exact text string' in result.extracted_content and 'select_dropdown_option' in result.extracted_content
+		assert 'Use the exact text string' in result.extracted_content and 'select_dropdown' in result.extracted_content
 
 		# Also test direct event dispatch
 		node = await browser_session.get_element_by_index(dropdown_index)

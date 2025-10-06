@@ -454,10 +454,10 @@ class TestToolsIntegration:
 		for option in expected_options[1:]:  # Skip the placeholder option
 			assert option['text'] in result.extracted_content, f"Option '{option['text']}' not found in result content"
 
-		# Verify the instruction for using the text in select_dropdown_option is included
+		# Verify the instruction for using the text in select_dropdown is included
 		assert (
 			'Use the exact text or value string' in result.extracted_content
-			and 'select_dropdown_option' in result.extracted_content
+			and 'select_dropdown' in result.extracted_content
 		)
 
 		# Verify the actual dropdown options in the DOM using CDP

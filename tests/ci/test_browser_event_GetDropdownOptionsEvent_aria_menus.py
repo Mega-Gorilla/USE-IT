@@ -212,8 +212,8 @@ class TestARIAMenuDropdown:
 		for option in expected_options:
 			assert option in result.extracted_content, f"Option '{option}' not found in result content"
 
-		# Verify the instruction for using the text in select_dropdown_option is included
-		assert 'Use the exact text string in select_dropdown_option' in result.extracted_content
+		# Verify the instruction for using the text in select_dropdown is included
+		assert 'Use the exact text string in select_dropdown' in result.extracted_content
 
 	@pytest.mark.skip(reason='TODO: fix')
 	async def test_select_dropdown_option_with_aria_menu(self, tools, browser_session: BrowserSession, base_url):
@@ -347,4 +347,4 @@ class TestARIAMenuDropdown:
 		assert result.extracted_content is not None
 
 		# The action should return some menu options
-		assert 'Use the exact text string in select_dropdown_option' in result.extracted_content
+		assert 'Use the exact text string in select_dropdown' in result.extracted_content
