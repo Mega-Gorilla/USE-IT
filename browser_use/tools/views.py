@@ -90,5 +90,5 @@ class GetDropdownOptionsAction(BaseModel):
 
 
 class SelectDropdownOptionAction(BaseModel):
-	index: int = Field(ge=1, description='index')
+	index: int
 	text: str = Field(description='exact text/value')
