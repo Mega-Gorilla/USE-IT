@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import Any, TypeVar, overload
 
@@ -14,14 +13,12 @@ from openai import (
 	RateLimitError,
 )
 from openai.types.chat import ChatCompletion
-from openai.types.shared_params.response_format_json_schema import JSONSchema, ResponseFormatJSONSchema
 from pydantic import BaseModel
 
 from browser_use.llm.base import BaseChatModel
 from browser_use.llm.cerebras.serializer import CerebrasMessageSerializer
 from browser_use.llm.exceptions import ModelProviderError, ModelRateLimitError
 from browser_use.llm.messages import BaseMessage
-from browser_use.llm.schema import SchemaOptimizer
 from browser_use.llm.views import ChatInvokeCompletion, ChatInvokeUsage
 
 T = TypeVar('T', bound=BaseModel)
@@ -138,11 +135,11 @@ class ChatCerebras(BaseChatModel):
 				# For Cerebras, we'll use a simpler approach without response_format
 				# Instead, we'll ask the model to return JSON and parse it
 				import json
-				
+
 				# Get the schema to guide the model
 				schema = output_format.model_json_schema()
 				schema_str = json.dumps(schema, indent=2)
-				
+
 				# Create a prompt that asks for the specific JSON structure
 				json_prompt = f"""
 Please respond with a JSON object that follows this exact schema:
@@ -150,7 +147,7 @@ Please respond with a JSON object that follows this exact schema:
 
 Your response must be valid JSON only, no other text.
 """
-				
+
 				# Add or modify the last user message to include the JSON prompt
 				if cerebras_messages and cerebras_messages[-1]['role'] == 'user':
 					if isinstance(cerebras_messages[-1]['content'], str):
@@ -159,11 +156,8 @@ Your response must be valid JSON only, no other text.
 						cerebras_messages[-1]['content'].append({'type': 'text', 'text': json_prompt})
 				else:
 					# Add as a new user message
-					cerebras_messages.append({
-						'role': 'user',
-						'content': json_prompt
-					})
-				
+					cerebras_messages.append({'role': 'user', 'content': json_prompt})
+
 				resp = await client.chat.completions.create(  # type: ignore
 					model=self.model,
 					messages=cerebras_messages,  # type: ignore
@@ -172,17 +166,18 @@ Your response must be valid JSON only, no other text.
 				content = resp.choices[0].message.content
 				if not content:
 					raise ModelProviderError('Empty JSON content in Cerebras response', model=self.name)
-				
+
 				usage = self._get_usage(resp)
-				
+
 				# Try to extract JSON from the response
 				import re
+
 				json_match = re.search(r'\{.*\}', content, re.DOTALL)
 				if json_match:
 					json_str = json_match.group(0)
 				else:
 					json_str = content
-				
+
 				parsed = output_format.model_validate_json(json_str)
 				return ChatInvokeCompletion(
 					completion=parsed,
