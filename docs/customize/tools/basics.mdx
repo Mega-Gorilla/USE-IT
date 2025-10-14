@@ -10,7 +10,8 @@ mode: "wide"
 
 
 ```python
-from browser_use import Tools, ActionResult, Browser
+from browser_use import Agent, Tools, ActionResult, Browser
+from browser_use.agent.config import AgentConfig
 
 tools = Tools()
 
@@ -19,11 +20,12 @@ def ask_human(question: str, browser: Browser) -> ActionResult:
     answer = input(f'{question} > ')
     return f'The human responded with: {answer}'
 
-agent = Agent(
+config = AgentConfig(
     task='Ask human for help',
     llm=llm,
     tools=tools,
 )
+agent = Agent(config=config)
 ```
 
 <Note>
