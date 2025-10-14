@@ -75,3 +75,6 @@ claude-code-todo
 
 # Playwright browser binaries
 .playwright-browsers/
+
+# Agent guidance docs are local-only
+Agents.md

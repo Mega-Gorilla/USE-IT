@@ -37,16 +37,20 @@ source .venv/bin/activate
 <Tab title="uv">
 ```bash install browser-use & chromium
 uv pip install browser-use
-uvx playwright install chromium --with-deps 
+uvx playwright install chromium
 ```
 </Tab>
 <Tab title="pip">
 ```bash install browser-use & chromium
 pip install browser-use
-pip install playwright && playwright install chromium --with-deps
+pip install playwright && playwright install chromium
 ```
 </Tab>
 </Tabs>
+
+<Tip>
+  Working inside this repository? Run <Code>./bin/bootstrap_chromium.sh</Code> to create the virtual environment, install dependencies, and download Chromium into <Code>.playwright-browsers/</Code> with <Code>PLAYWRIGHT_BROWSERS_PATH</Code> pre-configured.
+</Tip>
 
 ## 2. Choose your favorite LLM
 Create a `.env` file and add your API key. Don't have one? Start with a [free Gemini key](https://aistudio.google.com/app/u/1/apikey?pli=1).
