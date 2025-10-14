@@ -1,7 +1,9 @@
 import asyncio
 import gc
 import inspect
+import json
 import logging
+import re
 import tempfile
 import time
 from collections.abc import Awaitable, Callable
@@ -134,7 +136,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		sample_images: list[ContentPartTextParam | ContentPartImageParam] | None = None,
 		final_response_after_failure: bool = True,
 		_url_shortening_limit: int = 25,
-		config: AgentConfig[Context, AgentStructuredOutput] | None = None,
+		config: AgentConfig | None = None,
 		**kwargs,
 	):
 		if config is None:
