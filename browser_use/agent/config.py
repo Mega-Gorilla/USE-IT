@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Literal, TypeVar
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Literal
 
 from bubus import EventBus
 
@@ -62,7 +62,7 @@ class AgentConfig:
 	register_external_agent_status_raise_error_callback: Callable[[], Awaitable[bool]] | None = None
 	register_should_stop_callback: Callable[[], Awaitable[bool]] | None = None
 	# Behavioural settings
-	output_model_schema: type[AgentStructuredOutput] | None = None
+	output_model_schema: type[Any] | None = None
 	use_vision: bool | Literal['auto'] = 'auto'
 	save_conversation_path: str | Path | None = None
 	save_conversation_path_encoding: str | None = 'utf-8'
