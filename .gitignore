@@ -54,6 +54,8 @@ token.json
 
 !docs/docs.json
 
+# Include devcontainer configuration files
+!.devcontainer/*.json
 
 temp-profile-*
 
