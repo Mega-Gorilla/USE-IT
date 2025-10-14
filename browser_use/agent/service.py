@@ -34,7 +34,7 @@ from browser_use.agent.history_manager import HistoryManager
 from browser_use.agent.llm_handler import LLMHandler
 from browser_use.agent.message_manager.service import MessageManager
 from browser_use.agent.pause_controller import PauseController
-from browser_use.agent.prompts import SystemPrompt
+from browser_use.agent.prompt import SystemPrompt
 from browser_use.agent.runner import AgentRunner
 from browser_use.agent.step_executor import StepExecutor
 from browser_use.agent.telemetry import TelemetryHandler
