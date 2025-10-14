@@ -3,7 +3,7 @@
 Automatically monitor news websites and extract the latest articles with sentiment analysis using browser agents and Google Gemini.
 
 > [!IMPORTANT]
-> This demo requires browser-use v0.7.7+.
+> This demo requires USE IT v0.7.7+.
 
 https://github.com/user-attachments/assets/698757ca-8827-41f3-98e5-c235d6eef69f
 
@@ -17,7 +17,7 @@ https://github.com/user-attachments/assets/698757ca-8827-41f3-98e5-c235d6eef69f
 
 ## Setup
 
-Make sure the newest version of browser-use is installed:
+Make sure the newest version of USE IT is installed:
 ```bash
 pip install -U browser-use
 ```
@@ -29,8 +29,8 @@ export GEMINI_API_KEY='your-google-api-key-here'
 
 Clone the repo and cd into the app folder
 ```bash
-git clone https://github.com/browser-use/browser-use.git
-cd browser-use/examples/apps/news-use
+git clone https://github.com/Mega-Gorilla/USE-IT.git
+cd USE-IT/examples/apps/news-use
 ```
 
 ## Usage

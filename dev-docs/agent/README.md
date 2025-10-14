@@ -376,22 +376,22 @@ agent = Agent(
 ### 🔗 外部リンク
 
 - [公式ドキュメント](https://docs.browser-use.com)
-- [GitHub リポジトリ](https://github.com/browser-use/browser-use)
+- [GitHub リポジトリ](https://github.com/Mega-Gorilla/USE-IT)
 - [サンプルコード](../../examples/)
 - [テストケース](../../tests/ci/)
 
 ### 💬 コミュニティ
 
 - [Discord](https://discord.gg/browser-use)
-- [GitHub Discussions](https://github.com/browser-use/browser-use/discussions)
-- [Issue Tracker](https://github.com/browser-use/browser-use/issues)
+- [GitHub Discussions](https://github.com/Mega-Gorilla/USE-IT/discussions)
+- [Issue Tracker](https://github.com/Mega-Gorilla/USE-IT/issues)
 
 ## 貢献
 
 Agentの改善に貢献する方法：
 
-1. **バグ報告**: [Issue](https://github.com/browser-use/browser-use/issues)を作成
-2. **機能提案**: [Discussions](https://github.com/browser-use/browser-use/discussions)で議論
+1. **バグ報告**: [Issue](https://github.com/Mega-Gorilla/USE-IT/issues)を作成
+2. **機能提案**: [Discussions](https://github.com/Mega-Gorilla/USE-IT/discussions)で議論
 3. **コード貢献**: プルリクエストを送信
 4. **ドキュメント**: typoの修正、説明の追加など
 
@@ -399,8 +399,8 @@ Agentの改善に貢献する方法：
 
 ```bash
 # リポジトリのクローン
-git clone https://github.com/browser-use/browser-use.git
-cd browser-use
+git clone https://github.com/Mega-Gorilla/USE-IT.git
+cd USE-IT
 
 # 依存関係のインストール
 uv venv --python 3.12

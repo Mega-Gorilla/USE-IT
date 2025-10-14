@@ -1030,8 +1030,8 @@ class BrowserUseApp(App):
 				with HorizontalGroup(classes='link-row'):
 					yield Static('[dim]Report any issues:[/]        🐛 ', markup=True, classes='link-label')
 					yield Link(
-						'https://github.com/browser-use/browser-use/issues',
-						url='https://github.com/browser-use/browser-use/issues',
+						'https://github.com/Mega-Gorilla/USE-IT/issues',
+						url='https://github.com/Mega-Gorilla/USE-IT/issues',
 						classes='link-green link-url',
 					)
 
@@ -1777,7 +1777,7 @@ async def run_auth_command():
 						},
 						'done': {
 							'success': True,
-							'text': '⭐ Starred browser-use/browser-use repository! Welcome to the community!',
+							'text': '⭐ Starred Mega-Gorilla/USE-IT repository! Welcome to the community!',
 						},
 					}
 				],
@@ -1785,7 +1785,7 @@ async def run_auth_command():
 				evaluation_previous_goal='Authentication completed successfully',
 				memory='User authenticated with Browser Use Cloud and is now part of the community',
 				screenshot_url=None,
-				url='https://github.com/browser-use/browser-use',
+				url='https://github.com/Mega-Gorilla/USE-IT',
 			)
 			print('📤 Sending dummy step event...')
 			await sync_service.handle_event(step_event)

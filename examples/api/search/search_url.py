@@ -69,4 +69,4 @@ if __name__ == '__main__':
 	# asyncio.run(search_url("https://techcrunch.com", "latest startup funding news", depth=3))
 
 	# Example 3: Product research
-	# asyncio.run(search_url("https://github.com/browser-use/browser-use", "installation instructions", depth=2))
+	# asyncio.run(search_url("https://github.com/Mega-Gorilla/USE-IT", "installation instructions", depth=2))

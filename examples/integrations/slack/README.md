@@ -38,7 +38,7 @@ Steps to create and configure a Slack bot:
 6. Invite the bot to a channel:
     *   Use the `/invite @your-bot-name` command in the Slack channel where you want the bot to be active.
 7. Run the code in `examples/slack_example.py` to start the bot with your bot token and signing secret.
-8. Write e.g. "$bu what's the weather in Tokyo?" to start a browser-use task and get a response inside the Slack channel.
+8. Write e.g. "$bu what's the weather in Tokyo?" to start a USE IT task and get a response inside the Slack channel.
 
 ## Installing and Starting ngrok
 
