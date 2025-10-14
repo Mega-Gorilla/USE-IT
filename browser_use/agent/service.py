@@ -37,6 +37,7 @@ from browser_use import Browser, BrowserProfile, BrowserSession
 
 # 起動時に重い agent.views の読み込みを避けるため GIF のインポートは遅延させる
 # （参考） browser_use.agent.gif から create_history_gif をインポートするサンプル  # 遅延インポート例
+from browser_use.agent.filesystem_manager import FilesystemManager
 from browser_use.agent.message_manager.service import (
 	MessageManager,
 )
@@ -211,6 +212,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			page_extraction_llm = llm
 		if available_file_paths is None:
 			available_file_paths = []
+		self._initial_available_file_paths = list(available_file_paths)
 
 		# タイムアウトが未設定ならモデル名に応じて決定する
 		if llm_timeout is None:
@@ -245,8 +247,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			id=uuid7str()[:-4] + self.id[-4:],  # ログ上で並べて確認しやすいよう末尾4文字を共有
 		)
 
-		# 利用可能なファイルパスを属性として保持
-		self.available_file_paths = available_file_paths
+		self.filesystem_manager: FilesystemManager | None = None
 
 		# コアとなる構成要素
 		self.task = task
@@ -313,7 +314,15 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		self.agent_directory = base_tmp / f'browser_use_agent_{self.id}_{timestamp}'
 
 		# ファイルシステムとスクリーンショットサービスを準備
-		self._set_file_system(file_system_path)
+		self.filesystem_manager = FilesystemManager(
+			state=self.state,
+			browser_session=self.browser_session,
+			agent_directory=self.agent_directory,
+			available_file_paths=self._initial_available_file_paths,
+			file_system_path=file_system_path,
+			logger=self.logger,
+		)
+		self._initial_available_file_paths = []
 		self._set_screenshot_service()
 
 		# アクションの初期セットアップ
@@ -451,13 +460,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			self.settings.save_conversation_path = Path(self.settings.save_conversation_path).expanduser().resolve()
 			self.logger.info(f'💬 Saving conversation to {_log_pretty_path(self.settings.save_conversation_path)}')
 
-		# ダウンロード監視を初期化
-		assert self.browser_session is not None, 'BrowserSession is not set up'
-		self.has_downloads_path = self.browser_session.browser_profile.downloads_path is not None
-		if self.has_downloads_path:
-			self._last_known_downloads: list[str] = []
-			self.logger.debug('📁 Initialized download tracking for agent')
-
 		# イベント駆動の一時停止制御（シリアライズの都合で AgentState には含めない）
 		self._external_pause_event = asyncio.Event()
 		self._external_pause_event.set()
@@ -479,81 +481,35 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		assert self.browser_session is not None, 'BrowserSession is not set up'
 		return self.browser_session.browser_profile
 
+	@property
+	def file_system(self) -> FileSystem | None:
+		if not self.filesystem_manager:
+			return None
+		return self.filesystem_manager.file_system
+
+	@property
+	def file_system_path(self) -> str | None:
+		if not self.filesystem_manager:
+			return None
+		return self.filesystem_manager.file_system_path
+
+	@property
+	def available_file_paths(self) -> list[str]:
+		if self.filesystem_manager:
+			return self.filesystem_manager.available_file_paths
+		return self._initial_available_file_paths
+
+	@available_file_paths.setter
+	def available_file_paths(self, paths: list[str]) -> None:
+		if self.filesystem_manager:
+			self.filesystem_manager.available_file_paths = list(paths)
+		else:
+			self._initial_available_file_paths = list(paths)
+
 	async def _check_and_update_downloads(self, context: str = '') -> None:
 		"""Check for new downloads and update available file paths."""
-		if not self.has_downloads_path:
-			return
-
-		assert self.browser_session is not None, 'BrowserSession is not set up'
-
-		try:
-			current_downloads = self.browser_session.downloaded_files
-			if current_downloads != self._last_known_downloads:
-				self._update_available_file_paths(current_downloads)
-				self._last_known_downloads = current_downloads
-				if context:
-					self.logger.debug(f'📁 {context}: Updated available files')
-		except Exception as e:
-			error_context = f' {context}' if context else ''
-			self.logger.debug(f'📁 Failed to check for downloads{error_context}: {type(e).__name__}: {e}')
-
-	def _update_available_file_paths(self, downloads: list[str]) -> None:
-		"""Update available_file_paths with downloaded files."""
-		if not self.has_downloads_path:
-			return
-
-		current_files = set(self.available_file_paths or [])
-		new_files = set(downloads) - current_files
-
-		if new_files:
-			self.available_file_paths = list(current_files | new_files)
-
-			self.logger.info(
-				f'📁 Added {len(new_files)} downloaded files to available_file_paths (total: {len(self.available_file_paths)} files)'
-			)
-			for file_path in new_files:
-				self.logger.info(f'📄 New file available: {file_path}')
-		else:
-			self.logger.debug(f'📁 No new downloads detected (tracking {len(current_files)} files)')
-
-	def _set_file_system(self, file_system_path: str | None = None) -> None:
-		# 引数の矛盾がないか確認
-		if self.state.file_system_state and file_system_path:
-			raise ValueError(
-				'Cannot provide both file_system_state (from agent state) and file_system_path. '
-				'Either restore from existing state or create new file system at specified path, not both.'
-			)
-
-		# まず既存状態から復元すべきか確認
-		if self.state.file_system_state:
-			try:
-				# 保存されている状態から同じ場所にファイルシステムを復元
-				self.file_system = FileSystem.from_state(self.state.file_system_state)
-				# base_dir の親ディレクトリが元の file_system_path
-				self.file_system_path = str(self.file_system.base_dir)
-				logger.debug(f'💾 File system restored from state to: {self.file_system_path}')
-				return
-			except Exception as e:
-				logger.error(f'💾 Failed to restore file system from state: {e}')
-				raise e
-
-		# 新しいファイルシステムを初期化
-		try:
-			if file_system_path:
-				self.file_system = FileSystem(file_system_path)
-				self.file_system_path = file_system_path
-			else:
-				# ファイルシステムとしてエージェントディレクトリを使用
-				self.file_system = FileSystem(self.agent_directory)
-				self.file_system_path = str(self.agent_directory)
-		except Exception as e:
-			logger.error(f'💾 Failed to initialize file system: {e}.')
-			raise e
-
-		# ファイルシステムの状態を AgentState に保存
-		self.state.file_system_state = self.file_system.get_state()
-
-		logger.debug(f'💾 File system path: {self.file_system_path}')
+		if self.filesystem_manager:
+			await self.filesystem_manager.check_and_update_downloads(context)
 
 	def _set_screenshot_service(self) -> None:
 		"""Initialize screenshot service using agent directory"""
@@ -568,11 +524,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 	def save_file_system_state(self) -> None:
 		"""Save current file system state to agent state"""
-		if self.file_system:
-			self.state.file_system_state = self.file_system.get_state()
-		else:
-			logger.error('💾 File system is not set up. Cannot save state.')
-			raise ValueError('File system is not set up. Cannot save state.')
+		if self.filesystem_manager:
+			self.filesystem_manager.save_state()
 
 	def _set_browser_use_version_and_source(self, source_override: str | None = None) -> None:
 		"""Get the version from pyproject.toml and determine the source of the browser-use package"""
