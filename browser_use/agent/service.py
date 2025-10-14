@@ -885,30 +885,30 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 	def save_history(self, file_path: str | Path | None = None) -> None:
 		self.history_manager.save_history(file_path)
 
-	# --- Backwards compatibility wrappers for URL processing helpers ---
+		# --- 後方互換ラッパー（将来的に直接 LLMHandler を利用することを推奨）---
 
 	def _process_messsages_and_replace_long_urls_shorter_ones(self, input_messages: list['BaseMessage']) -> dict[str, str]:
-		"""Backward-compatible proxy to LLMHandler URL-shortening helper."""
+		"""後方互換用: 既存コードは直接 LLMHandler を参照するように更新してください。"""
 		return self.llm_handler._process_messages_and_shorten_urls(input_messages)
 
 	def _recursive_process_all_strings_inside_pydantic_model(self, model: 'BaseModel', url_replacements: dict[str, str]) -> None:
-		"""Backward-compatible proxy to restore URLs inside Pydantic models."""
+		"""後方互換用: 既存コードは直接 LLMHandler を参照するように更新してください。"""
 		self.llm_handler._recursive_process_model(model, url_replacements)
 
 	def _replace_urls_in_text(self, text: str) -> tuple[str, dict[str, str]]:
-		"""Backward-compatible proxy to shorten URLs within plain text."""
+		"""後方互換用: 既存コードは直接 LLMHandler を参照するように更新してください。"""
 		return self.llm_handler._replace_urls_in_text(text)
 
 	def _replace_shortened_urls_in_string(self, text: str, url_replacements: dict[str, str]) -> str:
-		"""Backward-compatible proxy to restore original URLs inside a string."""
+		"""後方互換用: 既存コードは直接 LLMHandler を参照するように更新してください。"""
 		return self.llm_handler._replace_shortened_urls_in_string(text, url_replacements)
 
 	def _recursive_process_dict(self, dictionary: dict, url_replacements: dict[str, str]) -> None:
-		"""Backward-compatible proxy to process dictionaries for URL restoration."""
+		"""後方互換用: 既存コードは直接 LLMHandler を参照するように更新してください。"""
 		self.llm_handler._recursive_process_dict(dictionary, url_replacements)
 
 	def _recursive_process_list_or_tuple(self, container: list | tuple, url_replacements: dict[str, str]) -> list | tuple:
-		"""Backward-compatible proxy to process iterables for URL restoration."""
+		"""後方互換用: 既存コードは直接 LLMHandler を参照するように更新してください。"""
 		return self.llm_handler._recursive_process_iterable(container, url_replacements)
 
 	def pause(self) -> None:
