@@ -128,7 +128,7 @@ async def _prepare_context(self, step_info: AgentStepInfo | None) -> BrowserStat
     )
 
     # 2. ダウンロード確認
-    # （_check_and_update_downloads実装: browser_use/agent/service.py:483）
+    # （check_and_update_downloads実装: browser_use/agent/filesystem_manager/service.py）
     await self._check_and_update_downloads()
 
     # 3. 停止/一時停止の確認
@@ -597,28 +597,15 @@ async def _post_process(self) -> None:
 
 ```python
 async def _check_and_update_downloads(self, context: str) -> None:
-    """新しいダウンロードを確認して記録"""
+    """FilesystemManager に委譲してダウンロード一覧を最新化"""
 
-    # ブラウザからダウンロードリストを取得
-    downloads = await self.browser_session.get_downloads()
-
-    # 新しいダウンロードをフィルタ
-    new_downloads = [
-        d for d in downloads
-        if d.path not in self.tracked_downloads
-    ]
-
-    if new_downloads:
-        for download in new_downloads:
-            logger.info(f"📥 新しいダウンロード: {download.path}")
-
-            # available_file_paths に追加
-            self.available_file_paths.append(download.path)
-            self.tracked_downloads.add(download.path)
-
-        # 次のステップでLLMに伝える
-        self._message_manager.add_download_notification(new_downloads)
+    if self.filesystem_manager:
+        await self.filesystem_manager.check_and_update_downloads(context)
 ```
+
+実際のダウンロード検知・`available_file_paths` 更新ロジックは
+`browser_use/agent/filesystem_manager/service.py` に切り出されており、
+`BrowserSession.downloaded_files` からの差分検出やログ出力を担います。
 
 ## エラーハンドリング
 
@@ -759,6 +746,9 @@ async def _finalize(self, browser_state: BrowserStateSummary | None) -> None:
     # 6. ステップカウンタを増やす
     self.state.n_steps += 1
 ```
+
+`self.save_file_system_state()` は `FilesystemManager.save_state()` への薄いラッパーであり、
+実際の永続化処理は `browser_use/agent/filesystem_manager/service.py` 側に分離されました。
 
 ### 履歴アイテムの構造
 
