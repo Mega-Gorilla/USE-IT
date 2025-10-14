@@ -188,7 +188,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				final_response_after_failure=final_response_after_failure,
 				url_shortening_limit=_url_shortening_limit,
 				extra=kwargs,
-			)
+			)  # type: ignore[call-arg]
 		else:
 			# config 優先、追加の kwargs は余白に詰める
 			if kwargs:
