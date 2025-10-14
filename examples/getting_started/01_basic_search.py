@@ -10,12 +10,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from browser_use import Agent, ChatOpenAI
+from browser_use.agent.config import AgentConfig
 
 
 async def main():
 	llm = ChatOpenAI(model='gpt-4.1-mini')
 	task = "Search Google for 'what is browser automation' and tell me the top 3 results"
-	agent = Agent(task=task, llm=llm)
+	config = AgentConfig(task=task, llm=llm)
+	agent = Agent(config=config)
 	await agent.run()
 
 
