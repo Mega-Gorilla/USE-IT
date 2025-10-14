@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Generic, Literal, TypeVar
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Literal, TypeVar
 
 from bubus import EventBus
 
@@ -13,9 +13,6 @@ from browser_use.llm.messages import ContentPartImageParam, ContentPartTextParam
 from browser_use.sync import CloudSync
 from browser_use.telemetry.service import ProductTelemetry
 from browser_use.tools.service import Tools
-
-Context = TypeVar('Context')
-
 
 if TYPE_CHECKING:
 	from browser_use.browser.views import BrowserStateSummary
@@ -37,7 +34,7 @@ class AgentFactories:
 
 
 @dataclass
-class AgentConfig(Generic[Context, AgentStructuredOutput]):
+class AgentConfig:
 	"""Aggregate configuration used to construct an Agent."""
 
 	task: str
@@ -47,8 +44,8 @@ class AgentConfig(Generic[Context, AgentStructuredOutput]):
 	browser_session: BrowserSession | None = None
 	browser: Browser | None = None
 	# Tooling
-	tools: Tools[Context] | None = None
-	controller: Tools[Context] | None = None
+	tools: Tools[Any] | None = None
+	controller: Tools[Any] | None = None
 	# Initial execution options
 	sensitive_data: dict[str, str | dict[str, str]] | None = None
 	initial_actions: list[dict[str, dict[str, Any]]] | None = None
