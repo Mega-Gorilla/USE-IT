@@ -39,7 +39,7 @@
 
 ## ステップ処理の全体構造
 
-**実装場所**: `browser_use/agent/service.py:661`
+**実装場所**: `browser_use/agent/step_executor/service.py`
 
 ### アーキテクチャ図
 
@@ -110,7 +110,7 @@ async def step(self) -> None:
 
 ## Phase 1: コンテキスト準備
 
-**実装場所**: `browser_use/agent/service.py:687`
+**実装場所**: `browser_use/agent/step_executor/service.py`
 
 **目的**: LLM が判断を下すために必要なすべての情報を収集・整理する
 
@@ -135,7 +135,7 @@ async def _prepare_context(self, step_info: AgentStepInfo | None) -> BrowserStat
     await self._check_stop_or_pause()
 
     # 4. アクションモデルの更新（ページ固有）
-    # （_update_action_models_for_page実装: browser_use/agent/service.py:2104）
+    # （_update_action_models_for_page実装: browser_use/agent/service.py）
     await self._update_action_models_for_page(browser_state.url)
 
     # 5. メッセージの作成
@@ -300,7 +300,7 @@ simplified_dom = simplify_dom_for_llm(
 
 ### Phase 2a: LLM呼び出し (`_get_next_action`)
 
-**実装場所**: `browser_use/agent/service.py:737`
+**実装場所**: `browser_use/agent/step_executor/service.py`
 
 **目的**: LLM に現在の状況を伝え、次に取るべきアクションを決定してもらう
 
@@ -406,7 +406,7 @@ class CurrentState:
 
 ### Phase 2b: アクション実行 (`_execute_actions`)
 
-**実装場所**: `browser_use/agent/service.py:772`
+**実装場所**: `browser_use/agent/step_executor/service.py`
 
 **目的**: LLMが決定したアクションを実際にブラウザで実行する
 
@@ -426,7 +426,7 @@ async def _execute_actions(self) -> None:
 
 #### multi_act の内部動作
 
-**実装場所**: `browser_use/agent/service.py:1662`
+**実装場所**: `browser_use/agent/step_executor/service.py`
 
 ```python
 async def multi_act(self, actions: list[ActionModel]) -> list[ActionResult]:
@@ -557,7 +557,7 @@ class ActionResult:
 
 ## Phase 3: 後処理
 
-**実装場所**: `browser_use/agent/service.py:783`
+**実装場所**: `browser_use/agent/step_executor/service.py`
 
 **目的**: アクション実行後の状態を確認し、記録する
 
@@ -609,7 +609,7 @@ async def _check_and_update_downloads(self, context: str) -> None:
 
 ## エラーハンドリング
 
-**実装場所**: `browser_use/agent/service.py:813`
+**実装場所**: `browser_use/agent/step_executor/service.py`
 
 **目的**: 予期しないエラーを適切に処理し、可能な限り続行する
 
@@ -692,30 +692,25 @@ if self.state.consecutive_failures > self.settings.max_failures:
 
 ## 最終処理
 
-**実装場所**: `browser_use/agent/service.py:838`
+**実装場所**: `browser_use/agent/step_executor/service.py`
 
 **目的**: ステップの結果を記録し、履歴を更新する（必ず実行される）
 
 ```python
-async def _finalize(self, browser_state: BrowserStateSummary | None) -> None:
+async def finalize(self, browser_state: BrowserStateSummary | None) -> None:
     """最終処理（finally block で必ず実行）"""
 
-    step_end_time = time.time()
-
     if not self.state.last_result:
-        return  # 結果がない場合は何もしない
+        return
 
     if browser_state:
-        # 1. メタデータの作成
         metadata = StepMetadata(
             step_number=self.state.n_steps,
             step_start_time=self.step_start_time,
-            step_end_time=step_end_time,
+            step_end_time=time.time(),
         )
 
-        # 2. 履歴アイテムの作成
-        # （_make_history_item実装: browser_use/agent/service.py:982）
-        await self._make_history_item(
+        await self.history_manager.create_history_item(
             self.state.last_model_output,
             browser_state,
             self.state.last_result,
@@ -723,17 +718,15 @@ async def _finalize(self, browser_state: BrowserStateSummary | None) -> None:
             state_message=self._message_manager.last_state_message_text,
         )
 
-    # 3. ステップ完了のログ
-    self._log_step_completion_summary(
+    self.telemetry_handler.log_step_completion_summary(
         self.step_start_time,
-        self.state.last_result
+        self.state.last_result,
     )
 
-    # 4. ファイルシステムの保存
     self.save_file_system_state()
 
-    # 5. イベント送信（クラウド同期）
-    if self.enable_cloud_sync and browser_state:
+    if self.enable_cloud_sync and browser_state and self.state.last_model_output:
+        # actions_data は実装内で model_output.action から構築される
         step_event = CreateAgentStepEvent.from_agent_step(
             self,
             self.state.last_model_output,
@@ -743,7 +736,6 @@ async def _finalize(self, browser_state: BrowserStateSummary | None) -> None:
         )
         self.eventbus.dispatch(step_event)
 
-    # 6. ステップカウンタを増やす
     self.state.n_steps += 1
 ```
 
