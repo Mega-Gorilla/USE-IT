@@ -6,6 +6,8 @@
 
 <h1 align="center">Enable AI to control your browser</h1>
 
+> **Note:** This is a fork of the original [browser-use/browser-use](https://github.com/browser-use/browser-use) repository. The fork keeps the core functionality while providing a simplified setup (local Chromium bootstrap, minimal documentation) tailored for our environment.
+
 English | [日本語](#日本語-japanese)
 
 
@@ -76,6 +78,8 @@ Either path keeps large browser binaries out of Git while guaranteeing consisten
 
 
 # 日本語 (Japanese)
+
+> **注意:** このリポジトリは [browser-use/browser-use](https://github.com/browser-use/browser-use) のフォークです。オリジナルから主要機能を引き継ぎつつ、ローカル開発向けのセットアップ（Chromium ブートストラップや簡潔なドキュメント）を追加しています。
 
 ## クイックスタート
 
