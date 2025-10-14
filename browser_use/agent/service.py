@@ -35,8 +35,8 @@ from uuid_extensions import uuid7str
 
 from browser_use import Browser, BrowserProfile, BrowserSession
 
-# Lazy import for gif to avoid heavy agent.views import at startup
-# from browser_use.agent.gif import create_history_gif
+# 起動時に重い agent.views の読み込みを避けるため GIF のインポートは遅延させる
+# （参考） browser_use.agent.gif から create_history_gif をインポートするサンプル  # 遅延インポート例
 from browser_use.agent.message_manager.service import (
 	MessageManager,
 )
@@ -81,41 +81,41 @@ logger = logging.getLogger(__name__)
 def log_response(response: AgentOutput, registry=None, logger=None) -> None:
 	"""Utility function to log the model's response."""
 
-	# Use module logger if no logger provided
+	# logger が渡されなかった場合はモジュールの logger を使う
 	if logger is None:
 		logger = logging.getLogger(__name__)
 
-	# Only log thinking if it's present
+	# Thinking が存在する場合のみ出力する
 	if response.current_state.thinking:
 		logger.debug(f'💡 Thinking:\n{response.current_state.thinking}')
 
-	# Only log evaluation if it's not empty
+	# 評価テキストがあれば記録する
 	eval_goal = response.current_state.evaluation_previous_goal
 	if eval_goal:
 		if 'success' in eval_goal.lower():
 			emoji = '👍'
-			# Green color for success
+			# 成功時は緑色で表示
 			logger.info(f'  \033[32m{emoji} Eval: {eval_goal}\033[0m')
 		elif 'failure' in eval_goal.lower():
 			emoji = '⚠️'
-			# Red color for failure
+			# 失敗時は赤色で表示
 			logger.info(f'  \033[31m{emoji} Eval: {eval_goal}\033[0m')
 		else:
 			emoji = '❔'
-			# No color for unknown/neutral
+			# 不明／中立は色を付けない
 			logger.info(f'  {emoji} Eval: {eval_goal}')
 
-	# Always log memory if present
+	# メモリがあれば必ず出力する
 	if response.current_state.memory:
 		logger.debug(f'🧠 Memory: {response.current_state.memory}')
 
-	# Only log next goal if it's not empty
+	# 次の目標がある場合のみ出力する
 	next_goal = response.current_state.next_goal
 	if next_goal:
-		# Blue color for next goal
+		# 次の目標は青色で表示
 		logger.info(f'  \033[34m🎯 Next goal: {next_goal}\033[0m')
 	else:
-		logger.info('')  # Add empty line for spacing
+		logger.info('')  # 見やすさのため空行を挿入
 
 
 Context = TypeVar('Context')
@@ -130,29 +130,29 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		self,
 		task: str,
 		llm: BaseChatModel | None = None,
-		# Optional parameters
+		# 任意パラメータ
 		browser_profile: BrowserProfile | None = None,
 		browser_session: BrowserSession | None = None,
-		browser: Browser | None = None,  # Alias for browser_session
+		browser: Browser | None = None,  # browser_session のエイリアス
 		tools: Tools[Context] | None = None,
-		controller: Tools[Context] | None = None,  # Alias for tools
-		# Initial agent run parameters
+		controller: Tools[Context] | None = None,  # tools のエイリアス
+		# Agent 初回実行時のパラメータ
 		sensitive_data: dict[str, str | dict[str, str]] | None = None,
 		initial_actions: list[dict[str, dict[str, Any]]] | None = None,
-		# Cloud Callbacks
+		# クラウド連携用コールバック
 		register_new_step_callback: (
-			Callable[['BrowserStateSummary', 'AgentOutput', int], None]  # Sync callback
-			| Callable[['BrowserStateSummary', 'AgentOutput', int], Awaitable[None]]  # Async callback
+			Callable[['BrowserStateSummary', 'AgentOutput', int], None]  # 同期コールバック
+			| Callable[['BrowserStateSummary', 'AgentOutput', int], Awaitable[None]]  # 非同期コールバック
 			| None
 		) = None,
 		register_done_callback: (
-			Callable[['AgentHistoryList'], Awaitable[None]]  # Async Callback
-			| Callable[['AgentHistoryList'], None]  # Sync Callback
+			Callable[['AgentHistoryList'], Awaitable[None]]  # 非同期コールバック
+			| Callable[['AgentHistoryList'], None]  # 同期コールバック
 			| None
 		) = None,
 		register_external_agent_status_raise_error_callback: Callable[[], Awaitable[bool]] | None = None,
 		register_should_stop_callback: Callable[[], Awaitable[bool]] | None = None,
-		# Agent settings
+		# Agent 設定
 		output_model_schema: type[AgentStructuredOutput] | None = None,
 		use_vision: bool | Literal['auto'] = 'auto',
 		save_conversation_path: str | Path | None = None,
@@ -194,16 +194,16 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 					llm = get_llm_by_name(default_llm_name)
 				except (ImportError, ValueError) as e:
-					# Use the logger that's already imported at the top of the module
+					# ファイル冒頭で用意した logger をそのまま利用する
 					logger.warning(
 						f'Failed to create default LLM "{default_llm_name}": {e}. Falling back to ChatGoogle(model="gemini-flash-latest")'
 					)
 					llm = ChatGoogle(model='gemini-flash-latest')
 			else:
-				# No default LLM specified, use the original default
+				# デフォルト LLM が指定されていない場合は元のデフォルトを使う
 				llm = ChatGoogle(model='gemini-flash-latest')
 
-		# set flashmode = True if llm is ChatBrowserUse
+		# LLM が ChatBrowserUse の場合は flash_mode を強制的に有効にする
 		if llm.provider == 'browser-use':
 			flash_mode = True
 
@@ -212,7 +212,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		if available_file_paths is None:
 			available_file_paths = []
 
-		# Set timeout based on model name if not explicitly provided
+		# タイムアウトが未設定ならモデル名に応じて決定する
 		if llm_timeout is None:
 
 			def _get_model_timeout(llm_model: BaseChatModel) -> int:
@@ -225,7 +225,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				elif 'o3' in model_name or 'claude' in model_name or 'sonnet' in model_name or 'deepseek' in model_name:
 					return 90
 				else:
-					return 60  # Default timeout
+					return 60  # 既定のタイムアウト値
 
 			llm_timeout = _get_model_timeout(llm)
 
@@ -235,20 +235,20 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		browser_profile = browser_profile or DEFAULT_BROWSER_PROFILE
 
-		# Handle browser vs browser_session parameter (browser takes precedence)
+		# browser と browser_session が同時指定された場合は browser を優先する
 		if browser and browser_session:
 			raise ValueError('Cannot specify both "browser" and "browser_session" parameters. Use "browser" for the cleaner API.')
 		browser_session = browser or browser_session
 
 		self.browser_session = browser_session or BrowserSession(
 			browser_profile=browser_profile,
-			id=uuid7str()[:-4] + self.id[-4:],  # re-use the same 4-char suffix so they show up together in logs
+			id=uuid7str()[:-4] + self.id[-4:],  # ログ上で並べて確認しやすいよう末尾4文字を共有
 		)
 
-		# Initialize available file paths as direct attribute
+		# 利用可能なファイルパスを属性として保持
 		self.available_file_paths = available_file_paths
 
-		# Core components
+		# コアとなる構成要素
 		self.task = task
 		self.llm = llm
 		self.directly_open_url = directly_open_url
@@ -259,11 +259,11 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		elif controller is not None:
 			self.tools = controller
 		else:
-			# Exclude screenshot tool when use_vision=False
+			# use_vision=False のときはスクリーンショット系アクションを除外
 			exclude_actions = ['screenshot'] if use_vision is False else []
 			self.tools = Tools(exclude_actions=exclude_actions, display_files_in_done_text=display_files_in_done_text)
 
-		# Structured output
+		# 構造化出力の設定
 		self.output_model_schema = output_model_schema
 		if self.output_model_schema is not None:
 			self.tools.use_structured_output_action(self.output_model_schema)
@@ -294,35 +294,35 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			final_response_after_failure=final_response_after_failure,
 		)
 
-		# Token cost service
+		# トークンコスト算出サービス
 		self.token_cost_service = TokenCost(include_cost=calculate_cost)
 		self.token_cost_service.register_llm(llm)
 		self.token_cost_service.register_llm(page_extraction_llm)
 
-		# Initialize state
+		# 状態の初期化
 		self.state = injected_agent_state or AgentState()
 
-		# Initialize history
+		# 履歴の初期化
 		self.history = AgentHistoryList(history=[], usage=None)
 
-		# Initialize agent directory
+		# エージェント用ディレクトリの初期化
 		import time
 
 		timestamp = int(time.time())
 		base_tmp = Path(tempfile.gettempdir())
 		self.agent_directory = base_tmp / f'browser_use_agent_{self.id}_{timestamp}'
 
-		# Initialize file system and screenshot service
+		# ファイルシステムとスクリーンショットサービスを準備
 		self._set_file_system(file_system_path)
 		self._set_screenshot_service()
 
-		# Action setup
+		# アクションの初期セットアップ
 		self._setup_action_models()
 		self._set_browser_use_version_and_source(source)
 
 		initial_url = None
 
-		# only load url if no initial actions are provided
+		# 初期アクションが無い場合に限り URL 自動ロードを行う
 		if self.directly_open_url and not self.state.follow_up_task and not initial_actions:
 			initial_url = self._extract_url_from_task(self.task)
 			if initial_url:
@@ -332,16 +332,16 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		self.initial_url = initial_url
 
 		self.initial_actions = self._convert_initial_actions(initial_actions) if initial_actions else None
-		# Verify we can connect to the model
+		# モデル接続と設定を確認する
 		self._verify_and_setup_llm()
 
-		# TODO: move this logic to the LLMs
-		# Handle users trying to use use_vision=True with DeepSeek models
+		# TODO: この判定は将来的に LLM 実装側へ移す
+		# DeepSeek 系モデルで use_vision=True が指定された場合の警告
 		if 'deepseek' in self.llm.model.lower():
 			self.logger.warning('⚠️ DeepSeek models do not support use_vision=True yet. Setting use_vision=False for now...')
 			self.settings.use_vision = False
 
-		# Handle users trying to use use_vision=True with XAI models
+		# XAI(Grok) 系モデルで use_vision=True が指定された場合の警告
 		if 'grok' in self.llm.model.lower():
 			self.logger.warning('⚠️ XAI models do not support use_vision=True yet. Setting use_vision=False for now...')
 			self.settings.use_vision = False
@@ -352,8 +352,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			f'{" +file_system" if self.file_system else ""}'
 		)
 
-		# Initialize message manager with state
-		# Initial system prompt with all actions - will be updated during each step
+		# MessageManager を状態付きで初期化
+		# 初期システムプロンプトには全アクションが含まれ、各ステップで更新される
 		self._message_manager = MessageManager(
 			task=task,
 			system_message=SystemPrompt(
@@ -366,7 +366,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			file_system=self.file_system,
 			state=self.state.message_manager_state,
 			use_thinking=self.settings.use_thinking,
-			# Settings that were previously in MessageManagerSettings
+			# 以前 MessageManagerSettings にあったパラメータ
 			include_attributes=self.settings.include_attributes,
 			sensitive_data=sensitive_data,
 			max_history_items=self.settings.max_history_items,
@@ -377,10 +377,10 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		)
 
 		if self.sensitive_data:
-			# Check if sensitive_data has domain-specific credentials
+			# domain ごとの資格情報が含まれているか確認する
 			has_domain_specific_credentials = any(isinstance(v, dict) for v in self.sensitive_data.values())
 
-			# If no allowed_domains are configured, show a security warning
+			# allowed_domains が設定されていない場合はセキュリティ警告を出す
 			if not self.browser_profile.allowed_domains:
 				self.logger.error(
 					'⚠️ Agent(sensitive_data=••••••••) was provided but Browser(allowed_domains=[...]) is not locked down! ⚠️\n'
@@ -388,27 +388,26 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 					'   \n'
 				)
 
-			# If we're using domain-specific credentials, validate domain patterns
+			# ドメイン単位の資格情報を扱う場合はパターンを検証する
 			elif has_domain_specific_credentials:
-				# For domain-specific format, ensure all domain patterns are included in allowed_domains
+				# ドメインパターンが allowed_domains に含まれているか確認する
 				domain_patterns = [k for k, v in self.sensitive_data.items() if isinstance(v, dict)]
 
-				# Validate each domain pattern against allowed_domains
+				# 各ドメインパターンを allowed_domains と照合する
 				for domain_pattern in domain_patterns:
 					is_allowed = False
 					for allowed_domain in self.browser_profile.allowed_domains:
-						# Special cases that don't require URL matching
+						# URL マッチングが不要な特例
 						if domain_pattern == allowed_domain or allowed_domain == '*':
 							is_allowed = True
 							break
 
-						# Need to create example URLs to compare the patterns
-						# Extract the domain parts, ignoring scheme
+						# 比較のためスキームを除いたドメイン部に変換する
 						pattern_domain = domain_pattern.split('://')[-1] if '://' in domain_pattern else domain_pattern
 						allowed_domain_part = allowed_domain.split('://')[-1] if '://' in allowed_domain else allowed_domain
 
-						# Check if pattern is covered by an allowed domain
-						# Example: "google.com" is covered by "*.google.com"
+						# 許可されたドメインによりパターンが包含されているか確認する
+						# 例: "google.com" は "*.google.com" に含まれる
 						if pattern_domain == allowed_domain_part or (
 							allowed_domain_part.startswith('*.')
 							and (
@@ -425,25 +424,25 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 							f'   This may be a security risk as credentials could be used on unintended domains.'
 						)
 
-		# Callbacks
+		# コールバック
 		self.register_new_step_callback = register_new_step_callback
 		self.register_done_callback = register_done_callback
 		self.register_should_stop_callback = register_should_stop_callback
 		self.register_external_agent_status_raise_error_callback = register_external_agent_status_raise_error_callback
 
-		# Telemetry
+		# テレメトリ
 		self.telemetry = ProductTelemetry()
 
-		# Event bus with WAL persistence
-		# Default to ~/.config/browseruse/events/{agent_session_id}.jsonl
+		# WAL 永続化付きのイベントバス
+		# 既定パスは ~/.config/browseruse/events/{agent_session_id}.jsonl
 		# wal_path = CONFIG.BROWSER_USE_CONFIG_DIR / 'events' / f'{self.session_id}.jsonl'
 		self.eventbus = EventBus(name=f'Agent_{str(self.id)[-4:]}')
 
-		# Cloud sync service
+		# クラウド同期サービス
 		self.enable_cloud_sync = CONFIG.BROWSER_USE_CLOUD_SYNC
 		if self.enable_cloud_sync or cloud_sync is not None:
 			self.cloud_sync = cloud_sync or CloudSync()
-			# Register cloud sync handler
+			# クラウド同期ハンドラを登録
 			self.eventbus.on('*', self.cloud_sync.handle_event)
 		else:
 			self.cloud_sync = None
@@ -452,14 +451,14 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			self.settings.save_conversation_path = Path(self.settings.save_conversation_path).expanduser().resolve()
 			self.logger.info(f'💬 Saving conversation to {_log_pretty_path(self.settings.save_conversation_path)}')
 
-		# Initialize download tracking
+		# ダウンロード監視を初期化
 		assert self.browser_session is not None, 'BrowserSession is not set up'
 		self.has_downloads_path = self.browser_session.browser_profile.downloads_path is not None
 		if self.has_downloads_path:
 			self._last_known_downloads: list[str] = []
 			self.logger.debug('📁 Initialized download tracking for agent')
 
-		# Event-based pause control (kept out of AgentState for serialization)
+		# イベント駆動の一時停止制御（シリアライズの都合で AgentState には含めない）
 		self._external_pause_event = asyncio.Event()
 		self._external_pause_event.set()
 
@@ -518,19 +517,19 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			self.logger.debug(f'📁 No new downloads detected (tracking {len(current_files)} files)')
 
 	def _set_file_system(self, file_system_path: str | None = None) -> None:
-		# Check for conflicting parameters
+		# 引数の矛盾がないか確認
 		if self.state.file_system_state and file_system_path:
 			raise ValueError(
 				'Cannot provide both file_system_state (from agent state) and file_system_path. '
 				'Either restore from existing state or create new file system at specified path, not both.'
 			)
 
-		# Check if we should restore from existing state first
+		# まず既存状態から復元すべきか確認
 		if self.state.file_system_state:
 			try:
-				# Restore file system from state at the exact same location
+				# 保存されている状態から同じ場所にファイルシステムを復元
 				self.file_system = FileSystem.from_state(self.state.file_system_state)
-				# The parent directory of base_dir is the original file_system_path
+				# base_dir の親ディレクトリが元の file_system_path
 				self.file_system_path = str(self.file_system.base_dir)
 				logger.debug(f'💾 File system restored from state to: {self.file_system_path}')
 				return
@@ -538,20 +537,20 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				logger.error(f'💾 Failed to restore file system from state: {e}')
 				raise e
 
-		# Initialize new file system
+		# 新しいファイルシステムを初期化
 		try:
 			if file_system_path:
 				self.file_system = FileSystem(file_system_path)
 				self.file_system_path = file_system_path
 			else:
-				# Use the agent directory for file system
+				# ファイルシステムとしてエージェントディレクトリを使用
 				self.file_system = FileSystem(self.agent_directory)
 				self.file_system_path = str(self.agent_directory)
 		except Exception as e:
 			logger.error(f'💾 Failed to initialize file system: {e}.')
 			raise e
 
-		# Save file system state to agent state
+		# ファイルシステムの状態を AgentState に保存
 		self.state.file_system_state = self.file_system.get_state()
 
 		logger.debug(f'💾 File system path: {self.file_system_path}')
@@ -577,10 +576,10 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 	def _set_browser_use_version_and_source(self, source_override: str | None = None) -> None:
 		"""Get the version from pyproject.toml and determine the source of the browser-use package"""
-		# Use the helper function for version detection
+		# バージョン判定はヘルパー関数に任せる
 		version = get_browser_use_version()
 
-		# Determine source
+		# パッケージの出所を判定
 		try:
 			package_root = Path(__file__).parent.parent.parent
 			repo_files = ['.git', 'README.md', 'docs', 'examples']
@@ -594,15 +593,15 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		if source_override is not None:
 			source = source_override
-		# self.logger.debug(f'Version: {version}, Source: {source}')  # moved later to _log_agent_run so that people are more likely to include it in copy-pasted support ticket logs
+		# self.logger.debug(f'Version: {version}, Source: {source}')  # サポート用ログに含めてもらいやすいよう _log_agent_run へ移動済み
 		self.version = version
 		self.source = source
 
 	def _setup_action_models(self) -> None:
 		"""Setup dynamic action models from tools registry"""
-		# Initially only include actions with no filters
+		# 初期状態ではフィルタなしのアクションのみを含める
 		self.ActionModel = self.tools.registry.create_action_model()
-		# Create output model with the dynamic actions
+		# 動的アクションを反映した出力モデルを生成
 		if self.settings.flash_mode:
 			self.AgentOutput = AgentOutput.type_with_custom_actions_flash_mode(self.ActionModel)
 		elif self.settings.use_thinking:
@@ -610,7 +609,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		else:
 			self.AgentOutput = AgentOutput.type_with_custom_actions_no_thinking(self.ActionModel)
 
-		# used to force the done action when max_steps is reached
+		# 最大ステップ到達時に強制的に done を使わせるためのモデル
 		self.DoneActionModel = self.tools.registry.create_action_model(include_actions=['done'])
 		if self.settings.flash_mode:
 			self.DoneAgentOutput = AgentOutput.type_with_custom_actions_flash_mode(self.DoneActionModel)
@@ -621,25 +620,25 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 	def add_new_task(self, new_task: str) -> None:
 		"""Add a new task to the agent, keeping the same task_id as tasks are continuous"""
-		# Simply delegate to message manager - no need for new task_id or events
-		# The task continues with new instructions, it doesn't end and start a new one
+		# MessageManager に委譲するだけで task_id やイベントを作り直す必要はない
+		# タスクは新しい指示で継続する想定で、終了→再開ではない
 		self.task = new_task
 		self._message_manager.add_new_task(new_task)
-		# Mark as follow-up task and recreate eventbus (gets shut down after each run)
+		# 後続タスクとして扱い、イベントバスを再生成する（run 後は停止済みのため）
 		self.state.follow_up_task = True
 		agent_id_suffix = str(self.id)[-4:].replace('-', '_')
 		if agent_id_suffix and agent_id_suffix[0].isdigit():
 			agent_id_suffix = 'a' + agent_id_suffix
 		self.eventbus = EventBus(name=f'Agent_{agent_id_suffix}')
 
-		# Re-register cloud sync handler if it exists (if not disabled)
+		# クラウド同期が有効な場合はハンドラを再登録
 		if hasattr(self, 'cloud_sync') and self.cloud_sync and self.enable_cloud_sync:
 			self.eventbus.on('*', self.cloud_sync.handle_event)
 
 	async def _check_stop_or_pause(self) -> None:
 		"""Check if the agent should stop or pause, and handle accordingly."""
 
-		# Check new should_stop_callback - sets stopped state cleanly without raising
+		# should_stop_callback をチェックし、例外を投げずに停止フラグを立てる
 		if self.register_should_stop_callback:
 			if await self.register_should_stop_callback():
 				self.logger.info('External callback requested stop')
@@ -660,25 +659,25 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 	@time_execution_async('--step')
 	async def step(self, step_info: AgentStepInfo | None = None) -> None:
 		"""Execute one step of the task"""
-		# Initialize timing first, before any exceptions can occur
+		# 例外が発生する前に計測を開始しておく
 
 		self.step_start_time = time.time()
 
 		browser_state_summary = None
 
 		try:
-			# Phase 1: Prepare context and timing
+			# フェーズ1: コンテキストとタイミングの準備
 			browser_state_summary = await self._prepare_context(step_info)
 
-			# Phase 2: Get model output and execute actions
+			# フェーズ2: モデル推論とアクション実行
 			await self._get_next_action(browser_state_summary)
 			await self._execute_actions()
 
-			# Phase 3: Post-processing
+			# フェーズ3: 後処理
 			await self._post_process()
 
 		except Exception as e:
-			# Handle ALL exceptions in one place
+			# すべての例外をここで受け止める
 			await self._handle_step_error(e)
 
 		finally:
@@ -686,15 +685,15 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 	async def _prepare_context(self, step_info: AgentStepInfo | None = None) -> BrowserStateSummary:
 		"""Prepare the context for the step: browser state, action models, page actions"""
-		# step_start_time is now set in step() method
+		# step_start_time は step() 側で設定済み
 
 		assert self.browser_session is not None, 'BrowserSession is not set up'
 
 		self.logger.debug(f'🌐 Step {self.state.n_steps}: Getting browser state...')
-		# Always take screenshots for all steps
+		# すべてのステップでスクリーンショットを取得する
 		self.logger.debug('📸 Requesting browser state with include_screenshot=True')
 		browser_state_summary = await self.browser_session.get_browser_state_summary(
-			include_screenshot=True,  # always capture even if use_vision=False so that cloud sync is useful (it's fast now anyway)
+			include_screenshot=True,  # use_vision=False でもクラウド同期のため常に撮影（高速化済み）
 			include_recent_events=self.include_recent_events,
 		)
 		if browser_state_summary.screenshot:
@@ -702,20 +701,20 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		else:
 			self.logger.debug('📸 Got browser state WITHOUT screenshot')
 
-		# Check for new downloads after getting browser state (catches PDF auto-downloads and previous step downloads)
+		# ブラウザ状態取得後にダウンロードの変化を確認（PDF 自動ダウンロード等に対応）
 		await self._check_and_update_downloads(f'Step {self.state.n_steps}: after getting browser state')
 
 		self._log_step_context(browser_state_summary)
 		await self._check_stop_or_pause()
 
-		# Update action models with page-specific actions
+		# ページ固有のアクションでモデルを更新
 		self.logger.debug(f'📝 Step {self.state.n_steps}: Updating action models...')
 		await self._update_action_models_for_page(browser_state_summary.url)
 
-		# Get page-specific filtered actions
+		# ページ専用のアクション記述を取得
 		page_filtered_actions = self.tools.registry.get_prompt_description(browser_state_summary.url)
 
-		# Page-specific actions will be included directly in the browser_state message
+		# ページ専用アクションは browser_state のメッセージに直接含める
 		self.logger.debug(f'💬 Step {self.state.n_steps}: Creating state messages for context...')
 
 		self._message_manager.create_state_messages(
@@ -726,7 +725,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			use_vision=self.settings.use_vision,
 			page_filtered_actions=page_filtered_actions if page_filtered_actions else None,
 			sensitive_data=self.sensitive_data,
-			available_file_paths=self.available_file_paths,  # Always pass current available_file_paths
+			available_file_paths=self.available_file_paths,  # 常に最新の available_file_paths を渡す
 		)
 
 		await self._force_done_after_last_step(step_info)
@@ -760,13 +759,13 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		self.state.last_model_output = model_output
 
-		# Check again for paused/stopped state after getting model output
+		# モデル応答取得後にも一時停止／停止要求を再確認
 		await self._check_stop_or_pause()
 
-		# Handle callbacks and conversation saving
+		# コールバック処理と会話ログ保存を実行
 		await self._handle_post_llm_processing(browser_state_summary, input_messages)
 
-		# check again if Ctrl+C was pressed before we commit the output to history
+		# 履歴に確定する前に Ctrl+C などで中断されていないか再チェック
 		await self._check_stop_or_pause()
 
 	async def _execute_actions(self) -> None:
@@ -784,10 +783,10 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		"""Handle post-action processing like download tracking and result logging"""
 		assert self.browser_session is not None, 'BrowserSession is not set up'
 
-		# Check for new downloads after executing actions
+		# アクション実行後に新しいダウンロードがないか確認
 		await self._check_and_update_downloads('after executing actions')
 
-		# check for action errors  and len more than 1
+		# アクションエラーが単一件だけかどうか確認
 		if self.state.last_result and len(self.state.last_result) == 1 and self.state.last_result[-1].error:
 			self.state.consecutive_failures += 1
 			self.logger.debug(f'🔄 Step {self.state.n_steps}: Consecutive failures: {self.state.consecutive_failures}')
@@ -796,14 +795,14 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		self.state.consecutive_failures = 0
 		self.logger.debug(f'🔄 Step {self.state.n_steps}: Consecutive failures reset to: {self.state.consecutive_failures}')
 
-		# Log completion results
+		# 完了結果をログに出力
 		if self.state.last_result and len(self.state.last_result) > 0 and self.state.last_result[-1].is_done:
 			success = self.state.last_result[-1].success
 			if success:
-				# Green color for success
+				# 成功時は緑色で表示
 				self.logger.info(f'\n📄 \033[32m Final Result:\033[0m \n{self.state.last_result[-1].extracted_content}\n\n')
 			else:
-				# Red color for failure
+				# 失敗時は赤色で表示
 				self.logger.info(f'\n📄 \033[31m Final Result:\033[0m \n{self.state.last_result[-1].extracted_content}\n\n')
 			if self.state.last_result[-1].attachments:
 				total_attachments = len(self.state.last_result[-1].attachments)
@@ -813,20 +812,20 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 	async def _handle_step_error(self, error: Exception) -> None:
 		"""Handle all types of errors that can occur during a step"""
 
-		# Handle InterruptedError specially
+		# InterruptedError は特別扱い
 		if isinstance(error, InterruptedError):
 			error_msg = 'The agent was interrupted mid-step' + (f' - {str(error)}' if str(error) else '')
 			self.logger.error(f'{error_msg}')
 			return
 
-		# Handle all other exceptions
+		# それ以外の例外全般を処理
 		include_trace = self.logger.isEnabledFor(logging.DEBUG)
 		error_msg = AgentError.format_error(error, include_trace=include_trace)
 		prefix = f'❌ Result failed {self.state.consecutive_failures + 1}/{self.settings.max_failures + int(self.settings.final_response_after_failure)} times:\n '
 		self.state.consecutive_failures += 1
 
 		if 'Could not parse response' in error_msg or 'tool_use_failed' in error_msg:
-			# give model a hint how output should look like
+			# モデルに期待される出力形式を再認識させるためのヒントを与える
 			logger.error(f'Model: {self.llm.model} failed')
 			logger.error(f'{prefix}{error_msg}')
 		else:
@@ -848,7 +847,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				step_end_time=step_end_time,
 			)
 
-			# Use _make_history_item like main branch
+			# 本家ブランチと同じく _make_history_item を利用
 			await self._make_history_item(
 				self.state.last_model_output,
 				browser_state_summary,
@@ -857,22 +856,22 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				state_message=self._message_manager.last_state_message_text,
 			)
 
-		# Log step completion summary
+		# ステップ完了の概要をログ出力
 		self._log_step_completion_summary(self.step_start_time, self.state.last_result)
 
-		# Save file system state after step completion
+		# ステップ完了後にファイルシステム状態を保存
 		self.save_file_system_state()
 
-		# Emit both step created and executed events
+		# ステップ生成・実行の両イベントを発行
 		if browser_state_summary and self.state.last_model_output:
-			# Extract key step data for the event
+			# イベント用にステップの要点を抽出
 			actions_data = []
 			if self.state.last_model_output.action:
 				for action in self.state.last_model_output.action:
 					action_dict = action.model_dump() if hasattr(action, 'model_dump') else {}
 					actions_data.append(action_dict)
 
-			# Emit CreateAgentStepEvent only if cloud sync is enabled
+			# クラウド同期が有効な場合のみ CreateAgentStepEvent を送信
 			if self.enable_cloud_sync:
 				step_event = CreateAgentStepEvent.from_agent_step(
 					self,
@@ -883,13 +882,13 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				)
 				self.eventbus.dispatch(step_event)
 
-		# Increment step counter after step is fully completed
+		# ステップ完了後にカウンタを進める
 		self.state.n_steps += 1
 
 	async def _force_done_after_last_step(self, step_info: AgentStepInfo | None = None) -> None:
 		"""Handle special processing for the last step"""
 		if step_info and step_info.is_last_step():
-			# Add last step warning if needed
+			# 最終ステップであることを明示するメッセージを追加
 			msg = 'Now comes your last step. Use only the "done" action now. No other actions - so here your action sequence must have length 1.'
 			msg += '\nIf the task is not yet fully finished as requested by the user, set success in "done" to false! E.g. if not all steps are fully completed.'
 			msg += '\nIf the task is fully finished, set success in "done" to true.'
@@ -900,7 +899,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 	async def _force_done_after_failure(self) -> None:
 		"""Force done after failure"""
-		# Create recovery message
+		# リカバリ用メッセージを生成
 		if self.state.consecutive_failures >= self.settings.max_failures and self.settings.final_response_after_failure:
 			msg = f'You have failed {self.settings.max_failures} consecutive times. This is your final step to complete the task or provide what you found. '
 			msg += 'Use only the "done" action now. No other actions - so here your action sequence must have length 1.'
@@ -968,7 +967,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				)
 
 		if self.settings.save_conversation_path and self.state.last_model_output:
-			# Treat save_conversation_path as a directory (consistent with other recording paths)
+			# save_conversation_path はディレクトリとして扱う（他の記録パスと揃える）
 			conversation_dir = Path(self.settings.save_conversation_path)
 			conversation_filename = f'conversation_{self.id}_{self.state.n_steps}.txt'
 			target = conversation_dir / conversation_filename
@@ -994,7 +993,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		else:
 			interacted_elements = [None]
 
-		# Store screenshot and get path
+		# スクリーンショットを保存してパスを取得
 		screenshot_path = None
 		if browser_state_summary.screenshot:
 			self.logger.debug(
@@ -1026,14 +1025,13 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 	def _remove_think_tags(self, text: str) -> str:
 		THINK_TAGS = re.compile(r'<think>.*?</think>', re.DOTALL)
 		STRAY_CLOSE_TAG = re.compile(r'.*?</think>', re.DOTALL)
-		# Step 1: Remove well-formed <think>...</think>
+		# 手順1: 正しく閉じられた <think>...</think> を削除する
 		text = re.sub(THINK_TAGS, '', text)
-		# Step 2: If there's an unmatched closing tag </think>,
-		#         remove everything up to and including that.
+		# 手順2: 閉じタグ </think> のみ残っている場合はそこまでの文字列をすべて削除する
 		text = re.sub(STRAY_CLOSE_TAG, '', text)
 		return text.strip()
 
-	# region - URL replacement
+	# region - URL 置換処理
 	def _replace_urls_in_text(self, text: str) -> tuple[str, dict[str, str]]:
 		"""Replace URLs in a text string"""
 
@@ -1045,34 +1043,34 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 			original_url = match.group(0)
 
-			# Find where the query/fragment starts
+			# クエリやフラグメントが始まる位置を特定
 			query_start = original_url.find('?')
 			fragment_start = original_url.find('#')
 
-			# Find the earliest position of query or fragment
-			after_path_start = len(original_url)  # Default: no query/fragment
+			# クエリまたはフラグメントのうち最も早い位置を取得
+			after_path_start = len(original_url)  # 既定値: クエリ／フラグメントなし
 			if query_start != -1:
 				after_path_start = min(after_path_start, query_start)
 			if fragment_start != -1:
 				after_path_start = min(after_path_start, fragment_start)
 
-			# Split URL into base (up to path) and after_path (query + fragment)
+			# URL をパスまでの基部とクエリ＋フラグメントに分割
 			base_url = original_url[:after_path_start]
 			after_path = original_url[after_path_start:]
 
-			# If after_path is within the limit, don't shorten
+			# after_path が制限以内なら短縮しない
 			if len(after_path) <= self._url_shortening_limit:
 				return original_url
 
-			# If after_path is too long, truncate and add hash
+			# after_path が長過ぎる場合は切り詰めてハッシュを付与
 			if after_path:
 				truncated_after_path = after_path[: self._url_shortening_limit]
-				# Create a short hash of the full after_path content
+				# after_path 全体から短いハッシュを作成
 				hash_obj = hashlib.md5(after_path.encode('utf-8'))
 				short_hash = hash_obj.hexdigest()[:7]
-				# Create shortened URL
+				# 短縮 URL を生成
 				shortened = f'{base_url}{truncated_after_path}...{short_hash}'
-				# Only use shortened URL if it's actually shorter than the original
+				# 元の URL より短くなる場合のみ採用
 				if len(shortened) < len(original_url):
 					replaced_urls[shortened] = original_url
 					return shortened
@@ -1092,17 +1090,17 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		urls_replaced: dict[str, str] = {}
 
-		# Process each message, in place
+		# 各メッセージをその場で処理
 		for message in input_messages:
-			# no need to process SystemMessage, we have control over that anyway
+			# SystemMessage は自前で制御しているので処理不要
 			if isinstance(message, (UserMessage, AssistantMessage)):
 				if isinstance(message.content, str):
-					# Simple string content
+					# 単純な文字列コンテンツ
 					message.content, replaced_urls = self._replace_urls_in_text(message.content)
 					urls_replaced.update(replaced_urls)
 
 				elif isinstance(message.content, list):
-					# List of content parts
+					# コンテンツパーツのリスト
 					for part in message.content:
 						if isinstance(part, ContentPartTextParam):
 							part.text, replaced_urls = self._replace_urls_in_text(part.text)
@@ -1115,14 +1113,14 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		"""Recursively process all strings inside a Pydantic model, replacing shortened URLs with originals in place."""
 		for field_name, field_value in model.__dict__.items():
 			if isinstance(field_value, str):
-				# Replace shortened URLs with original URLs in string
+				# 短縮された URL を元の URL に戻す
 				processed_string = Agent._replace_shortened_urls_in_string(field_value, url_replacements)
 				setattr(model, field_name, processed_string)
 			elif isinstance(field_value, BaseModel):
-				# Recursively process nested Pydantic models
+				# ネストされた Pydantic モデル内の文字列を再帰的に処理
 				Agent._recursive_process_all_strings_inside_pydantic_model(field_value, url_replacements)
 			elif isinstance(field_value, dict):
-				# Process dictionary values in place
+				# 辞書はその場で処理
 				Agent._recursive_process_dict(field_value, url_replacements)
 			elif isinstance(field_value, (list, tuple)):
 				processed_value = Agent._recursive_process_list_or_tuple(field_value, url_replacements)
@@ -1145,7 +1143,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 	def _recursive_process_list_or_tuple(container: list | tuple, url_replacements: dict[str, str]) -> list | tuple:
 		"""Helper method to process lists and tuples."""
 		if isinstance(container, tuple):
-			# For tuples, create a new tuple with processed items
+			# タプルの場合は処理済み要素で新しいタプルを作成
 			processed_items = []
 			for item in container:
 				if isinstance(item, str):
@@ -1162,7 +1160,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 					processed_items.append(item)
 			return tuple(processed_items)
 		else:
-			# For lists, modify in place
+			# リストの場合はその場で書き換える
 			for i, item in enumerate(container):
 				if isinstance(item, str):
 					container[i] = Agent._replace_shortened_urls_in_string(item, url_replacements)
@@ -1182,7 +1180,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			result = result.replace(shortened_url, original_url)
 		return result
 
-	# endregion - URL replacement
+	# endregion - URL 置換処理終了
 
 	@time_execution_async('--get_next_action')
 	@observe_debug(ignore_input=True, ignore_output=True, name='get_model_output')
@@ -1191,19 +1189,19 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		urls_replaced = self._process_messsages_and_replace_long_urls_shorter_ones(input_messages)
 
-		# Build kwargs for ainvoke
-		# Note: ChatBrowserUse will automatically generate action descriptions from output_format schema
+		# ainvoke に渡すキーワード引数を構築
+		# 注意: ChatBrowserUse は output_format のスキーマから自動的にアクション説明を生成する
 		kwargs: dict = {'output_format': self.AgentOutput}
 
 		try:
 			response = await self.llm.ainvoke(input_messages, **kwargs)
 			parsed: AgentOutput = response.completion  # type: ignore[assignment]
 
-			# Replace any shortened URLs in the LLM response back to original URLs
+			# モデル応答内の短縮 URL を元の URL に戻す
 			if urls_replaced:
 				self._recursive_process_all_strings_inside_pydantic_model(parsed, urls_replaced)
 
-			# cut the number of actions to max_actions_per_step if needed
+			# 必要であればアクション数を max_actions_per_step までに制限
 			if len(parsed.action) > self.settings.max_actions_per_step:
 				parsed.action = parsed.action[: self.settings.max_actions_per_step]
 
@@ -1213,17 +1211,17 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			self._log_next_action_summary(parsed)
 			return parsed
 		except ValidationError:
-			# Just re-raise - Pydantic's validation errors are already descriptive
+			# Pydantic の検証エラーは十分情報を含むのでそのまま再送出
 			raise
 
 	async def _log_agent_run(self) -> None:
 		"""Log the agent run"""
-		# Blue color for task
+		# タスク名は青色で表示
 		self.logger.info(f'\033[34m🚀 Task: {self.task}\033[0m')
 
 		self.logger.debug(f'🤖 Browser-Use Library Version {self.version} ({self.source})')
 
-		# Check for latest version and log upgrade message if needed
+		# 新しいバージョンがある場合はアップデート案内を表示
 		latest_version = await check_latest_browser_use_version()
 		if latest_version and latest_version != self.version:
 			self.logger.info(
@@ -1251,14 +1249,14 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		action_count = len(parsed.action)
 
-		# Collect action details
+		# アクションの詳細を集計
 		action_details = []
 		for i, action in enumerate(parsed.action):
 			action_data = action.model_dump(exclude_unset=True)
 			action_name = next(iter(action_data.keys())) if action_data else 'unknown'
 			action_params = action_data.get(action_name, {}) if action_data else {}
 
-			# Format key parameters concisely
+			# 主要パラメータを簡潔に整形
 			param_summary = []
 			if isinstance(action_params, dict):
 				for key, value in action_params.items():
@@ -1278,7 +1276,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			param_str = f'({", ".join(param_summary)})' if param_summary else ''
 			action_details.append(f'{action_name}{param_str}')
 
-		# Create summary based on single vs multi-action
+		# 単一アクションか複数アクションかで出力を変える
 		if action_count == 1:
 			self.logger.info(f'☝️ Decided next action: {action_name}{param_str}')
 		else:
@@ -1295,11 +1293,11 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		step_duration = time.time() - step_start_time
 		action_count = len(result)
 
-		# Count success and failures
+		# 成功・失敗件数を集計
 		success_count = sum(1 for r in result if not r.error)
 		failure_count = action_count - success_count
 
-		# Format success/failure indicators
+		# 成功／失敗の表示用テキストを作成
 		success_indicator = f'✅ {success_count}' if success_count > 0 else ''
 		failure_indicator = f'❌ {failure_count}' if failure_count > 0 else ''
 		status_parts = [part for part in [success_indicator, failure_indicator] if part]
@@ -1314,19 +1312,19 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		token_summary = self.token_cost_service.get_usage_tokens_for_model(self.llm.model)
 
-		# Prepare action_history data correctly
+		# action_history 用データを組み立てる
 		action_history_data = []
 		for item in self.history.history:
 			if item.model_output and item.model_output.action:
-				# Convert each ActionModel in the step to its dictionary representation
+				# 各ステップの ActionModel を辞書形式へ変換
 				step_actions = [
 					action.model_dump(exclude_unset=True)
 					for action in item.model_output.action
-					if action  # Ensure action is not None if list allows it
+					if action  # リスト内に None が許される場合でも None 以外のみ残す
 				]
 				action_history_data.append(step_actions)
 			else:
-				# Append None or [] if a step had no actions or no model output
+				# アクションや出力が無いステップは None を追加
 				action_history_data.append(None)
 
 		final_res = self.history.final_result()
@@ -1364,9 +1362,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		        Tuple[bool, bool]: (is_done, is_valid)
 		"""
 		if step_info is not None and step_info.step_number == 0:
-			# First step
+			# 初回ステップ
 			self._log_first_step_startup()
-			# Normally there was no try catch here but the callback can raise an InterruptedError which we skip
+			# 通常は try-catch を入れていなかったが、コールバックが InterruptedError を送る場合があるため握りつぶす
 			try:
 				await self._execute_initial_actions()
 			except InterruptedError:
@@ -1391,13 +1389,13 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		"""Extract URL from task string using naive pattern matching."""
 		import re
 
-		# Remove email addresses from task before looking for URLs
+		# URL 抽出の前にメールアドレスを除去する
 		task_without_emails = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', '', task)
 
-		# Look for common URL patterns
+		# 一般的な URL パターンを順に探索
 		patterns = [
-			r'https?://[^\s<>"\']+',  # Full URLs with http/https
-			r'(?:www\.)?[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}(?:/[^\s<>"\']*)?',  # Domain names with subdomains and optional paths
+			r'https?://[^\s<>"\']+',  # http/https を含む完全な URL
+			r'(?:www\.)?[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}(?:/[^\s<>"\']*)?',  # サブドメインやパスを含むドメイン名
 		]
 
 		found_urls = []
@@ -1406,20 +1404,20 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			for match in matches:
 				url = match.group(0)
 
-				# Remove trailing punctuation that's not part of URLs
+				# URL に含まれない末尾の句読点を削除
 				url = re.sub(r'[.,;:!?()\[\]]+$', '', url)
-				# Add https:// if missing
+				# スキームが無ければ https:// を付与
 				if not url.startswith(('http://', 'https://')):
 					url = 'https://' + url
 				found_urls.append(url)
 
 		unique_urls = list(set(found_urls))
-		# If multiple URLs found, skip directly_open_urling
+		# URL が複数見つかった場合は自動オープンを行わない
 		if len(unique_urls) > 1:
 			self.logger.debug(f'Multiple URLs found ({len(found_urls)}), skipping directly_open_url to avoid ambiguity')
 			return None
 
-		# If exactly one URL found, return it
+		# URL が一つだけならそれを返す
 		if len(unique_urls) == 1:
 			return unique_urls[0]
 
@@ -1436,25 +1434,25 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		"""Execute the task with maximum number of steps"""
 
 		loop = asyncio.get_event_loop()
-		agent_run_error: str | None = None  # Initialize error tracking variable
-		self._force_exit_telemetry_logged = False  # ADDED: Flag for custom telemetry on force exit
+		agent_run_error: str | None = None  # エラーメッセージ格納用の初期値
+		self._force_exit_telemetry_logged = False  # 強制終了テレメトリを記録済みかを示すフラグ
 
-		# Set up the  signal handler with callbacks specific to this agent
+		# このエージェント専用のシグナルハンドラを設定
 		from browser_use.utils import SignalHandler
 
-		# Define the custom exit callback function for second CTRL+C
+		# 2回目の CTRL+C で呼ばれるカスタム終了コールバック
 		def on_force_exit_log_telemetry():
 			self._log_agent_event(max_steps=max_steps, agent_run_error='SIGINT: Cancelled by user')
-			# NEW: Call the flush method on the telemetry instance
+			# テレメトリインスタンスを明示的に flush
 			if hasattr(self, 'telemetry') and self.telemetry:
 				self.telemetry.flush()
-			self._force_exit_telemetry_logged = True  # Set the flag
+			self._force_exit_telemetry_logged = True  # フラグを立てる
 
 		signal_handler = SignalHandler(
 			loop=loop,
 			pause_callback=self.pause,
 			resume_callback=self.resume,
-			custom_exit_callback=on_force_exit_log_telemetry,  # Pass the new telemetrycallback
+			custom_exit_callback=on_force_exit_log_telemetry,  # 新しいテレメトリコールバックを登録
 			exit_on_second_int=True,
 		)
 		signal_handler.register()
@@ -1468,31 +1466,31 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 			# Initialize timing for session and task
 			self._session_start_time = time.time()
-			self._task_start_time = self._session_start_time  # Initialize task start time
+			self._task_start_time = self._session_start_time  # タスク開始時刻も初期化
 
-			# Only dispatch session events if this is the first run
+			# 初回実行時のみセッションイベントを送信
 			if not self.state.session_initialized:
 				if self.enable_cloud_sync:
 					self.logger.debug('📡 Dispatching CreateAgentSessionEvent...')
-					# Emit CreateAgentSessionEvent at the START of run()
+					# run() 開始時に CreateAgentSessionEvent を発火
 					self.eventbus.dispatch(CreateAgentSessionEvent.from_agent(self))
 
-					# Brief delay to ensure session is created in backend before sending task
+					# バックエンドでセッションが作成されるまで短時間待機
 					await asyncio.sleep(0.2)
 
 				self.state.session_initialized = True
 
 			if self.enable_cloud_sync:
 				self.logger.debug('📡 Dispatching CreateAgentTaskEvent...')
-				# Emit CreateAgentTaskEvent at the START of run()
+				# run() 開始時に CreateAgentTaskEvent を発火
 				self.eventbus.dispatch(CreateAgentTaskEvent.from_agent(self))
 
-			# Log startup message on first step (only if we haven't already done steps)
+			# まだステップを踏んでいない場合のみ起動メッセージを表示
 			self._log_first_step_startup()
-			# Start browser session and attach watchdogs
+			# ブラウザセッションを開始しウォッチドッグを取り付ける
 			await self.browser_session.start()
 
-			# Normally there was no try catch here but the callback can raise an InterruptedError
+			# 本来 try-catch は不要だがコールバックが InterruptedError を送る可能性がある
 			try:
 				await self._execute_initial_actions()
 			except InterruptedError:
@@ -1502,13 +1500,13 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 			self.logger.debug(f'🔄 Starting main execution loop with max {max_steps} steps...')
 			for step in range(max_steps):
-				# Use the consolidated pause state management
+				# 一元化された一時停止管理を利用
 				if self.state.paused:
 					self.logger.debug(f'⏸️ Step {step}: Agent paused, waiting to resume...')
 					await self._external_pause_event.wait()
 					signal_handler.reset()
 
-				# Check if we should stop due to too many failures, if final_response_after_failure is True, we try one last time
+				# 失敗が多すぎる場合に停止すべきか判定（final_response_after_failure が True なら最後にもう一度試みる）
 				if (self.state.consecutive_failures) >= self.settings.max_failures + int(
 					self.settings.final_response_after_failure
 				):
@@ -1516,7 +1514,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 					agent_run_error = f'Stopped due to {self.settings.max_failures} consecutive failures'
 					break
 
-				# Check control flags before each step
+				# 各ステップ前に停止フラグを確認
 				if self.state.stopped:
 					self.logger.info('🛑 Agent stopped')
 					agent_run_error = 'Agent stopped programmatically'
@@ -1535,7 +1533,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 					)
 					self.logger.debug(f'✅ Completed step {step + 1}/{max_steps}')
 				except TimeoutError:
-					# Handle step timeout gracefully
+					# ステップのタイムアウトを丁寧に処理
 					error_msg = f'Step {step + 1} timed out after {self.settings.step_timeout} seconds'
 					self.logger.error(f'⏰ {error_msg}')
 					self.state.consecutive_failures += 1
@@ -1554,7 +1552,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 						else:
 							self.register_done_callback(self.history)
 
-					# Task completed
+					# タスク完了
 					break
 			else:
 				agent_run_error = 'Failed to complete task in maximum steps'
@@ -1579,7 +1577,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			self.logger.debug('📊 Collecting usage summary...')
 			self.history.usage = await self.token_cost_service.get_usage_summary()
 
-			# set the model output schema and call it on the fly
+			# モデル出力スキーマが未設定ならここで反映
 			if self.history._output_model_schema is None and self.output_model_schema is not None:
 				self.history._output_model_schema = self.output_model_schema
 
@@ -1587,7 +1585,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			return self.history
 
 		except KeyboardInterrupt:
-			# Already handled by our signal handler, but catch any direct KeyboardInterrupt as well
+			# シグナルハンドラで処理済みだが直接の KeyboardInterrupt も受ける
 			self.logger.debug('Got KeyboardInterrupt during execution, returning current history')
 			agent_run_error = 'KeyboardInterrupt'
 
@@ -1601,58 +1599,57 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			raise e
 
 		finally:
-			# Log token usage summary
+			# トークン使用量のサマリを記録
 			await self.token_cost_service.log_usage_summary()
 
-			# Unregister signal handlers before cleanup
+			# 後片付けの前にシグナルハンドラを解除
 			signal_handler.unregister()
 
-			if not self._force_exit_telemetry_logged:  # MODIFIED: Check the flag
+			if not self._force_exit_telemetry_logged:  # 変更点: フラグを確認して未送信なら記録
 				try:
 					self._log_agent_event(max_steps=max_steps, agent_run_error=agent_run_error)
-				except Exception as log_e:  # Catch potential errors during logging itself
+				except Exception as log_e:  # テレメトリ記録自体の失敗を捕捉
 					self.logger.error(f'Failed to log telemetry event: {log_e}', exc_info=True)
 			else:
-				# ADDED: Info message when custom telemetry for SIGINT was already logged
+				# 既に SIGINT 用テレメトリを送信済みであることを通知
 				self.logger.debug('Telemetry for force exit (SIGINT) was logged by custom exit callback.')
 
-			# NOTE: CreateAgentSessionEvent and CreateAgentTaskEvent are now emitted at the START of run()
-			# to match backend requirements for CREATE events to be fired when entities are created,
-			# not when they are completed
+			# 備考: CreateAgentSessionEvent と CreateAgentTaskEvent は run() 開始時に送信し、
+			#      生成時点で CREATE イベントが届くようにしている
 
-			# Emit UpdateAgentTaskEvent at the END of run() with final task state
+			# run() 終了時に最終状態を UpdateAgentTaskEvent で送信
 			if self.enable_cloud_sync:
 				self.eventbus.dispatch(UpdateAgentTaskEvent.from_agent(self))
 
-			# Generate GIF if needed before stopping event bus
+			# イベントバス停止前に必要であれば GIF を生成
 			if self.settings.generate_gif:
 				output_path: str = 'agent_history.gif'
 				if isinstance(self.settings.generate_gif, str):
 					output_path = self.settings.generate_gif
 
-				# Lazy import gif module to avoid heavy startup cost
+				# 起動コストを抑えるための遅延インポート
 				from browser_use.agent.gif import create_history_gif
 
 				create_history_gif(task=self.task, history=self.history, output_path=output_path)
 
-				# Only emit output file event if GIF was actually created
+				# 実際に GIF が生成された場合のみイベントを発行
 				if Path(output_path).exists():
 					output_event = await CreateAgentOutputFileEvent.from_agent_and_file(self, output_path)
 					self.eventbus.dispatch(output_event)
 
-			# Wait briefly for cloud auth to start and print the URL, but don't block for completion
+			# クラウド認証の開始を少し待ちつつ URL 表示を促す（完了までは待たない）
 			if self.enable_cloud_sync and hasattr(self, 'cloud_sync') and self.cloud_sync is not None:
 				if self.cloud_sync.auth_task and not self.cloud_sync.auth_task.done():
 					try:
-						# Wait up to 1 second for auth to start and print URL
+						# 最大1秒だけ待機して認証URLが出るのを待つ
 						await asyncio.wait_for(self.cloud_sync.auth_task, timeout=1.0)
 					except TimeoutError:
 						logger.debug('Cloud authentication started - continuing in background')
 					except Exception as e:
 						logger.debug(f'Cloud authentication error: {e}')
 
-			# Stop the event bus gracefully, waiting for all events to be processed
-			# Use longer timeout to avoid deadlocks in tests with multiple agents
+			# イベントバスを優雅に停止（全イベント処理を待つ）
+			# 複数エージェントのテストでデッドロックしないよう余裕を持ったタイムアウトを用いる
 			await self.eventbus.stop(timeout=3.0)
 
 			await self.close()
@@ -1687,14 +1684,14 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		for i, action in enumerate(actions):
 			if i > 0:
-				# ONLY ALLOW TO CALL `done` IF IT IS A SINGLE ACTION
+				# `done` は単独アクションとしてのみ許可する
 				if action.model_dump(exclude_unset=True).get('done') is not None:
 					msg = f'Done action is allowed only as a single action - stopped after action {i} / {total_actions}.'
 					self.logger.debug(msg)
 					break
 
-			# DOM synchronization check - verify element indexes are still valid AFTER first action
-			# This prevents stale element detection but doesn't refresh before execution
+			# DOM 同期チェック: 1つ目以降のアクションで要素インデックスが有効か確認
+			# これによりスタイルエラーを防ぎつつ、実行前の余計なリフレッシュは避ける
 			if action.get_index() is not None and i != 0:
 				new_browser_state_summary = await self.browser_session.get_browser_state_summary(
 					include_screenshot=False,
@@ -1717,7 +1714,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 					return ', '.join(remaining_actions)
 
 				if orig_target_hash != new_target_hash:
-					# Get names of remaining actions that won't be executed
+					# 実行されない残りのアクション名を取得
 					remaining_actions_str = get_remaining_actions_str(actions, i)
 					msg = f'Page changed after action: actions {remaining_actions_str} are not yet executed'
 					logger.info(msg)
@@ -1730,11 +1727,11 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 					)
 					break
 
-				# Check for new elements that appeared
+				# 新しく出現した要素がないか確認
 				new_element_hashes = {e.parent_branch_hash() for e in new_selector_map.values()}
 				if check_for_new_elements and not new_element_hashes.issubset(cached_element_hashes):
-					# next action requires index but there are new elements on the page
-					# log difference in len debug
+					# 次のアクションが index 指定を要求するがページに新要素がある場合
+					# 要素数の差分をデバッグログに残す
 					self.logger.debug(f'New elements: {abs(len(new_element_hashes) - len(cached_element_hashes))}')
 					remaining_actions_str = get_remaining_actions_str(actions, i)
 					msg = f'Something new appeared after action {i} / {total_actions}: actions {remaining_actions_str} were not executed'
@@ -1748,7 +1745,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 					)
 					break
 
-			# wait between actions (only after first action)
+			# アクション間に待機時間を挟む（2つ目以降）
 			if i > 0:
 				await asyncio.sleep(self.browser_profile.wait_between_actions)
 
@@ -1760,13 +1757,13 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 			try:
 				await self._check_stop_or_pause()
-				# Get action name from the action model
+				# アクション名を取得
 				action_data = action.model_dump(exclude_unset=True)
 				action_name = next(iter(action_data.keys())) if action_data else 'unknown'
 				action_params = getattr(action, action_name, '') or str(action.model_dump(mode='json'))[:140].replace(
 					'"', ''
 				).replace('{', '').replace('}', '').replace("'", '').strip().strip(',')
-				# Ensure action_params is always a string before checking length
+				# 長さを確認する前に必ず文字列化する
 				action_params = str(action_params)
 				action_params = f'{action_params[:522]}...' if len(action_params) > 528 else action_params
 				time_start = time.time()
@@ -1793,7 +1790,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 					break
 
 			except Exception as e:
-				# Handle any exceptions during action execution
+				# アクション実行中の例外を処理
 				self.logger.error(f'❌ Executing action {i + 1} failed -> {type(e).__name__}: {e}')
 				raise e
 
@@ -1802,7 +1799,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 	async def log_completion(self) -> None:
 		"""Log the completion of the task"""
 		# self._task_end_time = time.time()
-		# self._task_duration = self._task_end_time - self._task_start_time TODO: this is not working when using take_step
+		# self._task_duration = self._task_end_time - self._task_start_time  # TODO: take_step 使用時に正しく動かないため要調整
 		if self.history.is_successful():
 			self.logger.info('✅ Task completed successfully')
 		else:
@@ -1827,10 +1824,10 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		Returns:
 		                List of action results
 		"""
-		# Skip cloud sync session events for rerunning (we're replaying, not starting new)
+		# 再実行時は新規セッション扱いにしないためクラウド同期イベントを送らない
 		self.state.session_initialized = True
 
-		# Initialize browser session
+		# ブラウザセッションを初期化
 		await self.browser_session.start()
 
 		results = []
@@ -1873,17 +1870,17 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		return results
 
 	async def _execute_initial_actions(self) -> None:
-		# Execute initial actions if provided
+		# 初期アクションが設定されていれば実行する
 		if self.initial_actions and not self.state.follow_up_task:
 			self.logger.debug(f'⚡ Executing {len(self.initial_actions)} initial actions...')
 			result = await self.multi_act(self.initial_actions, check_for_new_elements=False)
-			# update result 1 to mention that its was automatically loaded
+			# 結果の1件目に自動ロードした旨を追記
 			if result and self.initial_url and result[0].long_term_memory:
 				result[0].long_term_memory = f'Found initial url and automatically loaded it. {result[0].long_term_memory}'
 			self.state.last_result = result
 
-			# Save initial actions to history as step 0 for rerun capability
-			# Skip browser state capture for initial actions (usually just URL navigation)
+			# 再実行に備えて初期アクションをステップ0として履歴に保存
+			# 初期アクションは通常 URL 遷移のみなのでブラウザ状態のキャプチャは省略
 			model_output = self.AgentOutput(
 				evaluation_previous_goal='Starting agent with initial actions',
 				memory='',
@@ -1897,12 +1894,12 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				step_end_time=time.time(),
 			)
 
-			# Create minimal browser state history for initial actions
+			# 初期アクション用に最小限のブラウザ状態を作成
 			state_history = BrowserStateHistory(
 				url=self.initial_url or '',
 				title='Initial Actions',
 				tabs=[],
-				interacted_element=[None] * len(self.initial_actions),  # No DOM elements needed
+				interacted_element=[None] * len(self.initial_actions),  # DOM 情報は不要
 				screenshot_path=None,
 			)
 
@@ -1943,7 +1940,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 	async def _update_action_indices(
 		self,
 		historical_element: DOMInteractedElement | None,
-		action: ActionModel,  # Type this properly based on your action model
+		action: ActionModel,  # ご利用のアクションモデルに合わせて適切に型付けする
 		browser_state_summary: BrowserStateSummary,
 	) -> ActionModel | None:
 		"""
@@ -1953,7 +1950,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		if not historical_element or not browser_state_summary.dom_state.selector_map:
 			return action
 
-		# selector_hash_map = {hash(e): e for e in browser_state_summary.dom_state.selector_map.values()}
+		# selector_hash_map = {hash(e): e for e in browser_state_summary.dom_state.selector_map.values()}  # 参照用の例
 
 		highlight_index, current_element = next(
 			(
@@ -2001,7 +1998,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 	def resume(self) -> None:
 		"""Resume the agent"""
-		# TODO: Locally the browser got closed
+		# TODO: ローカル環境ではブラウザが閉じてしまう課題あり
 		print('----------------------------------------------------------------------')
 		print('▶️  Resuming agent execution where it left off...\n')
 		self.state.paused = False
@@ -2012,28 +2009,28 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		self.logger.info('⏹️ Agent stopping')
 		self.state.stopped = True
 
-		# Signal pause event to unblock any waiting code so it can check the stopped state
+		# 一時停止イベントを解放し、待機中の処理に停止状態を知らせる
 		self._external_pause_event.set()
 
-		# Task stopped
+		# タスク停止フラグ
 
 	def _convert_initial_actions(self, actions: list[dict[str, dict[str, Any]]]) -> list[ActionModel]:
 		"""Convert dictionary-based actions to ActionModel instances"""
 		converted_actions = []
 		action_model = self.ActionModel
 		for action_dict in actions:
-			# Each action_dict should have a single key-value pair
+			# 各 action_dict には1つのキーと値が必要
 			action_name = next(iter(action_dict))
 			params = action_dict[action_name]
 
-			# Get the parameter model for this action from registry
+			# レジストリからパラメータモデルを取得
 			action_info = self.tools.registry.registry.actions[action_name]
 			param_model = action_info.param_model
 
-			# Create validated parameters using the appropriate param model
+			# パラメータモデルでバリデーションした値を生成
 			validated_params = param_model(**params)
 
-			# Create ActionModel instance with the validated parameters
+			# バリデーション済みパラメータで ActionModel を作成
 			action_model = self.ActionModel(**{action_name: validated_params})
 			converted_actions.append(action_model)
 
@@ -2045,7 +2042,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		Also handles tool calling method detection if in auto mode.
 		"""
 
-		# Skip verification if already done
+		# すでに検証済みならスキップ
 		if getattr(self.llm, '_verified_api_keys', None) is True or CONFIG.SKIP_LLM_API_KEY_VERIFICATION:
 			setattr(self.llm, '_verified_api_keys', True)
 			return True
@@ -2057,29 +2054,28 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 	async def close(self):
 		"""Close all resources"""
 		try:
-			# Only close browser if keep_alive is False (or not set)
+			# keep_alive が無効（または未設定）の場合のみブラウザを終了する
 			if self.browser_session is not None:
 				if not self.browser_session.browser_profile.keep_alive:
-					# Kill the browser session - this dispatches BrowserStopEvent,
-					# stops the EventBus with clear=True, and recreates a fresh EventBus
+					# BrowserStopEvent を発行し、EventBus をクリアして再生成する
 					await self.browser_session.kill()
 
-			# Force garbage collection
+			# ガーベジコレクションを明示的に実行
 			gc.collect()
 
-			# Debug: Log remaining threads and asyncio tasks
+			# デバッグ用に残っているスレッドと asyncio タスクを表示
 			import threading
 
 			threads = threading.enumerate()
 			self.logger.debug(f'🧵 Remaining threads ({len(threads)}): {[t.name for t in threads]}')
 
-			# Get all asyncio tasks
+			# 全ての asyncio タスクを取得
 			tasks = asyncio.all_tasks(asyncio.get_event_loop())
-			# Filter out the current task (this close() coroutine)
+			# 現在のコルーチン（close()）を除外
 			other_tasks = [t for t in tasks if t != asyncio.current_task()]
 			if other_tasks:
 				self.logger.debug(f'⚡ Remaining asyncio tasks ({len(other_tasks)}):')
-				for task in other_tasks[:10]:  # Limit to first 10 to avoid spam
+				for task in other_tasks[:10]:  # ログが煩雑にならないよう先頭10件のみ表示
 					self.logger.debug(f'  - {task.get_name()}: {task}')
 			else:
 				self.logger.debug('⚡ No remaining asyncio tasks')
@@ -2103,9 +2099,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 	async def _update_action_models_for_page(self, page_url: str) -> None:
 		"""Update action models with page-specific actions"""
-		# Create new action model with current page's filtered actions
+		# 現在のページに応じたフィルタで新しいアクションモデルを作成
 		self.ActionModel = self.tools.registry.create_action_model(page_url=page_url)
-		# Update output model with the new actions
+		# 生成したアクションを反映する出力モデルに差し替え
 		if self.settings.flash_mode:
 			self.AgentOutput = AgentOutput.type_with_custom_actions_flash_mode(self.ActionModel)
 		elif self.settings.use_thinking:
@@ -2113,7 +2109,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		else:
 			self.AgentOutput = AgentOutput.type_with_custom_actions_no_thinking(self.ActionModel)
 
-		# Update done action model too
+		# done 用のアクションモデルも更新
 		self.DoneActionModel = self.tools.registry.create_action_model(include_actions=['done'], page_url=page_url)
 		if self.settings.flash_mode:
 			self.DoneAgentOutput = AgentOutput.type_with_custom_actions_flash_mode(self.DoneActionModel)
@@ -2138,11 +2134,11 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 			return json.dumps(history_data)
 
-		# Generate autogenerated fields
+		# 自動生成フィールドを作成
 		trace_id = uuid7str()
 		timestamp = datetime.now().isoformat()
 
-		# Only declare variables that are used multiple times
+		# 複数回参照する変数のみ事前に宣言
 		structured_output = self.history.structured_output
 		structured_output_json = json.dumps(structured_output.model_dump()) if structured_output else None
 		final_result = self.history.final_result()
@@ -2154,18 +2150,18 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		return {
 			'trace': {
-				# Autogenerated fields
+				# 自動生成フィールド
 				'trace_id': trace_id,
 				'timestamp': timestamp,
 				'browser_use_version': get_browser_use_version(),
 				'git_info': json.dumps(git_info) if git_info else None,
-				# Direct agent properties
+				# Agent の直接的な属性
 				'model': self.llm.model,
 				'settings': json.dumps(self.settings.model_dump()) if self.settings else None,
 				'task_id': self.task_id,
 				'task_truncated': self.task[:20000] if len(self.task) > 20000 else self.task,
 				'task_website': extract_task_website(self.task),
-				# AgentHistoryList methods
+				# AgentHistoryList 関連の情報
 				'structured_output_truncated': (
 					structured_output_json[:20000]
 					if structured_output_json and len(structured_output_json) > 20000
@@ -2184,12 +2180,12 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				'usage': json.dumps(usage.model_dump()) if usage else None,
 			},
 			'trace_details': {
-				# Autogenerated fields (ensure same as trace)
+				# 自動生成フィールド（trace と一致させる）
 				'trace_id': trace_id,
 				'timestamp': timestamp,
-				# Direct agent properties
+				# Agent の直接的な属性
 				'task': self.task,
-				# AgentHistoryList methods
+				# AgentHistoryList 関連の情報
 				'structured_output': structured_output_json,
 				'final_result_response': final_result,
 				'complete_history': _get_complete_history_without_screenshots(
