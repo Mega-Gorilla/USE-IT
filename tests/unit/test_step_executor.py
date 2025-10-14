@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from browser_use.agent.step_executor import StepExecutor
+from browser_use.llm.exceptions import ModelProviderError
 from browser_use.filesystem.file_system import FileSystem
 from browser_use.agent.views import ActionResult, AgentStepInfo
 
@@ -75,12 +76,30 @@ def build_agent(test_logger):
 		tools_act_calls=[],
 		tools_act_results=[],
 	)
+	agent.llm = SimpleNamespace(model='mock-model')
 
 	def _tools_act(**kwargs):
 		agent.tools_act_calls.append(kwargs)
 		return asyncio.Future()
 
 	agent.tools.act = AsyncMock()
+	agent.llm_handler = SimpleNamespace(
+		get_model_output_with_retry=AsyncMock(return_value=SimpleNamespace(action=[])),
+		handle_post_llm_processing=AsyncMock(),
+	)
+	agent.history = SimpleNamespace(
+		history=[],
+		add_item=MagicMock(),
+		is_done=lambda: False,
+		errors=lambda: [],
+		urls=lambda: [],
+		total_duration_seconds=lambda: 0,
+		final_result=lambda: None,
+		usage=None,
+)
+	agent.history_manager = SimpleNamespace(create_history_item=AsyncMock())
+	agent.save_file_system_state = MagicMock()
+	agent.enable_cloud_sync = False
 	return agent
 
 
@@ -140,3 +159,18 @@ async def test_multi_act_stops_on_done_action(test_logger, dummy_action_model_cl
 	assert len(results) == 1
 	agent.tools.act.assert_awaited_once()
 	agent._check_stop_or_pause.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_execute_step_handles_model_provider_error(test_logger):
+	agent = build_agent(test_logger)
+	error = ModelProviderError('503 UNAVAILABLE')
+	agent.llm_handler.get_model_output_with_retry = AsyncMock(side_effect=error)
+
+	executor = StepExecutor(agent)
+
+	await executor.execute_step(step_info=None)
+
+	assert agent.state.consecutive_failures == 1
+	assert agent.state.last_result
+	assert '503' in agent.state.last_result[0].error
