@@ -32,17 +32,19 @@
 
 # 🤖 Quickstart
 
-With uv (Python>=3.11):
+Install the library (Python >= 3.11):
 
 ```bash
 #  We ship every day - use the latest version!
 uv pip install browser-use
+# or
+pip install browser-use
 ```
 
-Download chromium using playwright's shortcut:
+Install Chromium via Playwright (no sudo required):
 
 ```bash
-uvx playwright install chromium --with-deps --no-shell
+uvx playwright install chromium
 ```
 
 Create a `.env` file and add your API key. Don't have one? Start with a [free Gemini key](https://aistudio.google.com/app/u/1/apikey?pli=1).
@@ -67,6 +69,31 @@ agent.run_sync()
 ```
 
 Check out the [library docs](https://docs.browser-use.com) and [cloud docs](https://docs.cloud.browser-use.com) for more settings.
+
+## Local development from source
+
+Clone the repo and run the bootstrap script to prepare the virtual environment and local Playwright browser cache:
+
+```bash
+./bin/bootstrap_chromium.sh
+```
+
+The script will:
+- create `.venv` if missing,
+- install the package in editable mode and ensure the Playwright CLI is available,
+- download Chromium/FFmpeg/Headless Shell into `.playwright-browsers/`, the path shared by our tooling via `PLAYWRIGHT_BROWSERS_PATH`.
+
+If you prefer manual setup:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+pip install playwright
+PLAYWRIGHT_BROWSERS_PATH=.playwright-browsers playwright install chromium
+```
+
+Either path keeps large browser binaries out of Git while guaranteeing consistent local behaviour.
 
 
 ## Stealth Browser Infrastructure
