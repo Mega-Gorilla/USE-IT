@@ -62,7 +62,7 @@ ENV TZ=UTC \
     IN_DOCKER=True
 
 # User config
-ENV BROWSERUSE_USER="browseruse" \
+ENV BROWSERUSE_USER="user" \
     DEFAULT_PUID=911 \
     DEFAULT_PGID=911
 
@@ -202,7 +202,9 @@ RUN mkdir -p "$DATA_DIR/profiles/default" \
     ) | tee -a /VERSION.txt
 
 
-USER "$BROWSERUSE_USER"
+# USER directive commented out for devcontainer compatibility
+# The devcontainer will handle user switching via remoteUser setting
+# USER "$BROWSERUSE_USER"
 VOLUME "$DATA_DIR"
 EXPOSE 9242
 EXPOSE 9222
