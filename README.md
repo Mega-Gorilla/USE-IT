@@ -6,31 +6,10 @@
 
 <h1 align="center">Enable AI to control your browser</h1>
 
-[![Docs](https://img.shields.io/badge/Docs-📕-blue?style=for-the-badge)](https://docs.browser-use.com)
-[![Browser-use cloud](https://img.shields.io/badge/Browser_Use_Cloud-☁️-blue?style=for-the-badge&logo=rocket&logoColor=white)](https://cloud.browser-use.com)
-
-[![Discord](https://img.shields.io/discord/1303749220842340412?color=7289DA&label=Discord&logo=discord&logoColor=white)](https://link.browser-use.com/discord)
-[![Twitter Follow](https://img.shields.io/twitter/follow/Gregor?style=social)](https://x.com/intent/user?screen_name=gregpr07)
-[![Twitter Follow](https://img.shields.io/twitter/follow/Magnus?style=social)](https://x.com/intent/user?screen_name=mamagnus00)
-[![Merch store](https://img.shields.io/badge/Merch_store-👕-blue)](https://browsermerch.com)
-[![Weave Badge](https://img.shields.io/endpoint?url=https%3A%2F%2Fapp.workweave.ai%2Fapi%2Frepository%2Fbadge%2Forg_T5Pvn3UBswTHIsN1dWS3voPg%2F881458615&labelColor=#EC6341)](https://app.workweave.ai/reports/repository/org_T5Pvn3UBswTHIsN1dWS3voPg/881458615)
+English | [日本語](#日本語-japanese)
 
 
-
-
-
-<!-- Keep these links. Translations will automatically update with the README. -->
-[Deutsch](https://www.readme-i18n.com/browser-use/browser-use?lang=de) |
-[Español](https://www.readme-i18n.com/browser-use/browser-use?lang=es) |
-[français](https://www.readme-i18n.com/browser-use/browser-use?lang=fr) |
-[日本語](https://www.readme-i18n.com/browser-use/browser-use?lang=ja) |
-[한국어](https://www.readme-i18n.com/browser-use/browser-use?lang=ko) |
-[Português](https://www.readme-i18n.com/browser-use/browser-use?lang=pt) |
-[Русский](https://www.readme-i18n.com/browser-use/browser-use?lang=ru) |
-[中文](https://www.readme-i18n.com/browser-use/browser-use?lang=zh)
-
-
-# 🤖 Quickstart
+# 🤖 Quickstart (English)
 
 Install the library (Python >= 3.11):
 
@@ -96,76 +75,65 @@ PLAYWRIGHT_BROWSERS_PATH=.playwright-browsers playwright install chromium
 Either path keeps large browser binaries out of Git while guaranteeing consistent local behaviour.
 
 
-## Stealth Browser Infrastructure
+# 日本語 (Japanese)
 
-Want to bypass Cloudflare, or any other anti-bot protection?
+## クイックスタート
 
-Simply go to [Browser Use Cloud](https://docs.cloud.browser-use.com) grab a `BROWSER_USE_API_KEY` and use the `use_cloud` parameter.
+Python 3.11 以上でライブラリをインストールします:
+
+```bash
+uv pip install browser-use
+# または
+pip install browser-use
+```
+
+Playwright から Chromium をインストールします（sudo 不要）:
+
+```bash
+uvx playwright install chromium
+```
+
+`.env` ファイルを作成し、利用する LLM の API キーなどを記載してください:
+
+```bash
+GEMINI_API_KEY=
+```
+
+サンプルコード:
 
 ```python
-from browser_use import Agent, Browser, ChatOpenAI
-
-# Use Browser-Use cloud browser service
-browser = Browser(
-    use_cloud=True,  # Automatically provisions a cloud browser
-)
+from browser_use import Agent, ChatGoogle
+from dotenv import load_dotenv
+load_dotenv()
 
 agent = Agent(
-    task="Your task here",
-    llm=ChatOpenAI(model='gpt-4.1-mini'),
-    browser=browser,
+    task="browser-use レポジトリのスター数を確認する",
+    llm=ChatGoogle(model="gemini-flash-latest"),
 )
+agent.run_sync()
 ```
 
+## リポジトリから開発する場合
 
+次のスクリプトで仮想環境と Playwright のブラウザキャッシュをまとめて準備できます:
 
-# Demos
-
-[Task](https://github.com/browser-use/browser-use/blob/main/examples/use-cases/shopping.py): Add grocery items to cart, and checkout.
-
-[![AI Did My Groceries](https://github.com/user-attachments/assets/a0ffd23d-9a11-4368-8893-b092703abc14)](https://www.youtube.com/watch?v=L2Ya9PYNns8)
-
-<br/><br/>
-
-
-[Task](https://github.com/browser-use/browser-use/blob/main/examples/use-cases/find_and_apply_to_jobs.py): Read my CV & find ML jobs, save them to a file, and then start applying for them in new tabs, if you need help, ask me.
-
-https://github.com/user-attachments/assets/171fb4d6-0355-46f2-863e-edb04a828d04
-
-<br/><br/>
-
-See [more examples](https://docs.browser-use.com/examples) and give us a star!
-
-
-<br/><br/>
-## MCP Integration
-
-This gives Claude Desktop access to browser automation tools for web scraping, form filling, and more. See the [MCP docs](https://docs.browser-use.com/customize/mcp-server).
-```json
-{
-  "mcpServers": {
-    "browser-use": {
-      "command": "uvx",
-      "args": ["browser-use[cli]", "--mcp"],
-      "env": {
-        "OPENAI_API_KEY": "sk-..."
-      }
-    }
-  }
-}
+```bash
+./bin/bootstrap_chromium.sh
 ```
 
-<div align="center">
-  
-**Tell your computer what to do, and it gets it done.**
+スクリプトの処理内容:
+- `.venv` が無ければ作成
+- パッケージを編集可能インストールし、Playwright CLI を導入
+- Chromium / FFmpeg / Headless Shell を `.playwright-browsers/` にダウンロード（`PLAYWRIGHT_BROWSERS_PATH` で共有）
 
-<img src="https://github.com/user-attachments/assets/06fa3078-8461-4560-b434-445510c1766f" width="400"/>
+手動で行う場合は次のとおりです:
 
-[![Twitter Follow](https://img.shields.io/twitter/follow/Magnus?style=social)](https://x.com/intent/user?screen_name=mamagnus00)
-[![Twitter Follow](https://img.shields.io/twitter/follow/Gregor?style=social)](https://x.com/intent/user?screen_name=gregpr07)
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+pip install playwright
+PLAYWRIGHT_BROWSERS_PATH=.playwright-browsers playwright install chromium
+```
 
-</div>
-
-<div align="center">
-Made with ❤️ in Zurich and San Francisco
- </div>
+Git にはブラウザのバイナリを含めず、ローカルでのみ共有する構成になっています。
