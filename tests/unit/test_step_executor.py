@@ -1,10 +1,13 @@
 import asyncio
+import tempfile
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from browser_use.agent.step_executor import StepExecutor
+from browser_use.filesystem.file_system import FileSystem
 from browser_use.agent.views import ActionResult, AgentStepInfo
 
 
@@ -42,6 +45,7 @@ def build_agent(test_logger):
 	message_manager._add_context_message = MagicMock()
 	message_manager.last_state_message_text = 'state'
 
+	file_system = FileSystem(Path(tempfile.mkdtemp()))
 	agent = SimpleNamespace(
 		state=state,
 		browser_session=browser_session,
@@ -51,7 +55,7 @@ def build_agent(test_logger):
 		tools=SimpleNamespace(registry=MagicMock(get_prompt_description=MagicMock(return_value='desc'))),
 		sensitive_data=None,
 		available_file_paths=['/tmp/download.txt'],
-		file_system=None,
+		file_system=file_system,
 		settings=SimpleNamespace(
 			use_vision=True,
 			max_failures=3,
