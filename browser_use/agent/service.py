@@ -2087,6 +2087,20 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		except Exception as e:
 			self.logger.error(f'Error during cleanup: {e}')
 
+		llm = getattr(self, 'llm', None)
+		if llm is not None:
+			try:
+				aclose = getattr(llm, 'aclose', None)
+				if callable(aclose):
+					result = aclose()
+					if inspect.isawaitable(result):
+						await result
+				close = getattr(llm, 'close', None)
+				if callable(close):
+					close()
+			except Exception as e:
+				self.logger.debug(f'Error closing LLM client: {e}')
+
 	async def _update_action_models_for_page(self, page_url: str) -> None:
 		"""Update action models with page-specific actions"""
 		# Create new action model with current page's filtered actions

@@ -135,6 +135,29 @@ class ChatGoogle(BaseChatModel):
 		self._client = genai.Client(**client_params)
 		return self._client
 
+	async def aclose(self) -> None:
+		"""Close the cached Google client and release HTTP resources."""
+		if self._client is None:
+			return
+
+		client = self._client
+		self._client = None
+
+		try:
+			if hasattr(client, 'aio'):
+				try:
+					await client.aio.aclose()
+				except Exception as exc:  # noqa: BLE001 - best effort cleanup
+					self.logger.debug(f'Failed to close async Google client: {exc}')
+			if hasattr(client, 'close'):
+				try:
+					client.close()
+				except Exception as exc:  # noqa: BLE001 - best effort cleanup
+					self.logger.debug(f'Failed to close sync Google client: {exc}')
+		finally:
+			# Ensure references are dropped even if close calls fail
+			self._client = None
+
 	@property
 	def name(self) -> str:
 		return str(self.model)
