@@ -100,7 +100,7 @@ class MessageManager:
 		self,
 		task: str,
 		system_message: SystemMessage,
-		file_system: FileSystem,
+		file_system: FileSystem | None,
 		state: MessageManagerState = MessageManagerState(),
 		use_thinking: bool = True,
 		include_attributes: list[str] | None = None,
