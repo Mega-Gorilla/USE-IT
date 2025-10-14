@@ -39,6 +39,8 @@
 
 ## ステップ処理の全体構造
 
+**実装場所**: `browser_use/agent/service.py:661`
+
 ### アーキテクチャ図
 
 ```mermaid
@@ -108,6 +110,8 @@ async def step(self) -> None:
 
 ## Phase 1: コンテキスト準備
 
+**実装場所**: `browser_use/agent/service.py:687`
+
 **目的**: LLM が判断を下すために必要なすべての情報を収集・整理する
 
 ### 実行される処理
@@ -117,18 +121,21 @@ async def _prepare_context(self, step_info: AgentStepInfo | None) -> BrowserStat
     """コンテキスト準備"""
 
     # 1. ブラウザ状態の取得
+    # （get_browser_state_summary実装: browser_use/browser/session.py:1119）
     browser_state = await self.browser_session.get_browser_state_summary(
         include_screenshot=True,      # 常にスクリーンショット取得
         include_recent_events=True    # 最近のイベント（クリック等）も取得
     )
 
     # 2. ダウンロード確認
+    # （_check_and_update_downloads実装: browser_use/agent/service.py:483）
     await self._check_and_update_downloads()
 
     # 3. 停止/一時停止の確認
     await self._check_stop_or_pause()
 
     # 4. アクションモデルの更新（ページ固有）
+    # （_update_action_models_for_page実装: browser_use/agent/service.py:2104）
     await self._update_action_models_for_page(browser_state.url)
 
     # 5. メッセージの作成
@@ -148,6 +155,8 @@ async def _prepare_context(self, step_info: AgentStepInfo | None) -> BrowserStat
 ```
 
 ### 取得されるブラウザ状態
+
+**実装場所**: `browser_use/browser/views.py:69`
 
 ```python
 @dataclass
@@ -291,6 +300,8 @@ simplified_dom = simplify_dom_for_llm(
 
 ### Phase 2a: LLM呼び出し (`_get_next_action`)
 
+**実装場所**: `browser_use/agent/service.py:737`
+
 **目的**: LLM に現在の状況を伝え、次に取るべきアクションを決定してもらう
 
 ```python
@@ -355,6 +366,8 @@ async def _get_model_output_with_retry(
 
 #### LLMの出力形式
 
+**実装場所**: `browser_use/agent/views.py:149`
+
 ```python
 @dataclass
 class AgentOutput:
@@ -393,6 +406,8 @@ class CurrentState:
 
 ### Phase 2b: アクション実行 (`_execute_actions`)
 
+**実装場所**: `browser_use/agent/service.py:772`
+
 **目的**: LLMが決定したアクションを実際にブラウザで実行する
 
 ```python
@@ -411,6 +426,8 @@ async def _execute_actions(self) -> None:
 
 #### multi_act の内部動作
 
+**実装場所**: `browser_use/agent/service.py:1662`
+
 ```python
 async def multi_act(self, actions: list[ActionModel]) -> list[ActionResult]:
     """複数のアクションを順次実行"""
@@ -423,6 +440,7 @@ async def multi_act(self, actions: list[ActionModel]) -> list[ActionResult]:
             action_params = action.model_dump()[action_name]
 
             # 2. ツールレジストリから対応する関数を取得
+            # （Tools実装: browser_use/tools/service.py:102）
             tool_func = self.tools.registry.get_tool(action_name)
 
             # 3. アクションを実行
@@ -496,6 +514,8 @@ async def type_text(self, index: int, text: str) -> ActionResult:
 
 #### ActionResult の構造
 
+**実装場所**: `browser_use/agent/views.py:90`
+
 ```python
 @dataclass
 class ActionResult:
@@ -536,6 +556,8 @@ class ActionResult:
 ```
 
 ## Phase 3: 後処理
+
+**実装場所**: `browser_use/agent/service.py:783`
 
 **目的**: アクション実行後の状態を確認し、記録する
 
@@ -599,6 +621,8 @@ async def _check_and_update_downloads(self, context: str) -> None:
 ```
 
 ## エラーハンドリング
+
+**実装場所**: `browser_use/agent/service.py:813`
 
 **目的**: 予期しないエラーを適切に処理し、可能な限り続行する
 
@@ -681,6 +705,8 @@ if self.state.consecutive_failures > self.settings.max_failures:
 
 ## 最終処理
 
+**実装場所**: `browser_use/agent/service.py:838`
+
 **目的**: ステップの結果を記録し、履歴を更新する（必ず実行される）
 
 ```python
@@ -701,6 +727,7 @@ async def _finalize(self, browser_state: BrowserStateSummary | None) -> None:
         )
 
         # 2. 履歴アイテムの作成
+        # （_make_history_item実装: browser_use/agent/service.py:982）
         await self._make_history_item(
             self.state.last_model_output,
             browser_state,
@@ -843,6 +870,8 @@ state.n_steps = 2
 ```
 
 ### メッセージ履歴の管理
+
+**実装場所**: `browser_use/agent/message_manager/service.py:96`
 
 ```python
 class MessageManager:
