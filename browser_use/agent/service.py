@@ -12,13 +12,6 @@ from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
-from browser_use.agent.cloud_events import (
-	CreateAgentOutputFileEvent,
-	CreateAgentSessionEvent,
-	CreateAgentStepEvent,
-	CreateAgentTaskEvent,
-	UpdateAgentTaskEvent,
-)
 from browser_use.llm.base import BaseChatModel
 from browser_use.llm.google.chat import ChatGoogle
 from browser_use.llm.messages import ContentPartImageParam, ContentPartTextParam
@@ -33,11 +26,14 @@ from browser_use import Browser, BrowserProfile, BrowserSession
 
 # 起動時に重い agent.views の読み込みを避けるため GIF のインポートは遅延させる
 # （参考） browser_use.agent.gif から create_history_gif をインポートするサンプル  # 遅延インポート例
+from browser_use.agent.config import AgentConfig
 from browser_use.agent.filesystem_manager import FilesystemManager
 from browser_use.agent.history_manager import HistoryManager
 from browser_use.agent.llm_handler import LLMHandler
 from browser_use.agent.message_manager.service import MessageManager
+from browser_use.agent.pause_controller import PauseController
 from browser_use.agent.prompts import SystemPrompt
+from browser_use.agent.runner import AgentRunner
 from browser_use.agent.step_executor import StepExecutor
 from browser_use.agent.telemetry import TelemetryHandler
 from browser_use.agent.views import (
@@ -55,7 +51,7 @@ from browser_use.browser.session import DEFAULT_BROWSER_PROFILE
 from browser_use.browser.views import BrowserStateSummary
 from browser_use.config import CONFIG
 from browser_use.filesystem.file_system import FileSystem
-from browser_use.observability import observe, observe_debug
+from browser_use.observability import observe
 from browser_use.sync import CloudSync
 from browser_use.telemetry.service import ProductTelemetry
 from browser_use.tools.registry.views import ActionModel
@@ -82,7 +78,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 	@time_execution_sync('--init')
 	def __init__(
 		self,
-		task: str,
+		task: str | None = None,
 		llm: BaseChatModel | None = None,
 		# 任意パラメータ
 		browser_profile: BrowserProfile | None = None,
@@ -138,163 +134,147 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		sample_images: list[ContentPartTextParam | ContentPartImageParam] | None = None,
 		final_response_after_failure: bool = True,
 		_url_shortening_limit: int = 25,
+		config: AgentConfig[Context, AgentStructuredOutput] | None = None,
 		**kwargs,
 	):
-		if llm is None:
-			default_llm_name = CONFIG.DEFAULT_LLM
-			if default_llm_name:
-				try:
-					from browser_use.llm.models import get_llm_by_name
+		if config is None:
+			if task is None:
+				raise ValueError('task is required when config is not provided.')
+			config = AgentConfig(
+				task=task,
+				llm=llm,
+				browser_profile=browser_profile,
+				browser_session=browser_session,
+				browser=browser,
+				tools=tools,
+				controller=controller,
+				sensitive_data=sensitive_data,
+				initial_actions=initial_actions,
+				register_new_step_callback=register_new_step_callback,
+				register_done_callback=register_done_callback,
+				register_external_agent_status_raise_error_callback=register_external_agent_status_raise_error_callback,
+				register_should_stop_callback=register_should_stop_callback,
+				output_model_schema=output_model_schema,
+				use_vision=use_vision,
+				save_conversation_path=save_conversation_path,
+				save_conversation_path_encoding=save_conversation_path_encoding,
+				max_failures=max_failures,
+				override_system_message=override_system_message,
+				extend_system_message=extend_system_message,
+				generate_gif=generate_gif,
+				available_file_paths=available_file_paths,
+				include_attributes=include_attributes,
+				max_actions_per_step=max_actions_per_step,
+				use_thinking=use_thinking,
+				flash_mode=flash_mode,
+				max_history_items=max_history_items,
+				page_extraction_llm=page_extraction_llm,
+				injected_agent_state=injected_agent_state,
+				source=source,
+				file_system_path=file_system_path,
+				task_id=task_id,
+				cloud_sync=cloud_sync,
+				calculate_cost=calculate_cost,
+				display_files_in_done_text=display_files_in_done_text,
+				include_tool_call_examples=include_tool_call_examples,
+				vision_detail_level=vision_detail_level,
+				llm_timeout=llm_timeout,
+				step_timeout=step_timeout,
+				directly_open_url=directly_open_url,
+				include_recent_events=include_recent_events,
+				sample_images=sample_images,
+				final_response_after_failure=final_response_after_failure,
+				url_shortening_limit=_url_shortening_limit,
+				extra=kwargs,
+			)
+		else:
+			# config 優先、追加の kwargs は余白に詰める
+			if kwargs:
+				config.extra.update(kwargs)
 
-					llm = get_llm_by_name(default_llm_name)
-				except (ImportError, ValueError) as e:
-					# ファイル冒頭で用意した logger をそのまま利用する
-					logger.warning(
-						f'Failed to create default LLM "{default_llm_name}": {e}. Falling back to ChatGoogle(model="gemini-flash-latest")'
-					)
-					llm = ChatGoogle(model='gemini-flash-latest')
-			else:
-				# デフォルト LLM が指定されていない場合は元のデフォルトを使う
-				llm = ChatGoogle(model='gemini-flash-latest')
+		self.config = config
+		cfg = config
+		self.factories = cfg.factories
 
-		# LLM が ChatBrowserUse の場合は flash_mode を強制的に有効にする
-		if llm.provider == 'browser-use':
-			flash_mode = True
+		self.task = cfg.task
+		self.llm, page_extraction_llm, flash_mode, llm_timeout, initial_paths = self._resolve_defaults(
+			cfg.llm,
+			cfg.page_extraction_llm,
+			cfg.flash_mode,
+			cfg.available_file_paths,
+			cfg.llm_timeout,
+		)
+		self._initial_available_file_paths = initial_paths
+		self.id = cfg.task_id or uuid7str()
+		self.task_id = self.id
+		self.session_id = uuid7str()
 
-		if page_extraction_llm is None:
-			page_extraction_llm = llm
-		if available_file_paths is None:
-			available_file_paths = []
-		self._initial_available_file_paths = list(available_file_paths)
-
-		# タイムアウトが未設定ならモデル名に応じて決定する
-		if llm_timeout is None:
-
-			def _get_model_timeout(llm_model: BaseChatModel) -> int:
-				"""Determine timeout based on model name"""
-				model_name = getattr(llm_model, 'model', '').lower()
-				if 'gemini' in model_name:
-					return 45
-				elif 'groq' in model_name:
-					return 30
-				elif 'o3' in model_name or 'claude' in model_name or 'sonnet' in model_name or 'deepseek' in model_name:
-					return 90
-				else:
-					return 60  # 既定のタイムアウト値
-
-			llm_timeout = _get_model_timeout(llm)
-
-		self.id = task_id or uuid7str()
-		self.task_id: str = self.id
-		self.session_id: str = uuid7str()
-
-		browser_profile = browser_profile or DEFAULT_BROWSER_PROFILE
-
-		# browser と browser_session が同時指定された場合は browser を優先する
-		if browser and browser_session:
+		browser_profile = cfg.browser_profile or DEFAULT_BROWSER_PROFILE
+		if cfg.browser and cfg.browser_session:
 			raise ValueError('Cannot specify both "browser" and "browser_session" parameters. Use "browser" for the cleaner API.')
-		browser_session = browser or browser_session
 
+		browser_session = cfg.browser or cfg.browser_session
 		self.browser_session = browser_session or BrowserSession(
 			browser_profile=browser_profile,
-			id=uuid7str()[:-4] + self.id[-4:],  # ログ上で並べて確認しやすいよう末尾4文字を共有
+			id=uuid7str()[:-4] + self.id[-4:],
 		)
 
 		self.filesystem_manager: FilesystemManager | None = None
+		self.directly_open_url = cfg.directly_open_url
+		self.include_recent_events = cfg.include_recent_events
+		self._url_shortening_limit = cfg.url_shortening_limit
 
-		# コアとなる構成要素
-		self.task = task
-		self.llm = llm
-		self.directly_open_url = directly_open_url
-		self.include_recent_events = include_recent_events
-		self._url_shortening_limit = _url_shortening_limit
-		if tools is not None:
-			self.tools = tools
-		elif controller is not None:
-			self.tools = controller
-		else:
-			# use_vision=False のときはスクリーンショット系アクションを除外
-			exclude_actions = ['screenshot'] if use_vision is False else []
-			self.tools = Tools(exclude_actions=exclude_actions, display_files_in_done_text=display_files_in_done_text)
-
-		# 構造化出力の設定
-		self.output_model_schema = output_model_schema
+		self.tools = self._prepare_tools(cfg.tools, cfg.controller, cfg.use_vision, cfg.display_files_in_done_text)
+		self.output_model_schema = cfg.output_model_schema
 		if self.output_model_schema is not None:
 			self.tools.use_structured_output_action(self.output_model_schema)
 
-		self.sensitive_data = sensitive_data
+		self.sensitive_data = cfg.sensitive_data
+		self.sample_images = cfg.sample_images
 
-		self.sample_images = sample_images
-
-		self.settings = AgentSettings(
-			use_vision=use_vision,
-			vision_detail_level=vision_detail_level,
-			save_conversation_path=save_conversation_path,
-			save_conversation_path_encoding=save_conversation_path_encoding,
-			max_failures=max_failures,
-			override_system_message=override_system_message,
-			extend_system_message=extend_system_message,
-			generate_gif=generate_gif,
-			include_attributes=include_attributes,
-			max_actions_per_step=max_actions_per_step,
-			use_thinking=use_thinking,
+		self.settings = self._build_settings(
+			use_vision=cfg.use_vision,
+			vision_detail_level=cfg.vision_detail_level,
+			save_conversation_path=cfg.save_conversation_path,
+			save_conversation_path_encoding=cfg.save_conversation_path_encoding,
+			max_failures=cfg.max_failures,
+			override_system_message=cfg.override_system_message,
+			extend_system_message=cfg.extend_system_message,
+			generate_gif=cfg.generate_gif,
+			include_attributes=cfg.include_attributes,
+			max_actions_per_step=cfg.max_actions_per_step,
+			use_thinking=cfg.use_thinking,
 			flash_mode=flash_mode,
-			max_history_items=max_history_items,
+			max_history_items=cfg.max_history_items,
 			page_extraction_llm=page_extraction_llm,
-			calculate_cost=calculate_cost,
-			include_tool_call_examples=include_tool_call_examples,
+			calculate_cost=cfg.calculate_cost,
+			include_tool_call_examples=cfg.include_tool_call_examples,
 			llm_timeout=llm_timeout,
-			step_timeout=step_timeout,
-			final_response_after_failure=final_response_after_failure,
+			step_timeout=cfg.step_timeout,
+			final_response_after_failure=cfg.final_response_after_failure,
 		)
 
-		# トークンコスト算出サービス
-		self.token_cost_service = TokenCost(include_cost=calculate_cost)
-		self.token_cost_service.register_llm(llm)
-		self.token_cost_service.register_llm(page_extraction_llm)
+		self._initialize_token_cost_service(cfg.calculate_cost, self.llm, page_extraction_llm)
+		self._initialize_history_components(cfg.injected_agent_state)
+		self._initialize_filesystem(cfg.file_system_path)
 
-		# 状態の初期化
-		self.state = injected_agent_state or AgentState()
-
-		# 履歴の初期化
-		self.history = AgentHistoryList(history=[], usage=None)
-		self.history_manager = HistoryManager(self)
-
-		# エージェント用ディレクトリの初期化
-		import time
-
-		timestamp = int(time.time())
-		base_tmp = Path(tempfile.gettempdir())
-		self.agent_directory = base_tmp / f'browser_use_agent_{self.id}_{timestamp}'
-
-		# ファイルシステムとスクリーンショットサービスを準備
-		self.filesystem_manager = FilesystemManager(
-			state=self.state,
-			browser_session=self.browser_session,
-			agent_directory=self.agent_directory,
-			available_file_paths=self._initial_available_file_paths,
-			file_system_path=file_system_path,
-			logger=self.logger,
-		)
-		self._initial_available_file_paths = []
-		self._set_screenshot_service()
-
-		# アクションの初期セットアップ
 		self._setup_action_models()
-		self._set_browser_use_version_and_source(source)
+		self._set_browser_use_version_and_source(cfg.source)
 
 		initial_url = None
 
 		# 初期アクションが無い場合に限り URL 自動ロードを行う
-		if self.directly_open_url and not self.state.follow_up_task and not initial_actions:
+		if self.directly_open_url and not self.state.follow_up_task and not cfg.initial_actions:
 			initial_url = self._extract_url_from_task(self.task)
 			if initial_url:
 				self.logger.info(f'🔗 Found URL in task: {initial_url}, adding as initial action...')
-				initial_actions = [{'navigate': {'url': initial_url, 'new_tab': False}}]
+				cfg.initial_actions = [{'navigate': {'url': initial_url, 'new_tab': False}}]
 
 		self.initial_url = initial_url
 
-		self.initial_actions = self._convert_initial_actions(initial_actions) if initial_actions else None
+		self.initial_actions = (
+			self._convert_initial_actions(cfg.initial_actions) if cfg.initial_actions else None
+		)
 		# モデル接続と設定を確認する
 		self._verify_and_setup_llm()
 
@@ -318,11 +298,11 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# MessageManager を状態付きで初期化
 		# 初期システムプロンプトには全アクションが含まれ、各ステップで更新される
 		self._message_manager = MessageManager(
-			task=task,
+			task=cfg.task,
 			system_message=SystemPrompt(
 				max_actions_per_step=self.settings.max_actions_per_step,
-				override_system_message=override_system_message,
-				extend_system_message=extend_system_message,
+				override_system_message=cfg.override_system_message,
+				extend_system_message=cfg.extend_system_message,
 				use_thinking=self.settings.use_thinking,
 				flash_mode=self.settings.flash_mode,
 			).get_system_message(),
@@ -331,7 +311,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			use_thinking=self.settings.use_thinking,
 			# 以前 MessageManagerSettings にあったパラメータ
 			include_attributes=self.settings.include_attributes,
-			sensitive_data=sensitive_data,
+			sensitive_data=self.sensitive_data,
 			max_history_items=self.settings.max_history_items,
 			vision_detail_level=self.settings.vision_detail_level,
 			include_tool_call_examples=self.settings.include_tool_call_examples,
@@ -340,37 +320,29 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		)
 
 		if self.sensitive_data:
-			# domain ごとの資格情報が含まれているか確認する
 			has_domain_specific_credentials = any(isinstance(v, dict) for v in self.sensitive_data.values())
 
-			# allowed_domains が設定されていない場合はセキュリティ警告を出す
 			if not self.browser_profile.allowed_domains:
 				self.logger.error(
 					'⚠️ Agent(sensitive_data=••••••••) was provided but Browser(allowed_domains=[...]) is not locked down! ⚠️\n'
 					'          ☠️ If the agent visits a malicious website and encounters a prompt-injection attack, your sensitive_data may be exposed!\n\n'
 					'   \n'
 				)
-
-			# ドメイン単位の資格情報を扱う場合はパターンを検証する
 			elif has_domain_specific_credentials:
-				# ドメインパターンが allowed_domains に含まれているか確認する
 				domain_patterns = [k for k, v in self.sensitive_data.items() if isinstance(v, dict)]
 
-				# 各ドメインパターンを allowed_domains と照合する
 				for domain_pattern in domain_patterns:
 					is_allowed = False
 					for allowed_domain in self.browser_profile.allowed_domains:
-						# URL マッチングが不要な特例
 						if domain_pattern == allowed_domain or allowed_domain == '*':
 							is_allowed = True
 							break
 
-						# 比較のためスキームを除いたドメイン部に変換する
 						pattern_domain = domain_pattern.split('://')[-1] if '://' in domain_pattern else domain_pattern
-						allowed_domain_part = allowed_domain.split('://')[-1] if '://' in allowed_domain else allowed_domain
+						allowed_domain_part = (
+							allowed_domain.split('://')[-1] if '://' in allowed_domain else allowed_domain
+						)
 
-						# 許可されたドメインによりパターンが包含されているか確認する
-						# 例: "google.com" は "*.google.com" に含まれる
 						if pattern_domain == allowed_domain_part or (
 							allowed_domain_part.startswith('*.')
 							and (
@@ -381,35 +353,30 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 							is_allowed = True
 							break
 
-					if not is_allowed:
-						self.logger.warning(
-							f'⚠️ Domain pattern "{domain_pattern}" in sensitive_data is not covered by any pattern in allowed_domains={self.browser_profile.allowed_domains}\n'
-							f'   This may be a security risk as credentials could be used on unintended domains.'
-						)
+				if not is_allowed:
+					self.logger.warning(
+						f'⚠️ Domain pattern "{domain_pattern}" in sensitive_data is not covered by any pattern in allowed_domains={self.browser_profile.allowed_domains}\n'
+						f'   This may be a security risk as credentials could be used on unintended domains.'
+					)
 
-		# コールバック
-		self.register_new_step_callback = register_new_step_callback
-		self.register_done_callback = register_done_callback
-		self.register_should_stop_callback = register_should_stop_callback
-		self.register_external_agent_status_raise_error_callback = register_external_agent_status_raise_error_callback
+		self.register_new_step_callback = cfg.register_new_step_callback
+		self.register_done_callback = cfg.register_done_callback
+		self.register_should_stop_callback = cfg.register_should_stop_callback
+		self.register_external_agent_status_raise_error_callback = cfg.register_external_agent_status_raise_error_callback
 
-		# テレメトリ
-		self.telemetry = ProductTelemetry()
+		self.telemetry = self.factories.telemetry_factory(self)
 		self.telemetry_handler = TelemetryHandler(self)
 		self.llm_handler = LLMHandler(self)
 		self.step_executor = StepExecutor(self)
+		self.pause_controller = PauseController(self.logger)
 
-		# WAL 永続化付きのイベントバス
-		# 既定パスは ~/.config/browseruse/events/{agent_session_id}.jsonl
-		# wal_path = CONFIG.BROWSER_USE_CONFIG_DIR / 'events' / f'{self.session_id}.jsonl'
-		self.eventbus = EventBus(name=f'Agent_{str(self.id)[-4:]}')
+		self.eventbus = self.factories.event_bus_factory(self)
 
-		# クラウド同期サービス
 		self.enable_cloud_sync = CONFIG.BROWSER_USE_CLOUD_SYNC
-		if self.enable_cloud_sync or cloud_sync is not None:
-			self.cloud_sync = cloud_sync or CloudSync()
-			# クラウド同期ハンドラを登録
-			self.eventbus.on('*', self.cloud_sync.handle_event)
+		if self.enable_cloud_sync or cfg.cloud_sync is not None:
+			self.cloud_sync = cfg.cloud_sync if cfg.cloud_sync is not None else self.factories.cloud_sync_factory(self)
+			if self.cloud_sync:
+				self.eventbus.on('*', self.cloud_sync.handle_event)
 		else:
 			self.cloud_sync = None
 
@@ -417,9 +384,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			self.settings.save_conversation_path = Path(self.settings.save_conversation_path).expanduser().resolve()
 			self.logger.info(f'💬 Saving conversation to {_log_pretty_path(self.settings.save_conversation_path)}')
 
-		# イベント駆動の一時停止制御（シリアライズの都合で AgentState には含めない）
-		self._external_pause_event = asyncio.Event()
-		self._external_pause_event.set()
 
 	@property
 	def logger(self) -> logging.Logger:
@@ -528,6 +492,106 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		else:
 			self.DoneAgentOutput = AgentOutput.type_with_custom_actions_no_thinking(self.DoneActionModel)
 
+	def _resolve_defaults(
+		self,
+		llm: BaseChatModel | None,
+		page_extraction_llm: BaseChatModel | None,
+		flash_mode: bool,
+		available_file_paths: list[str] | None,
+		llm_timeout: int | None,
+	) -> tuple[BaseChatModel, BaseChatModel, bool, int, list[str]]:
+		if llm is None:
+			default_llm_name = CONFIG.DEFAULT_LLM
+			if default_llm_name:
+				try:
+					from browser_use.llm.models import get_llm_by_name
+
+					llm = get_llm_by_name(default_llm_name)
+				except (ImportError, ValueError) as exc:
+					logger.warning(
+						f'Failed to create default LLM "{default_llm_name}": {exc}. Falling back to ChatGoogle(model="gemini-flash-latest")'
+					)
+					llm = ChatGoogle(model='gemini-flash-latest')
+			else:
+				llm = ChatGoogle(model='gemini-flash-latest')
+
+		if llm.provider == 'browser-use':
+			flash_mode = True
+
+		if page_extraction_llm is None:
+			page_extraction_llm = llm
+
+		initial_paths = list(available_file_paths or [])
+
+		if llm_timeout is None:
+
+			def _get_model_timeout(llm_model: BaseChatModel) -> int:
+				model_name = getattr(llm_model, 'model', '').lower()
+				if 'gemini' in model_name:
+					return 45
+				if 'groq' in model_name:
+					return 30
+				if any(keyword in model_name for keyword in ('o3', 'claude', 'sonnet', 'deepseek')):
+					return 90
+				return 60
+
+			llm_timeout = _get_model_timeout(llm)
+
+		return llm, page_extraction_llm, flash_mode, llm_timeout, initial_paths
+
+	def _prepare_tools(
+		self,
+		tools: Tools[Context] | None,
+		controller: Tools[Context] | None,
+		use_vision: bool | Literal['auto'],
+		display_files_in_done_text: bool,
+	) -> Tools[Context]:
+		if tools is not None:
+			return tools
+		if controller is not None:
+			return controller
+
+		exclude_actions = ['screenshot'] if use_vision is False else []
+		return Tools(exclude_actions=exclude_actions, display_files_in_done_text=display_files_in_done_text)
+
+	def _build_settings(
+		self,
+		**kwargs: Any,
+	) -> AgentSettings:
+		return AgentSettings(**kwargs)
+
+	def _initialize_token_cost_service(
+		self,
+		include_cost: bool,
+		llm: BaseChatModel,
+		page_extraction_llm: BaseChatModel | None,
+	) -> None:
+		self.token_cost_service = TokenCost(include_cost=include_cost)
+		self.token_cost_service.register_llm(llm)
+		if page_extraction_llm:
+			self.token_cost_service.register_llm(page_extraction_llm)
+
+	def _initialize_history_components(self, injected_agent_state: AgentState | None) -> None:
+		self.state = injected_agent_state or AgentState()
+		self.history = AgentHistoryList(history=[], usage=None)
+		self.history_manager = HistoryManager(self)
+
+	def _initialize_filesystem(self, file_system_path: str | None) -> None:
+		timestamp = int(time.time())
+		base_tmp = Path(tempfile.gettempdir())
+		self.agent_directory = base_tmp / f'browser_use_agent_{self.id}_{timestamp}'
+
+		self.filesystem_manager = FilesystemManager(
+			state=self.state,
+			browser_session=self.browser_session,
+			agent_directory=self.agent_directory,
+			available_file_paths=self._initial_available_file_paths,
+			file_system_path=file_system_path,
+			logger=self.logger,
+		)
+		self._initial_available_file_paths = []
+		self._set_screenshot_service()
+
 	def add_new_task(self, new_task: str) -> None:
 		"""Add a new task to the agent, keeping the same task_id as tasks are continuous"""
 		# MessageManager に委譲するだけで task_id やイベントを作り直す必要はない
@@ -618,236 +682,18 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		return None
 
-	@observe(name='agent.run', metadata={'task': '{{task}}', 'debug': '{{debug}}'})
-	@time_execution_async('--run')
 	async def run(
 		self,
 		max_steps: int = 100,
 		on_step_start: AgentHookFunc | None = None,
 		on_step_end: AgentHookFunc | None = None,
 	) -> AgentHistoryList[AgentStructuredOutput]:
-		"""Execute the task with maximum number of steps"""
-
-		loop = asyncio.get_event_loop()
-		agent_run_error: str | None = None  # エラーメッセージ格納用の初期値
-		self._force_exit_telemetry_logged = False  # 強制終了テレメトリを記録済みかを示すフラグ
-
-		# このエージェント専用のシグナルハンドラを設定
-		from browser_use.utils import SignalHandler
-
-		# 2回目の CTRL+C で呼ばれるカスタム終了コールバック
-		def on_force_exit_log_telemetry():
-			self.telemetry_handler.log_agent_event(max_steps=max_steps, agent_run_error='SIGINT: Cancelled by user')
-			# テレメトリインスタンスを明示的に flush
-			if hasattr(self, 'telemetry') and self.telemetry:
-				self.telemetry.flush()
-			self._force_exit_telemetry_logged = True  # フラグを立てる
-
-		signal_handler = SignalHandler(
-			loop=loop,
-			pause_callback=self.pause,
-			resume_callback=self.resume,
-			custom_exit_callback=on_force_exit_log_telemetry,  # 新しいテレメトリコールバックを登録
-			exit_on_second_int=True,
+		"""Delegate execution to the AgentRunner."""
+		return await AgentRunner(self).run(
+			max_steps=max_steps,
+			on_step_start=on_step_start,
+			on_step_end=on_step_end,
 		)
-		signal_handler.register()
-
-		try:
-			await self.telemetry_handler.log_agent_run()
-
-			self.logger.debug(
-				f'🔧 Agent setup: Agent Session ID {self.session_id[-4:]}, Task ID {self.task_id[-4:]}, Browser Session ID {self.browser_session.id[-4:] if self.browser_session else "None"} {"(connecting via CDP)" if (self.browser_session and self.browser_session.cdp_url) else "(launching local browser)"}'
-			)
-
-			# Initialize timing for session and task
-			self._session_start_time = time.time()
-			self._task_start_time = self._session_start_time  # タスク開始時刻も初期化
-
-			# 初回実行時のみセッションイベントを送信
-			if not self.state.session_initialized:
-				if self.enable_cloud_sync:
-					self.logger.debug('📡 Dispatching CreateAgentSessionEvent...')
-					# run() 開始時に CreateAgentSessionEvent を発火
-					self.eventbus.dispatch(CreateAgentSessionEvent.from_agent(self))
-
-					# バックエンドでセッションが作成されるまで短時間待機
-					await asyncio.sleep(0.2)
-
-				self.state.session_initialized = True
-
-			if self.enable_cloud_sync:
-				self.logger.debug('📡 Dispatching CreateAgentTaskEvent...')
-				# run() 開始時に CreateAgentTaskEvent を発火
-				self.eventbus.dispatch(CreateAgentTaskEvent.from_agent(self))
-
-			# まだステップを踏んでいない場合のみ起動メッセージを表示
-			self.telemetry_handler.log_first_step_startup()
-			# ブラウザセッションを開始しウォッチドッグを取り付ける
-			await self.browser_session.start()
-
-			# 本来 try-catch は不要だがコールバックが InterruptedError を送る可能性がある
-			try:
-				await self.step_executor.execute_initial_actions()
-			except InterruptedError:
-				pass
-			except Exception as e:
-				raise e
-
-			self.logger.debug(f'🔄 Starting main execution loop with max {max_steps} steps...')
-			for step in range(max_steps):
-				# 一元化された一時停止管理を利用
-				if self.state.paused:
-					self.logger.debug(f'⏸️ Step {step}: Agent paused, waiting to resume...')
-					await self._external_pause_event.wait()
-					signal_handler.reset()
-
-				# 失敗が多すぎる場合に停止すべきか判定（final_response_after_failure が True なら最後にもう一度試みる）
-				if (self.state.consecutive_failures) >= self.settings.max_failures + int(
-					self.settings.final_response_after_failure
-				):
-					self.logger.error(f'❌ Stopping due to {self.settings.max_failures} consecutive failures')
-					agent_run_error = f'Stopped due to {self.settings.max_failures} consecutive failures'
-					break
-
-				# 各ステップ前に停止フラグを確認
-				if self.state.stopped:
-					self.logger.info('🛑 Agent stopped')
-					agent_run_error = 'Agent stopped programmatically'
-					break
-
-				if on_step_start is not None:
-					await on_step_start(self)
-
-				self.logger.debug(f'🚶 Starting step {step + 1}/{max_steps}...')
-				step_info = AgentStepInfo(step_number=step, max_steps=max_steps)
-
-				try:
-					await asyncio.wait_for(
-						self.step(step_info),
-						timeout=self.settings.step_timeout,
-					)
-					self.logger.debug(f'✅ Completed step {step + 1}/{max_steps}')
-				except TimeoutError:
-					# ステップのタイムアウトを丁寧に処理
-					error_msg = f'Step {step + 1} timed out after {self.settings.step_timeout} seconds'
-					self.logger.error(f'⏰ {error_msg}')
-					self.state.consecutive_failures += 1
-					self.state.last_result = [ActionResult(error=error_msg)]
-
-				if on_step_end is not None:
-					await on_step_end(self)
-
-				if self.history.is_done():
-					self.logger.debug(f'🎯 Task completed after {step + 1} steps!')
-					self.telemetry_handler.log_completion()
-
-					if self.register_done_callback:
-						if inspect.iscoroutinefunction(self.register_done_callback):
-							await self.register_done_callback(self.history)
-						else:
-							self.register_done_callback(self.history)
-
-					# タスク完了
-					break
-			else:
-				agent_run_error = 'Failed to complete task in maximum steps'
-
-				self.history.add_item(
-					AgentHistory(
-						model_output=None,
-						result=[ActionResult(error=agent_run_error, include_in_memory=True)],
-						state=BrowserStateHistory(
-							url='',
-							title='',
-							tabs=[],
-							interacted_element=[],
-							screenshot_path=None,
-						),
-						metadata=None,
-					)
-				)
-
-				self.logger.info(f'❌ {agent_run_error}')
-
-			self.logger.debug('📊 Collecting usage summary...')
-			self.history.usage = await self.token_cost_service.get_usage_summary()
-
-			# モデル出力スキーマが未設定ならここで反映
-			if self.history._output_model_schema is None and self.output_model_schema is not None:
-				self.history._output_model_schema = self.output_model_schema
-
-			self.logger.debug('🏁 Agent.run() completed successfully')
-			return self.history
-
-		except KeyboardInterrupt:
-			# シグナルハンドラで処理済みだが直接の KeyboardInterrupt も受ける
-			self.logger.debug('Got KeyboardInterrupt during execution, returning current history')
-			agent_run_error = 'KeyboardInterrupt'
-
-			self.history.usage = await self.token_cost_service.get_usage_summary()
-
-			return self.history
-
-		except Exception as e:
-			self.logger.error(f'Agent run failed with exception: {e}', exc_info=True)
-			agent_run_error = str(e)
-			raise e
-
-		finally:
-			# トークン使用量のサマリを記録
-			await self.token_cost_service.log_usage_summary()
-
-			# 後片付けの前にシグナルハンドラを解除
-			signal_handler.unregister()
-
-			if not self._force_exit_telemetry_logged:  # 変更点: フラグを確認して未送信なら記録
-				try:
-					self.telemetry_handler.log_agent_event(max_steps=max_steps, agent_run_error=agent_run_error)
-				except Exception as log_e:  # テレメトリ記録自体の失敗を捕捉
-					self.logger.error(f'Failed to log telemetry event: {log_e}', exc_info=True)
-			else:
-				# 既に SIGINT 用テレメトリを送信済みであることを通知
-				self.logger.debug('Telemetry for force exit (SIGINT) was logged by custom exit callback.')
-
-			# 備考: CreateAgentSessionEvent と CreateAgentTaskEvent は run() 開始時に送信し、
-			#      生成時点で CREATE イベントが届くようにしている
-
-			# run() 終了時に最終状態を UpdateAgentTaskEvent で送信
-			if self.enable_cloud_sync:
-				self.eventbus.dispatch(UpdateAgentTaskEvent.from_agent(self))
-
-			# イベントバス停止前に必要であれば GIF を生成
-			if self.settings.generate_gif:
-				output_path: str = 'agent_history.gif'
-				if isinstance(self.settings.generate_gif, str):
-					output_path = self.settings.generate_gif
-
-				# 起動コストを抑えるための遅延インポート
-				from browser_use.agent.gif import create_history_gif
-
-				create_history_gif(task=self.task, history=self.history, output_path=output_path)
-
-				# 実際に GIF が生成された場合のみイベントを発行
-				if Path(output_path).exists():
-					output_event = await CreateAgentOutputFileEvent.from_agent_and_file(self, output_path)
-					self.eventbus.dispatch(output_event)
-
-			# クラウド認証の開始を少し待ちつつ URL 表示を促す（完了までは待たない）
-			if self.enable_cloud_sync and hasattr(self, 'cloud_sync') and self.cloud_sync is not None:
-				if self.cloud_sync.auth_task and not self.cloud_sync.auth_task.done():
-					try:
-						# 最大1秒だけ待機して認証URLが出るのを待つ
-						await asyncio.wait_for(self.cloud_sync.auth_task, timeout=1.0)
-					except TimeoutError:
-						logger.debug('Cloud authentication started - continuing in background')
-					except Exception as e:
-						logger.debug(f'Cloud authentication error: {e}')
-
-			# イベントバスを優雅に停止（全イベント処理を待つ）
-			# 複数エージェントのテストでデッドロックしないよう余裕を持ったタイムアウトを用いる
-			await self.eventbus.stop(timeout=3.0)
-
-			await self.close()
 
 	async def multi_act(
 		self,
@@ -885,55 +731,21 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 	def save_history(self, file_path: str | Path | None = None) -> None:
 		self.history_manager.save_history(file_path)
 
-		# --- 後方互換ラッパー（将来的に直接 LLMHandler を利用することを推奨）---
-
-	def _process_messsages_and_replace_long_urls_shorter_ones(self, input_messages: list['BaseMessage']) -> dict[str, str]:
-		"""後方互換用: 既存コードは直接 LLMHandler を参照するように更新してください。"""
-		return self.llm_handler._process_messages_and_shorten_urls(input_messages)
-
-	def _recursive_process_all_strings_inside_pydantic_model(self, model: 'BaseModel', url_replacements: dict[str, str]) -> None:
-		"""後方互換用: 既存コードは直接 LLMHandler を参照するように更新してください。"""
-		self.llm_handler._recursive_process_model(model, url_replacements)
-
-	def _replace_urls_in_text(self, text: str) -> tuple[str, dict[str, str]]:
-		"""後方互換用: 既存コードは直接 LLMHandler を参照するように更新してください。"""
-		return self.llm_handler._replace_urls_in_text(text)
-
-	def _replace_shortened_urls_in_string(self, text: str, url_replacements: dict[str, str]) -> str:
-		"""後方互換用: 既存コードは直接 LLMHandler を参照するように更新してください。"""
-		return self.llm_handler._replace_shortened_urls_in_string(text, url_replacements)
-
-	def _recursive_process_dict(self, dictionary: dict, url_replacements: dict[str, str]) -> None:
-		"""後方互換用: 既存コードは直接 LLMHandler を参照するように更新してください。"""
-		self.llm_handler._recursive_process_dict(dictionary, url_replacements)
-
-	def _recursive_process_list_or_tuple(self, container: list | tuple, url_replacements: dict[str, str]) -> list | tuple:
-		"""後方互換用: 既存コードは直接 LLMHandler を参照するように更新してください。"""
-		return self.llm_handler._recursive_process_iterable(container, url_replacements)
-
 	def pause(self) -> None:
 		"""Pause the agent before the next step"""
-		print('\n\n⏸️ Paused the agent and left the browser open.\n\tPress [Enter] to resume or [Ctrl+C] again to quit.')
 		self.state.paused = True
-		self._external_pause_event.clear()
+		self.pause_controller.pause()
 
 	def resume(self) -> None:
 		"""Resume the agent"""
-		# TODO: ローカル環境ではブラウザが閉じてしまう課題あり
-		print('----------------------------------------------------------------------')
-		print('▶️  Resuming agent execution where it left off...\n')
 		self.state.paused = False
-		self._external_pause_event.set()
+		self.pause_controller.resume()
 
 	def stop(self) -> None:
 		"""Stop the agent"""
 		self.logger.info('⏹️ Agent stopping')
 		self.state.stopped = True
-
-		# 一時停止イベントを解放し、待機中の処理に停止状態を知らせる
-		self._external_pause_event.set()
-
-		# タスク停止フラグ
+		self.pause_controller.force_resume()
 
 	def _convert_initial_actions(self, actions: list[dict[str, dict[str, Any]]]) -> list[ActionModel]:
 		"""Convert dictionary-based actions to ActionModel instances"""
