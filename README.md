@@ -13,28 +13,17 @@ English | [日本語](#日本語-japanese)
 
 # 🤖 Quickstart (English)
 
-Install the library (Python >= 3.11):
+Clone this fork and install from source (Python >= 3.11):
 
 ```bash
-#  We ship every day - use the latest version!
-uv pip install browser-use
-# or
-pip install browser-use
-```
-
-Install Chromium via Playwright (no sudo required):
-
-```bash
+git clone https://github.com/Mega-Gorilla/USE-IT.git
+cd USE-IT
+uv sync --all-extras --dev  # or: python -m venv .venv && source .venv/bin/activate && pip install -e .
 uvx playwright install chromium
+cp .env.example .env  # add GEMINI_API_KEY / other secrets
 ```
 
-Create a `.env` file and add your API key. Don't have one? Start with a [free Gemini key](https://aistudio.google.com/app/u/1/apikey?pli=1).
-
-```bash
-GEMINI_API_KEY=
-```
-
-Run your first agent:
+Run your first agent from the project root:
 
 ```python
 from browser_use import Agent, ChatGoogle
@@ -83,27 +72,17 @@ Either path keeps large browser binaries out of Git while guaranteeing consisten
 
 ## クイックスタート
 
-Python 3.11 以上でライブラリをインストールします:
+このフォークからソースインストールします（Python 3.11 以上）:
 
 ```bash
-uv pip install browser-use
-# または
-pip install browser-use
-```
-
-Playwright から Chromium をインストールします（sudo 不要）:
-
-```bash
+git clone https://github.com/Mega-Gorilla/USE-IT.git
+cd USE-IT
+uv sync --all-extras --dev  # もしくは: python -m venv .venv && source .venv/bin/activate && pip install -e .
 uvx playwright install chromium
+cp .env.example .env  # GEMINI_API_KEY などを設定
 ```
 
-`.env` ファイルを作成し、利用する LLM の API キーなどを記載してください:
-
-```bash
-GEMINI_API_KEY=
-```
-
-サンプルコード:
+サンプルコード（リポジトリ直下で実行）:
 
 ```python
 from browser_use import Agent, ChatGoogle
