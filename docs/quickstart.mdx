@@ -112,6 +112,7 @@ if __name__ == "__main__":
 <Tab title="OpenAI">
 ```python agent.py
 from browser_use import Agent, ChatOpenAI
+from browser_use.agent.config import AgentConfig
 from dotenv import load_dotenv
 import asyncio
 
@@ -120,7 +121,8 @@ load_dotenv()
 async def main():
     llm = ChatOpenAI(model="gpt-4.1-mini")
     task = "Find the number 1 post on Show HN"
-    agent = Agent(task=task, llm=llm)
+    config = AgentConfig(task=task, llm=llm)
+    agent = Agent(config=config)
     await agent.run()
 
 if __name__ == "__main__":

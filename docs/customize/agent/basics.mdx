@@ -8,11 +8,13 @@ mode: "wide"
 
 ```python
 from browser_use import Agent, ChatOpenAI
+from browser_use.agent.config import AgentConfig
 
-agent = Agent(
+config = AgentConfig(
     task="Search for latest news about AI",
     llm=ChatOpenAI(model="gpt-4.1-mini"),
 )
+agent = Agent(config=config)
 
 async def main():
     history = await agent.run(max_steps=100)
