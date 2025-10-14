@@ -96,7 +96,7 @@ def test_process_messages_and_shorten_urls_returns_mapping(dummy_action_model_cl
 	user_msg = UserMessage(content=f'Check {long_url}')
 	assistant_msg = AssistantMessage(content=[ContentPartTextParam(text=f'Result {long_url}')])
 
-	mapping = handler._process_messages_and_shorten_urls([user_msg, assistant_msg])
+	mapping = handler.shorten_urls_in_messages([user_msg, assistant_msg])
 
 	assert len(mapping) == 1
 	shortened = next(iter(mapping))

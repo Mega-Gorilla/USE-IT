@@ -25,6 +25,18 @@ class LLMHandler:
 	def __init__(self, agent: 'Agent') -> None:
 		self.agent = agent
 
+	def shorten_urls_in_messages(self, input_messages: list[BaseMessage]) -> dict[str, str]:
+		"""Shorten long URLs inside message payloads and return replacement map."""
+		return self._process_messages_and_shorten_urls(input_messages)
+
+	def shorten_url_in_text(self, text: str) -> tuple[str, dict[str, str]]:
+		"""Shorten URLs embedded in plain text."""
+		return self._replace_urls_in_text(text)
+
+	def restore_urls_in_model(self, model: BaseModel, url_replacements: dict[str, str]) -> None:
+		"""Restore shortened URLs inside a Pydantic model recursively."""
+		self._recursive_process_model(model, url_replacements)
+
 	async def get_model_output_with_retry(self, input_messages: list[BaseMessage]) -> 'AgentOutput':
 		"""Call the LLM and retry once if no actions are produced."""
 		model_output = await self.get_model_output(input_messages)
@@ -65,7 +77,7 @@ class LLMHandler:
 	@observe_debug(ignore_input=True, ignore_output=True, name='get_model_output')
 	async def get_model_output(self, input_messages: list[BaseMessage]) -> 'AgentOutput':
 		"""Invoke the LLM and return the parsed output."""
-		urls_replaced = self._process_messages_and_shorten_urls(input_messages)
+		urls_replaced = self.shorten_urls_in_messages(input_messages)
 
 		kwargs: dict = {'output_format': self.agent.AgentOutput}
 
@@ -74,7 +86,7 @@ class LLMHandler:
 			parsed: AgentOutput = response.completion  # type: ignore[assignment]
 
 			if urls_replaced:
-				self._restore_urls_in_model(parsed, urls_replaced)
+				self.restore_urls_in_model(parsed, urls_replaced)
 
 			if len(parsed.action) > self.agent.settings.max_actions_per_step:
 				parsed.action = parsed.action[: self.agent.settings.max_actions_per_step]
@@ -171,9 +183,6 @@ class LLMHandler:
 			return original_url
 
 		return URL_PATTERN.sub(replace_url, text), replaced_urls
-
-	def _restore_urls_in_model(self, parsed: 'AgentOutput', url_replacements: dict[str, str]) -> None:
-		self._recursive_process_model(parsed, url_replacements)
 
 	def _recursive_process_model(self, model: BaseModel, url_replacements: dict[str, str]) -> None:
 		for field_name, field_value in model.__dict__.items():
