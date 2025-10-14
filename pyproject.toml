@@ -137,7 +137,7 @@ include = [
     "browser_use/**/*.py",
     "!browser_use/**/tests/*.py",
     "!browser_use/**/tests.py",
-    "browser_use/agent/system_prompts/*.md",
+    "browser_use/agent/prompt/system_prompts/*.md",
     "browser_use/py.typed",
     "browser_use/dom/**/*.js",
     "!tests/**/*.py",

@@ -7,7 +7,7 @@ import anyio
 import pyperclip
 import tiktoken
 
-from browser_use.agent.prompts import AgentMessagePrompt
+from browser_use.agent.prompt import AgentMessagePrompt
 from browser_use.browser import BrowserProfile, BrowserSession
 from browser_use.browser.events import ClickElementEvent, TypeTextEvent
 from browser_use.browser.profile import ViewportSize

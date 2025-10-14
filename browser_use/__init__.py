@@ -45,7 +45,7 @@ base_subprocess.BaseSubprocessTransport.__del__ = _patched_del
 
 # Type stubs for lazy imports - fixes linter warnings
 if TYPE_CHECKING:
-	from browser_use.agent.prompts import SystemPrompt
+	from browser_use.agent.prompt import SystemPrompt
 	from browser_use.agent.service import Agent
 	from browser_use.agent.views import ActionModel, ActionResult, AgentHistoryList
 	from browser_use.browser import BrowserProfile, BrowserSession
@@ -66,7 +66,7 @@ _LAZY_IMPORTS = {
 	# Agent service (heavy due to dependencies)
 	'Agent': ('browser_use.agent.service', 'Agent'),
 	# System prompt (moderate weight due to agent.views imports)
-	'SystemPrompt': ('browser_use.agent.prompts', 'SystemPrompt'),
+	'SystemPrompt': ('browser_use.agent.prompt', 'SystemPrompt'),
 	# Agent views (very heavy - over 1 second!)
 	'ActionModel': ('browser_use.agent.views', 'ActionModel'),
 	'ActionResult': ('browser_use.agent.views', 'ActionResult'),
