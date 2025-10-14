@@ -12,7 +12,7 @@ icon: "robot"
 - Balanced: fast + cheap + clever: `gemini-flash-latest` or `gpt-4.1-mini`
 
 
-### OpenAI [example](https://github.com/browser-use/browser-use/blob/main/examples/models/gpt-4.1.py)
+### OpenAI [example](https://github.com/Mega-Gorilla/USE-IT/blob/main/examples/models/gpt-4.1.py)
 
 `O3` model is recommended for best performance.
 
@@ -43,7 +43,7 @@ OPENAI_API_KEY=
   into the normal OpenAI API call).
 </Info>
 
-### Anthropic [example](https://github.com/browser-use/browser-use/blob/main/examples/models/claude-4-sonnet.py)
+### Anthropic [example](https://github.com/Mega-Gorilla/USE-IT/blob/main/examples/models/claude-4-sonnet.py)
 
 ```python
 from browser_use import Agent, ChatAnthropic
@@ -66,7 +66,7 @@ And add the variable:
 ANTHROPIC_API_KEY=
 ```
 
-### Azure OpenAI [example](https://github.com/browser-use/browser-use/blob/main/examples/models/azure_openai.py)
+### Azure OpenAI [example](https://github.com/Mega-Gorilla/USE-IT/blob/main/examples/models/azure_openai.py)
 
 ```python
 from browser_use import Agent, ChatAzureOpenAI
@@ -92,7 +92,7 @@ AZURE_OPENAI_ENDPOINT=https://your-endpoint.openai.azure.com/
 AZURE_OPENAI_API_KEY=
 ```
 
-### Gemini [example](https://github.com/browser-use/browser-use/blob/main/examples/models/gemini.py)
+### Gemini [example](https://github.com/Mega-Gorilla/USE-IT/blob/main/examples/models/gemini.py)
 
 > [!IMPORTANT] `GEMINI_API_KEY` was the old environment var name, it should be called `GOOGLE_API_KEY` as of 2025-05.
 
@@ -119,7 +119,7 @@ Required environment variables:
 GOOGLE_API_KEY=
 ```
 
-### AWS Bedrock [example](https://github.com/browser-use/browser-use/blob/main/examples/models/aws.py)
+### AWS Bedrock [example](https://github.com/Mega-Gorilla/USE-IT/blob/main/examples/models/aws.py)
 
 AWS Bedrock provides access to multiple model providers through a single API. We support both a general AWS Bedrock client and provider-specific convenience classes.
 
@@ -177,7 +177,7 @@ You can also use AWS profiles or IAM roles instead of environment variables. The
 - Session tokens for temporary credentials
 - AWS SSO authentication (`aws_sso_auth=True`)
 
-## Groq [example](https://github.com/browser-use/browser-use/blob/main/examples/models/llama4-groq.py)
+## Groq [example](https://github.com/Mega-Gorilla/USE-IT/blob/main/examples/models/llama4-groq.py)
 
 ```python
 from browser_use import Agent, ChatGroq
@@ -210,9 +210,9 @@ llm = ChatOllama(model="llama3.1:8b")
 
 ## Langchain
 
-[Example](https://github.com/browser-use/browser-use/blob/main/examples/models/langchain) on how to use Langchain with Browser Use.
+[Example](https://github.com/Mega-Gorilla/USE-IT/blob/main/examples/models/langchain) on how to use Langchain with Browser Use.
 
-## Qwen [example](https://github.com/browser-use/browser-use/blob/main/examples/models/qwen.py)
+## Qwen [example](https://github.com/Mega-Gorilla/USE-IT/blob/main/examples/models/qwen.py)
 
 Currently, only `qwen-vl-max` is recommended for Browser Use. Other Qwen models, including `qwen-max`, have issues with the action schema format.
 Smaller Qwen models may return incorrect action schema formats (e.g., `actions: [{"navigate": "google.com"}]` instead of `[{"navigate": {"url": "google.com"}}]`). If you want to use other models, add concrete examples of the correct action format to your prompt.
@@ -243,7 +243,7 @@ Required environment variables:
 ALIBABA_CLOUD=
 ```
 
-## ModelScope [example](https://github.com/browser-use/browser-use/blob/main/examples/models/modelscope_example.py)
+## ModelScope [example](https://github.com/Mega-Gorilla/USE-IT/blob/main/examples/models/modelscope_example.py)
 
 ```python
 from browser_use import Agent, ChatOpenAI
@@ -276,6 +276,6 @@ MODELSCOPE_API_KEY=
 We support all other models that can be called via OpenAI compatible API. We are open to PRs for more providers.
 
 **Examples available:**
-- [DeepSeek](https://github.com/browser-use/browser-use/blob/main/examples/models/deepseek-chat.py)
-- [Novita](https://github.com/browser-use/browser-use/blob/main/examples/models/novita.py)
-- [OpenRouter](https://github.com/browser-use/browser-use/blob/main/examples/models/openrouter.py)
+- [DeepSeek](https://github.com/Mega-Gorilla/USE-IT/blob/main/examples/models/deepseek-chat.py)
+- [Novita](https://github.com/Mega-Gorilla/USE-IT/blob/main/examples/models/novita.py)
+- [OpenRouter](https://github.com/Mega-Gorilla/USE-IT/blob/main/examples/models/openrouter.py)

@@ -4,9 +4,9 @@
   <img alt="Shows a black Browser Use Logo in light color mode and a white one in dark color mode." src="./static/browser-use.png"  width="full">
 </picture>
 
-<h1 align="center">Enable AI to control your browser</h1>
+<h1 align="center">USE IT — Enable AI to control your browser</h1>
 
-> **Note:** This is a fork of the original [browser-use/browser-use](https://github.com/browser-use/browser-use) repository. The fork keeps the core functionality while providing a simplified setup (local Chromium bootstrap, minimal documentation) tailored for our environment.
+> **Note:** This repository is maintained as **USE IT**, a renamed fork of the original [browser-use/browser-use](https://github.com/browser-use/browser-use). Our fork lives at [Mega-Gorilla/USE-IT](https://github.com/Mega-Gorilla/USE-IT). We keep core functionality while providing a simplified setup (local Chromium bootstrap, minimal documentation) tailored for our environment and avoid naming conflicts with the upstream project.
 
 English | [日本語](#日本語-japanese)
 
@@ -42,7 +42,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 agent = Agent(
-    task="Find the number of stars of the browser-use repo",
+    task="Find the number of stars of the USE-IT repo",
     llm=ChatGoogle(model="gemini-flash-latest"),
     # browser=Browser(use_cloud=True),  # Uses Browser-Use cloud for the browser
 )
@@ -79,7 +79,7 @@ Either path keeps large browser binaries out of Git while guaranteeing consisten
 
 # 日本語 (Japanese)
 
-> **注意:** このリポジトリは [browser-use/browser-use](https://github.com/browser-use/browser-use) のフォークです。オリジナルから主要機能を引き継ぎつつ、ローカル開発向けのセットアップ（Chromium ブートストラップや簡潔なドキュメント）を追加しています。
+> **注意:** このリポジトリは [browser-use/browser-use](https://github.com/browser-use/browser-use) のフォークをリネームした **USE IT** です。現在のフォークは [Mega-Gorilla/USE-IT](https://github.com/Mega-Gorilla/USE-IT) で公開しています。オリジナルから主要機能を引き継ぎつつ、名称の混同を避けるために改名し、ローカル開発向けセットアップ（Chromium ブートストラップや簡潔なドキュメント）を追加しています。
 
 ## クイックスタート
 
@@ -111,7 +111,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 agent = Agent(
-    task="browser-use レポジトリのスター数を確認する",
+    task="USE IT レポジトリのスター数を確認する",
     llm=ChatGoogle(model="gemini-flash-latest"),
 )
 agent.run_sync()

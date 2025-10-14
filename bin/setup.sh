@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# This script is used to setup a local development environment for the browser-use project.
+# This script sets up a local development environment for the USE-IT project (browser-use fork).
 # Usage:
 #   $ ./bin/setup.sh
 
@@ -20,11 +20,11 @@ cd "$SCRIPT_DIR"
 
 
 if [ -f "$SCRIPT_DIR/lint.sh" ]; then
-    echo "[√] already inside a cloned browser-use repo"
+    echo "[√] already inside a cloned USE-IT repo"
 else
-    echo "[+] Cloning browser-use repo into current directory: $SCRIPT_DIR"
-    git clone https://github.com/browser-use/browser-use
-    cd browser-use
+    echo "[+] Cloning USE-IT repo into current directory: $SCRIPT_DIR"
+    git clone https://github.com/Mega-Gorilla/USE-IT.git
+    cd USE-IT
 fi
 
 echo "[+] Installing uv..."
@@ -43,7 +43,7 @@ echo
 uv pip show browser-use
 
 echo "Usage:"
-echo "  $ browser-use               use the CLI"
+echo "  $ browser-use               use the CLI (package name remains browser-use)"
 echo "  or"
 echo "  $ source .venv/bin/activate"
 echo "  $ ipython                   use the library"

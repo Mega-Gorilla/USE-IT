@@ -3,7 +3,7 @@
 Automatically generate Instagram image ads and TikTok video ads from any landing page using browser agents, Google's Nano Banana 🍌, and Veo3.
 
 > [!WARNING]
-> This demo requires browser-use v0.7.7+.
+> This demo requires USE IT v0.7.7+.
 
 https://github.com/user-attachments/assets/7fab54a9-b36b-4fba-ab98-a438f2b86b7e
 
@@ -18,7 +18,7 @@ https://github.com/user-attachments/assets/7fab54a9-b36b-4fba-ab98-a438f2b86b7e
 
 ## Setup
 
-Make sure the newest version of browser-use is installed (with screenshot functionality):
+Make sure the newest version of USE IT is installed (with screenshot functionality):
 ```bash
 pip install -U browser-use
 ```
@@ -30,8 +30,8 @@ export GOOGLE_API_KEY='your-google-api-key-here'
 
 Clone the repo and cd into the app folder
 ```bash
-git clone https://github.com/browser-use/browser-use.git
-cd browser-use/examples/apps/ad-use
+git clone https://github.com/Mega-Gorilla/USE-IT.git
+cd USE-IT/examples/apps/ad-use
 ```
 
 ## Normal Usage

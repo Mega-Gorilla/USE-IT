@@ -3,7 +3,7 @@
 AI-powered message scheduler using browser agents and Gemini. Schedule personalized messages in natural language and let AI compose them intelligently.
 
 [!WARNING]
-This demo requires browser-use v0.7.7+.
+This demo requires USE IT v0.7.7+.
 
 https://browser-use.github.io/media/demos/msg_use.mp4
 
@@ -17,7 +17,7 @@ https://browser-use.github.io/media/demos/msg_use.mp4
 
 ## Setup
 
-Make sure the newest version of browser-use is installed:
+Make sure the newest version of USE IT is installed:
 ```bash
 pip install -U browser-use
 ```
@@ -29,8 +29,8 @@ export GOOGLE_API_KEY='your-gemini-api-key-here'
 
 Clone the repo and cd into the app folder
 ```bash
-git clone https://github.com/browser-use/browser-use.git
-cd browser-use/examples/apps/msg-use
+git clone https://github.com/Mega-Gorilla/USE-IT.git
+cd USE-IT/examples/apps/msg-use
 ```
 
 ## Initial Login
