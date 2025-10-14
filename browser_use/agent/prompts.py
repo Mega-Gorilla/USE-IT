@@ -49,7 +49,7 @@ class SystemPrompt:
 				template_filename = 'system_prompt_no_thinking.md'
 
 			# This works both in development and when installed as a package
-			with importlib.resources.files('browser_use.agent').joinpath(template_filename).open('r', encoding='utf-8') as f:
+			with importlib.resources.files('browser_use.agent.system_prompts').joinpath(template_filename).open('r', encoding='utf-8') as f:
 				self.prompt_template = f.read()
 		except Exception as e:
 			raise RuntimeError(f'Failed to load system prompt template: {e}')
