@@ -22,7 +22,10 @@ if TYPE_CHECKING:
 
 
 class HistoryManager:
-	"""Manage agent history creation, persistence, and replay."""
+	"""Manage agent history creation, persistence, and replay.
+
+	履歴の作成・保存・再実行をまとめて管理するクラス。
+	"""
 
 	def __init__(self, agent: 'Agent') -> None:
 		self.agent = agent
@@ -77,7 +80,10 @@ class HistoryManager:
 		agent.history.add_item(history_item)
 
 	async def add_initial_actions_history(self) -> None:
-		"""Store the initial actions (step 0) in history if applicable."""
+		"""Store the initial actions (step 0) in history if applicable.
+
+		初期アクション（ステップ0）が存在する場合に履歴へ保存する。
+		"""
 		agent = self.agent
 
 		if not agent.state.last_result or not agent.initial_actions:
@@ -115,12 +121,18 @@ class HistoryManager:
 		agent.logger.debug('📝 Saved initial actions to history as step 0')
 
 	def save_history(self, file_path: str | Path | None = None) -> None:
-		"""Persist history to disk with sensitive data filtering."""
+		"""Persist history to disk with sensitive data filtering.
+
+		履歴を機密情報マスク付きでファイルへ保存する。
+		"""
 		target = Path(file_path or 'AgentHistory.json')
 		self.agent.history.save_to_file(target, sensitive_data=self.agent.sensitive_data)
 
 	async def load_and_rerun(self, history_file: str | Path | None = None, **kwargs) -> list[ActionResult]:
-		"""Load a history file and replay it."""
+		"""Load a history file and replay it.
+
+		履歴ファイルを読み込み、同じアクションを再実行する。
+		"""
 		target = Path(history_file or 'AgentHistory.json')
 		history = AgentHistoryList.load_from_file(target, self.agent.AgentOutput)
 		return await self.rerun_history(history, **kwargs)
@@ -132,7 +144,10 @@ class HistoryManager:
 		skip_failures: bool = True,
 		delay_between_actions: float = 2.0,
 	) -> list[ActionResult]:
-		"""Replay saved actions with retry logic."""
+		"""Replay saved actions with retry logic.
+
+		保存済みアクションをリトライ制御付きで順次再実行する。
+		"""
 		agent = self.agent
 
 		agent.state.session_initialized = True
@@ -179,7 +194,10 @@ class HistoryManager:
 		return results
 
 	async def _execute_history_step(self, history_item: AgentHistory, delay: float) -> list[ActionResult]:
-		"""Execute a replay step with DOM index reconciliation."""
+		"""Execute a replay step with DOM index reconciliation.
+
+		DOMインデックスを再紐付けしたうえで履歴ステップを実行する。
+		"""
 		agent = self.agent
 		assert agent.browser_session is not None, 'BrowserSession is not set up'
 
@@ -210,7 +228,10 @@ class HistoryManager:
 		action: 'ActionModel',
 		browser_state_summary: BrowserStateSummary,
 	) -> 'ActionModel | None':
-		"""Update action indices based on the current DOM."""
+		"""Update action indices based on the current DOM.
+
+		現在のDOMに合わせてアクションのインデックスを更新する。
+		"""
 		if not historical_element or not browser_state_summary.dom_state.selector_map:
 			return action
 

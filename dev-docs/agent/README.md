@@ -215,6 +215,7 @@ graph TD
 |------------|------|--------|
 | **[agent_flow.md](./agent_flow.md)** | Agent実行フローの詳細解説。初期化からクリーンアップまでの全フェーズを網羅 | すべての開発者 |
 | **[step_processing.md](./step_processing.md)** | ステップ処理の詳細。LLM思考、アクション実行、エラーハンドリング | Agent開発者 |
+| **[history_manager.md](./history_manager.md)** | 履歴管理システム。保存、読み込み、再実行、デバッグ、テスト自動化 | すべての開発者 |
 
 ### 🚧 今後追加予定
 
