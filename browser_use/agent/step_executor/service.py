@@ -194,55 +194,69 @@ class StepExecutor:
 
 		if RICH_AVAILABLE:
 			assert Console is not None  # for type checker
-			console = Console()
+			console = Console(width=100)  # Fixed width for consistent layout
 			console.print()
 
-			# Step metadata panel
-			step_table = Table.grid(expand=True)
-			step_table.add_column(justify='right', style='cyan', ratio=1)
-			step_table.add_column(style='white', ratio=3)
-			step_table.add_row('Step', step_label)
-			step_table.add_row('URL', url_display)
+			# Step metadata panel - compact and clean
+			step_info_lines = [
+				f'[cyan]Step:[/cyan] {step_label}',
+				f'[cyan]URL:[/cyan] {url_display}',
+			]
 			if browser_state_summary.title:
-				step_table.add_row('Title', _format_field(browser_state_summary.title, 120))
+				title_display = _format_field(browser_state_summary.title, 80)
+				step_info_lines.append(f'[cyan]Title:[/cyan] {title_display}')
 
 			console.print(
 				Panel(
-					step_table,
-					title='🤖 Interactive Mode - Action Approval',
+					'\n'.join(step_info_lines),
+					title='[bold cyan]🤖 Interactive Mode - Action Approval[/bold cyan]',
 					border_style='cyan',
 					box=box.ROUNDED,
+					padding=(0, 2),
 				)
 			)
 
-			# Model state panel
-			state_table = Table.grid(expand=True)
-			state_table.add_column(justify='right', style='magenta', ratio=1)
-			state_table.add_column(style='white', ratio=3)
-			state_table.add_row('Thinking', _format_field(model_output.thinking))
-			state_table.add_row('Memory', _format_field(model_output.memory))
-			state_table.add_row('Next Goal', _format_field(model_output.next_goal))
-			state_table.add_row('Prev Goal Eval', _format_field(model_output.evaluation_previous_goal))
+			# Model state panel - show agent's reasoning
+			state_lines = []
 
-			console.print(
-				Panel(
-					state_table,
-					title='🧠 Model State',
-					border_style='magenta',
-					box=box.ROUNDED,
+			if model_output.evaluation_previous_goal:
+				eval_text = _format_field(model_output.evaluation_previous_goal, 200)
+				state_lines.append(f'[dim]Previous:[/dim] {eval_text}')
+
+			if model_output.next_goal:
+				goal_text = _format_field(model_output.next_goal, 200)
+				state_lines.append(f'[yellow]Goal:[/yellow] {goal_text}')
+
+			if model_output.thinking:
+				thinking_text = _format_field(model_output.thinking, 200)
+				state_lines.append(f'[magenta]Thinking:[/magenta] {thinking_text}')
+
+			if model_output.memory:
+				memory_text = _format_field(model_output.memory, 200)
+				state_lines.append(f'[blue]Memory:[/blue] {memory_text}')
+
+			if state_lines:
+				console.print(
+					Panel(
+						'\n\n'.join(state_lines),
+						title='[bold magenta]🧠 Agent Reasoning[/bold magenta]',
+						border_style='magenta',
+						box=box.ROUNDED,
+						padding=(0, 2),
+					)
 				)
-			)
 
-			# Action table
+			# Action table - clear and organized
 			action_table = Table(
-				title=f'📋 Proposed {len(actions)} action{"s" if len(actions) > 1 else ""}',
-				box=box.SIMPLE_HEAD,
+				box=box.ROUNDED,
 				show_header=True,
-				header_style='bold yellow',
+				header_style='bold green',
+				border_style='green',
+				padding=(0, 1),
 			)
-			action_table.add_column('#', justify='right', style='cyan', width=3)
-			action_table.add_column('Action', style='green', width=16)
-			action_table.add_column('Parameters', style='white', ratio=2)
+			action_table.add_column('#', justify='center', style='cyan bold', width=3)
+			action_table.add_column('Action', style='green bold', width=15)
+			action_table.add_column('Parameters', style='white', no_wrap=False)
 
 			for idx, action in enumerate(actions, 1):
 				dumped = action.model_dump(exclude_unset=True)
@@ -252,18 +266,28 @@ class StepExecutor:
 					param_lines = []
 					for key, value in action_body.items():
 						value_str = str(value)
-						if len(value_str) > 120:
-							value_str = value_str[:117] + '...'
-						param_lines.append(f'[bold]{key}[/]: {value_str}')
+						if len(value_str) > 70:
+							value_str = value_str[:67] + '...'
+						param_lines.append(f'[dim]{key}:[/dim] {value_str}')
 					param_display = '\n'.join(param_lines)
 				else:
 					param_display = str(action_body)
-					if len(param_display) > 120:
-						param_display = param_display[:117] + '...'
+					if len(param_display) > 70:
+						param_display = param_display[:67] + '...'
 
-				action_table.add_row(str(idx), action_name, Text.from_markup(param_display))
+				action_table.add_row(str(idx), action_name, param_display)
 
-			console.print(action_table)
+			action_count = len(actions)
+			action_label = 'action' if action_count == 1 else 'actions'
+			console.print(
+				Panel(
+					action_table,
+					title=f'[bold green]📋 Proposed {action_count} {action_label}[/bold green]',
+					border_style='green',
+					box=box.ROUNDED,
+					padding=(0, 1),
+				)
+			)
 			console.print()
 		else:
 			print()
