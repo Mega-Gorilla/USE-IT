@@ -16,11 +16,19 @@
 
 ```python
 from browser_use import Agent
+from browser_use.agent.config import AgentConfig
 
-# 1. Agentインスタンス作成
-agent = Agent(
+# 1. Agentインスタンス作成（推奨: AgentConfigを使用）
+config = AgentConfig(
     task="Wikipediaでブラウザ自動化について調べる",
     llm=my_llm  # ChatGoogle, ChatOpenAI, etc.
+)
+agent = Agent(config=config)
+
+# または従来の方法も使用可能
+agent = Agent(
+    task="Wikipediaでブラウザ自動化について調べる",
+    llm=my_llm
 )
 
 # 2. 実行（同期）
@@ -115,47 +123,69 @@ sequenceDiagram
 **何が起こるか:**
 
 ```python
-Agent(
+# 方法1: AgentConfig を使用（推奨）
+from browser_use.agent.config import AgentConfig
+
+config = AgentConfig(
     task="タスク内容",
     llm=my_llm,
     browser_session=None,  # 未指定なら自動作成
     max_steps=100
 )
+agent = Agent(config=config)
+
+# 方法2: 従来の方法（後方互換性あり）
+agent = Agent(
+    task="タスク内容",
+    llm=my_llm,
+    browser_session=None,
+    max_steps=100
+)
 ```
 
-**内部処理:**
+**内部処理（Phase 2リファクタリング後）:**
 
-1. **LLMの解決**
+1. **AgentConfigの構築または受け入れ**
+   - `config`が指定されていない場合、kwargsから`AgentConfig`を自動構築
+   - 42個のパラメータを1つのdataclassに集約
+
+2. **デフォルト値の解決** (`_resolve_defaults`)
    - LLMが指定されていない場合、デフォルト（`ChatGoogle`）を使用
    - 環境変数やCONFIGから自動検出
+   - タイムアウト値、フラッシュモード等の解決
 
-2. **ブラウザセッション準備**
-   - 新規または既存のセッションを設定
-   - CDP（Chrome DevTools Protocol）接続の準備
-   - Chromiumの起動設定（ヘッドレス/ヘッドフル、プロファイル等）
+3. **コンポーネントの初期化** (ヘルパーメソッドに分割)
+   - `_initialize_token_cost_service()`: LLM使用量の記録を開始
+   - `_initialize_history_components()`: 履歴とステート管理の初期化
+   - `_initialize_filesystem()`: ワークスペースとダウンロード追跡の準備
 
-3. **ツールシステム構築**
+4. **ツールシステム構築** (`_prepare_tools`, `_setup_action_models`)
    - 利用可能なアクション（click, type, scroll等）を登録
    - カスタムツールがあれば追加
-   - `TokenCost`でLLM使用量の記録を開始
+   - ページ固有のアクションモデルを動的生成
 
-4. **メッセージマネージャー設定**
-   - システムプロンプトの構築
-   - 会話履歴の管理準備
-   - コンテキストウィンドウの最適化
+5. **専門マネージャーの作成**（Phase 1で分離）
+   - `FilesystemManager`: ファイルシステムとダウンロード管理
+   - `HistoryManager`: 履歴の作成・保存・再生
+   - `LLMHandler`: LLM呼び出しとリトライロジック
+   - `StepExecutor`: ステップ実行のコーディネーション
+   - `TelemetryHandler`: ログ出力とテレメトリ
+   - `PauseController`: 一時停止/再開の制御（Phase 2で分離）
 
-5. **ワークスペース作成**
-   - 一時ファイル用のディレクトリ作成
-   - スクリーンショット保存先の準備
+6. **ファクトリーパターンによるDI** (`AgentFactories`)
+   - テスト時に依存を簡単にモック化可能
+   - `telemetry_factory`, `event_bus_factory`, `cloud_sync_factory`
 
 **なぜ重要か:**
-このフェーズで問題があると、後続のすべての処理が失敗します。デバッグ時は、まずこのフェーズのログを確認しましょう。
+このフェーズで問題があると、後続のすべての処理が失敗します。デバッグ時は、まずこのフェーズのログを確認しましょう。Phase 2リファクタリングにより、初期化ロジックが8つのヘルパーメソッドに整理され、デバッグが容易になりました。
 
 ---
 
 ### 2. 実行ループ (`Agent.run` / `Agent.run_sync`)
 
-**場所**: `browser_use/agent/service.py` の `run()` メソッド
+**場所**:
+- `browser_use/agent/service.py` の `run()` メソッド（エントリーポイント）
+- `browser_use/agent/runner/service.py` の `AgentRunner.run()` （実装）
 
 **同期版と非同期版:**
 
@@ -167,208 +197,145 @@ result = await agent.run()
 result = agent.run_sync()  # 内部で asyncio.run() を呼ぶ
 ```
 
-**内部処理:**
+**Phase 2リファクタリング: AgentRunnerへの委譲**
 
 ```python
-async def run(self):
+# Agent.run() は AgentRunner に実行を委譲
+async def run(
+    self,
+    max_steps: int = 100,
+    on_step_start: AgentHookFunc | None = None,
+    on_step_end: AgentHookFunc | None = None,
+) -> AgentHistoryList:
+    """Delegate execution to the AgentRunner."""
+    return await AgentRunner(self).run(
+        max_steps=max_steps,
+        on_step_start=on_step_start,
+        on_step_end=on_step_end,
+    )
+```
+
+**内部処理（AgentRunner内）:**
+
+```python
+# browser_use/agent/runner/service.py
+async def run(self, max_steps: int = 100, ...) -> AgentHistoryList:
     try:
-        # 1. シグナルハンドラ登録（Ctrl+Cで停止など）
-        self._setup_signal_handlers()
+        # 1. シグナルハンドラ登録（Ctrl+Cで一時停止/再開）
+        signal_handler = SignalHandler(
+            loop=loop,
+            pause_callback=self.agent.pause,    # PauseController に委譲
+            resume_callback=self.agent.resume,  # PauseController に委譲
+            custom_exit_callback=on_force_exit_log_telemetry,
+        )
 
         # 2. テレメトリ初期化
-        self._initialize_telemetry()
+        await self.agent.telemetry_handler.log_agent_run()
 
-        # 3. ブラウザ起動
-        await self.browser_session.start()
+        # 3. セッション初期化
+        if not self.agent.state.session_initialized:
+            await self._initialize_session()
 
-        # 4. 初期アクション実行（URLがあればナビゲート）
-        await self._execute_initial_actions()
+        # 4. ブラウザ起動
+        await self.agent.browser_session.start()
 
-        # 5. メインループ
-        while self.n_steps < self.max_steps:
-            # ステップ実行
-            await self.step()
+        # 5. 初期アクション実行（URLがあればナビゲート）
+        await self.agent.step_executor.execute_initial_actions()
 
-            # 完了判定
-            if self._is_task_complete():
+        # 6. メインループ
+        for step in range(max_steps):
+            # 一時停止処理
+            await self._handle_pause(signal_handler, step)
+
+            # 失敗チェック
+            if self._should_stop_for_failures():
                 break
 
-        # 6. 終了処理
-        return await self.close()
+            # フック: ステップ開始前
+            if on_step_start:
+                await on_step_start(self.agent)
+
+            # ステップ実行（StepExecutor に委譲）
+            await asyncio.wait_for(
+                self.agent.step(step_info),
+                timeout=self.agent.settings.step_timeout
+            )
+
+            # フック: ステップ完了後
+            if on_step_end:
+                await on_step_end(self.agent)
+
+            # 完了判定
+            if self.agent.history.is_done():
+                await self._handle_completion()
+                break
+
+        # 7. 使用量サマリーの収集
+        self.agent.history.usage = await self.agent.token_cost_service.get_usage_summary()
+
+        return self.agent.history
 
     except Exception as e:
         # エラーハンドリング
-        await self.close()
         raise
+    finally:
+        # 8. クリーンアップ（必ず実行）
+        await self._cleanup(signal_handler, max_steps, agent_run_error)
 ```
+
+**Phase 2で追加された機能:**
+
+1. **一時停止/再開** (`PauseController`)
+   - Ctrl+C で一時停止、Enterで再開
+   - `_handle_pause()` で状態確認
+
+2. **シグナルハンドリングの強化**
+   - カスタムコールバックによるテレメトリ送信
+   - 2回目のCtrl+Cで強制終了
+
+3. **ヘルパーメソッドによる整理**
+   - `_initialize_session()`: セッション初期化
+   - `_should_stop_for_failures()`: 失敗チェック
+   - `_handle_completion()`: 完了処理
+   - `_cleanup()`: クリーンアップ
 
 **制御フロー:**
 
 - **最大ステップ数**: `max_steps`で制御（デフォルト: 100）
 - **完了条件**: LLMが`done`アクションを返す、または手動中断
-- **エラー時**: 自動的に`close()`を呼び出してリソース解放
+- **一時停止**: Ctrl+Cで一時停止、Enterで再開
+- **エラー時**: `finally`ブロックで確実にクリーンアップ
 
 **なぜ重要か:**
-実行ループは、タスクが完了するまでステップを繰り返します。無限ループを防ぐため、`max_steps`を適切に設定することが重要です。
+実行ループは、タスクが完了するまでステップを繰り返します。Phase 2リファクタリングにより、300行の複雑なメソッドが244行の専門クラスに整理され、保守性が大幅に向上しました。
 
 ---
 
 ### 3. ステップ処理 (`Agent.step`)
 
-**場所**: `browser_use/agent/service.py` の `step()` メソッド
+**場所**:
+- `browser_use/agent/service.py` の `step()` メソッド（エントリーポイント）
+- `browser_use/agent/step_executor/service.py` の `StepExecutor.execute_step()` （実装）
 
-ステップ処理は、Agentの「思考」と「行動」のサイクルです。
-
-#### 3.1 状態取得フェーズ (`_prepare_context`)
-
-**何が起こるか:**
+**Phase 1リファクタリング: StepExecutorへの委譲**
 
 ```python
-# 現在のブラウザ状態を取得
-browser_state = await self.browser_session.get_state(
-    use_vision=True  # スクリーンショット付き
-)
-
-# 取得される情報:
-# - URL
-# - タイトル
-# - DOM構造（簡略化済み）
-# - スクリーンショット（Base64エンコード）
-# - 利用可能な要素リスト
+# Agent.step() は StepExecutor に実行を委譲
+async def step(self, step_info: AgentStepInfo | None = None) -> None:
+    """Execute a single step via StepExecutor."""
+    await self.step_executor.execute_step(step_info)
 ```
 
-**DOM処理の最適化:**
+**ステップ処理の概要:**
 
-browser-useは、LLMに送るDOMを自動的に最適化します：
-- 不要なタグ（`<script>`, `<style>`等）を削除
-- インタラクティブ要素にインデックス番号を付与
-- トークン数を制限（長すぎるページは切り詰め）
+ステップ処理は、Agentの「思考」と「行動」のサイクルであり、以下の4つのフェーズで構成されます：
 
-**なぜ重要か:**
-LLMが正確な判断をするには、現在の状態を正確に把握する必要があります。特にスクリーンショットは、視覚的な要素（ボタンの位置、レイアウト等）を理解するのに不可欠です。
+1. **コンテキスト準備**: ブラウザ状態の取得、ダウンロード確認
+2. **LLM思考**: 現在の状況を分析し、次のアクションを決定
+3. **アクション実行**: LLMが決定したアクションをブラウザで実行
+4. **後処理**: 履歴記録、テレメトリ送信、ファイルシステム状態保存
 
-#### 3.2 思考フェーズ (`_get_next_action`)
-
-**何が起こるか:**
-
-```python
-# LLMへのメッセージ構築
-messages = [
-    {"role": "system", "content": system_prompt},
-    {"role": "user", "content": f"タスク: {self.task}"},
-    *history_messages,
-    {"role": "user", "content": browser_state}
-]
-
-# LLMに問い合わせ
-response = await self.llm.ainvoke(messages)
-
-# 構造化された出力
-agent_output = AgentOutput(
-    current_state={"thought": "...", "summary": "..."},
-    action=[
-        {"click_element": {"index": 5}},
-        {"type_text": {"index": 3, "text": "検索クエリ"}}
-    ]
-)
-```
-
-**LLMが決定すること:**
-
-1. **思考 (thought)**: なぜこのアクションを選んだか
-2. **要約 (summary)**: 現在の状況の簡潔な説明
-3. **アクション**: 次に実行する具体的な操作リスト
-
-**利用可能なアクション例:**
-
-```python
-# ナビゲーション
-{"navigate": {"url": "https://example.com"}}
-
-# 要素操作
-{"click_element": {"index": 5}}
-{"type_text": {"index": 3, "text": "入力内容"}}
-
-# ページ操作
-{"scroll": {"direction": "down", "amount": 500}}
-{"go_back": {}}
-
-# 情報抽出
-{"extract_page_content": {}}
-
-# 完了
-{"done": {"text": "タスク完了の説明"}}
-```
-
-**なぜ重要か:**
-このフェーズは、Agentの「知能」が発揮される部分です。LLMの品質（モデルの選択、プロンプト設計）が、タスク成功率に直結します。
-
-#### 3.3 実行フェーズ (`_execute_actions`)
-
-**何が起こるか:**
-
-```python
-for action in agent_output.action:
-    # アクションを実行
-    result = await self.tools.execute(action, browser_state)
-
-    # 結果を記録
-    self.action_history.append({
-        "action": action,
-        "result": result,
-        "success": result.is_done or result.extracted_content
-    })
-```
-
-**アクション実行の流れ:**
-
-1. **アクション検証**: 必須パラメータのチェック
-2. **ブラウザ操作**: CDP経由でChromeを操作
-3. **結果取得**: 成功/失敗、抽出データ等
-4. **履歴更新**: 次のステップで参照できるように保存
-
-**エラーハンドリング:**
-
-```python
-try:
-    result = await action.execute()
-except Exception as e:
-    # リトライロジック
-    if retry_count < max_retries:
-        await asyncio.sleep(1)
-        result = await action.execute()
-    else:
-        result = ActionResult(error=str(e))
-```
-
-**なぜ重要か:**
-実際のブラウザ操作を行う部分です。ネットワークの遅延、ページの読み込み時間、要素の動的な変更など、現実世界の不確実性に対処する必要があります。
-
-#### 3.4 後処理フェーズ (`_post_process`, `_finalize`)
-
-**何が起こるか:**
-
-```python
-# 1. 履歴に追加
-self.history.append(step_result)
-
-# 2. テレメトリ送信（任意）
-if self.telemetry_enabled:
-    await self.telemetry.send_step_event(step_result)
-
-# 3. クラウド同期（任意）
-if self.cloud_sync_enabled:
-    await self.cloud_client.sync_step(step_result)
-
-# 4. ステップカウンタ増加
-self.n_steps += 1
-
-# 5. ファイルシステム状態保存
-await self.workspace.save_state()
-```
-
-**なぜ重要か:**
-履歴とテレメトリは、デバッグやパフォーマンス分析に不可欠です。また、長時間実行されるタスクでは、途中経過の保存が重要です。
+**詳細な実装**については [step_processing.md](./step_processing.md) を参照してください。このドキュメントには、各フェーズの詳細な処理内容、データフロー、エラーハンドリング、パフォーマンス最適化などが記載されています。
 
 ---
 
@@ -376,56 +343,28 @@ await self.workspace.save_state()
 
 **場所**: `browser_use/agent/service.py` の `close()` メソッド
 
-**何が起こるか:**
+**主な処理:**
 
-```python
-async def close(self):
-    try:
-        # 1. ブラウザ終了
-        if not self.browser_session.keep_alive:
-            await self.browser_session.close()
+1. **ブラウザセッション終了**: `keep_alive=False` の場合のみクローズ
+2. **リソース解放**: LLMクライアント、ガベージコレクション
+3. **最終テレメトリ**: 実行サマリーの送信
+4. **結果の整理**: `AgentHistoryList` の構築と返却
 
-        # 2. LLMクライアント解放
-        if hasattr(self.llm, 'aclose'):
-            await self.llm.aclose()
-
-        # 3. ガベージコレクション
-        import gc
-        gc.collect()
-
-        # 4. 最終テレメトリ送信
-        await self._send_final_telemetry()
-
-        # 5. 結果の整理
-        return AgentHistoryList(
-            history=self.history,
-            final_result=self._extract_final_result(),
-            model_actions=self.action_history,
-            # ... その他のメタデータ
-        )
-
-    except Exception as e:
-        logger.error(f"Error during cleanup: {e}")
-```
-
-**返却される`AgentHistoryList`の内容:**
+**返却される`AgentHistoryList`の使用例:**
 
 ```python
 result = agent.run_sync()
 
 # 最終結果
-print(result.final_result())  # タスクの結果テキスト
+print(result.final_result())
 
 # 実行履歴
 for step in result.history:
     print(f"Step {step.step_number}: {step.action}")
 
-# 使用トークン数
+# 使用トークン数とコスト
 print(f"Total tokens: {result.total_tokens}")
-
-# 生成されたファイル
-for file in result.generated_files:
-    print(f"File: {file.path}")
+print(f"Total cost: ${result.total_cost}")
 ```
 
 **なぜ重要か:**
@@ -480,30 +419,14 @@ await browser_session.close()
 
 ### Q4: カスタムアクションを追加できる？
 
-**A:** はい、`Tools`を拡張することで可能です。
-
-```python
-from browser_use import Tools
-
-class CustomTools(Tools):
-    @tool("custom_action")
-    async def my_custom_action(self, param: str):
-        """カスタムアクションの説明"""
-        # 実装
-        return ActionResult(extracted_content=result)
-
-agent = Agent(
-    task="...",
-    tools=CustomTools()
-)
-```
+**A:** はい、カスタムツールを`Tools`インスタンスに追加できます。詳細は公式ドキュメントの「カスタムツール」セクションを参照してください。
 
 ### Q5: メモリ使用量が多い場合は？
 
 **A:** 以下の対策が有効です：
 
 1. **ビジョンモードをオフ**: `use_vision=False`
-2. **履歴の制限**: `max_history_messages=10`
+2. **履歴の制限**: `max_history_items=10`
 3. **DOMの簡略化**: より積極的なフィルタリング
 4. **ステップ数の削減**: `max_steps=50`
 
@@ -511,7 +434,7 @@ agent = Agent(
 agent = Agent(
     task="...",
     use_vision=False,
-    max_history_messages=10,
+    max_history_items=10,
     max_steps=50
 )
 ```
@@ -549,7 +472,9 @@ Agentの実行フローは、以下の4つのフェーズで構成されます�
 
 **参考リンク:**
 
-- [Agent API リファレンス](../api/agent.md)
-- [BrowserSession 詳細](../browser/session.md)
-- [カスタムツールの作成](../tools/custom_tools.md)
-- [トラブルシューティング](../troubleshooting.md)
+- [step_processing.md](./step_processing.md) - ステップ処理の詳細
+- [README.md](./README.md) - Agent概要とモジュール構成
+- BrowserSession 詳細 - ブラウザセッション管理
+- カスタムツールの作成 - ツール拡張
+
+**最終更新**: 2025年10月15日（Phase 1 + Phase 2リファクタリング反映）

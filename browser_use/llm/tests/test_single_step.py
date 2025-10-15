@@ -3,7 +3,7 @@ import tempfile
 
 import pytest
 
-from browser_use.agent.prompts import AgentMessagePrompt
+from browser_use.agent.prompt import AgentMessagePrompt
 from browser_use.agent.service import Agent
 from browser_use.browser.views import BrowserStateSummary, TabInfo
 from browser_use.dom.views import DOMSelectorMap, EnhancedDOMTreeNode, NodeType, SerializedDOMState, SimplifiedNode

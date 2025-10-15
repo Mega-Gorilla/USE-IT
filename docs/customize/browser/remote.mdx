@@ -12,6 +12,7 @@ The easiest way to use a cloud browser is with the built-in Browser-Use cloud se
 
 ```python
 from browser_use import Agent, Browser, ChatOpenAI
+from browser_use.agent.config import AgentConfig
 
 # Use Browser-Use cloud browser service
 browser = Browser(
@@ -19,11 +20,12 @@ browser = Browser(
     # cdp_url="http://remote-server:9222" # CDP URL from your favorite browser provider like AnchorBrowser, HyperBrowser, BrowserBase, Steel.dev, etc.
 )
 
-agent = Agent(
+config = AgentConfig(
     task="Your task here",
     llm=ChatOpenAI(model='gpt-4.1-mini'),
     browser=browser,
 )
+agent = Agent(config=config)
 ```
 
 **Prerequisites:**
@@ -48,22 +50,23 @@ Get a CDP URL from your favorite browser provider like AnchorBrowser, HyperBrows
 ```python
 
 from browser_use import Agent, Browser, ChatOpenAI
+from browser_use.agent.config import AgentConfig
 from browser_use.browser import ProxySettings
 
 browser = Browser(
-        headless=False,
-        proxy=ProxySettings(
-            server="http://proxy-server:8080",
-            username="proxy-user",
-            password="proxy-pass"
-        )
-        cdp_url="http://remote-server:9222"
+    headless=False,
+    proxy=ProxySettings(
+        server="http://proxy-server:8080",
+        username="proxy-user",
+        password="proxy-pass"
+    ),
+    cdp_url="http://remote-server:9222"
 )
 
-
-agent = Agent(
+config = AgentConfig(
     task="Your task here",
     llm=ChatOpenAI(model='gpt-4.1-mini'),
     browser=browser,
 )
+agent = Agent(config=config)
 ```

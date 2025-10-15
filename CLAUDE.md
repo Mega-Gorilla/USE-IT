@@ -129,7 +129,7 @@ If that doesn't work, just insert your new modified code as new lines in the fil
 - **Views Pattern**: Pydantic models and data structures live in `views.py` files
 - **Events**: Event definitions in `events.py` files, following the event-driven architecture
 - **Browser Profile**: `browser_use/browser/profile.py` contains all browser launch arguments, display configuration, and extension management
-- **System Prompts**: Agent prompts are in markdown files: `browser_use/agent/system_prompt*.md`
+- **System Prompts**: Agent prompts are in markdown files: `browser_use/agent/prompt/system_prompts/*.md`
 
 ## Browser Configuration
 

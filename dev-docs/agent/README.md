@@ -103,6 +103,7 @@ print(result.final_result())
 
 ```python
 from browser_use import Agent, BrowserSession
+from browser_use.agent.config import AgentConfig
 
 # カスタムブラウザセッション
 browser = BrowserSession(
@@ -110,14 +111,25 @@ browser = BrowserSession(
     keep_alive=True  # ブラウザを維持
 )
 
-# 詳細な設定でAgent作成
-agent = Agent(
+# 方法1: AgentConfig を使用（推奨）
+config = AgentConfig(
     task="複雑なタスク",
     llm=llm,
     browser_session=browser,
     max_steps=50,           # 最大ステップ数
     use_vision=True,        # スクリーンショットを使用
     max_failures=3,         # 失敗許容回数
+)
+agent = Agent(config=config)
+
+# 方法2: 従来の方法（後方互換性のため維持）
+agent = Agent(
+    task="複雑なタスク",
+    llm=llm,
+    browser_session=browser,
+    max_steps=50,
+    use_vision=True,
+    max_failures=3,
 )
 
 # 非同期実行
@@ -129,6 +141,72 @@ print(f"ステップ数: {len(result.history)}")
 print(f"使用トークン: {result.total_tokens}")
 ```
 
+## 内部アーキテクチャ
+
+### モジュール構成（Phase 1 + Phase 2リファクタリング後）
+
+Agentは、単一責任の原則に従って**8つの専門モジュール**に分割されています：
+
+```
+browser_use/agent/
+├── service.py                    # 960行 - Agent本体（オーケストレーション）
+├── config.py                     # 97行 - AgentConfig & AgentFactories
+├── runner/                       # 244行 - 実行ループとシグナル処理
+├── pause_controller/             # 37行 - 一時停止/再開の制御
+├── filesystem_manager/           # 108行 - ファイルシステム管理
+├── history_manager/              # 235行 - 履歴の作成・保存・再生
+├── llm_handler/                  # 242行 - LLM呼び出しとリトライ
+├── message_manager/              # 466行 - メッセージとプロンプト管理
+├── step_executor/                # 398行 - ステップ実行のコーディネーション
+└── telemetry/                    # 187行 - テレメトリとロギング
+```
+
+**リファクタリング成果**:
+- 元のサイズ: 2,225行の巨大なファイル
+- リファクタリング後: Agent本体960行 + 8つの専門モジュール
+- **削減率: 56.9%** (Agent本体のみ)
+- **テストカバレッジ: 17個のユニットテスト**
+
+### 各モジュールの役割
+
+| モジュール | 責務 | 主要な機能 |
+|-----------|------|-----------|
+| **config.py** | 設定の集約とDI | `AgentConfig`による42個のパラメータ管理、`AgentFactories`によるDIサポート |
+| **runner/** | 実行フロー管理 | メインループ、シグナルハンドリング、クリーンアップ |
+| **pause_controller/** | 一時停止制御 | Ctrl+Cによる一時停止、再開、状態管理 |
+| **filesystem_manager/** | ファイル管理 | ダウンロード追跡、ワークスペース管理、状態永続化 |
+| **history_manager/** | 履歴管理 | 履歴アイテムの作成、保存、再生、エクスポート |
+| **llm_handler/** | LLM統合 | LLM呼び出し、リトライロジック、URL短縮 |
+| **message_manager/** | メッセージ管理 | システムプロンプト構築、履歴管理、コンテキスト最適化 |
+| **step_executor/** | ステップ実行 | 状態取得→LLM思考→アクション実行の制御フロー |
+| **telemetry/** | 観測可能性 | ログ出力、テレメトリ送信、パフォーマンス計測 |
+
+### データフロー図
+
+```mermaid
+graph TD
+    A[Agent本体] --> B[AgentRunner]
+    A --> C[StepExecutor]
+    C --> D[LLMHandler]
+    C --> E[MessageManager]
+    C --> F[HistoryManager]
+    A --> G[FilesystemManager]
+    A --> H[TelemetryHandler]
+    A --> I[PauseController]
+
+    B -->|実行ループ| C
+    C -->|メッセージ構築| E
+    C -->|LLM呼び出し| D
+    C -->|履歴記録| F
+    C -->|ダウンロード確認| G
+    C -->|ログ出力| H
+    B -->|一時停止制御| I
+
+    style A fill:#e1f5ff
+    style B fill:#fff4e1
+    style C fill:#f0e1ff
+```
+
 ## ドキュメント一覧
 
 ### 📚 利用可能なドキュメント
@@ -136,12 +214,12 @@ print(f"使用トークン: {result.total_tokens}")
 | ドキュメント | 説明 | 対象者 |
 |------------|------|--------|
 | **[agent_flow.md](./agent_flow.md)** | Agent実行フローの詳細解説。初期化からクリーンアップまでの全フェーズを網羅 | すべての開発者 |
+| **[step_processing.md](./step_processing.md)** | ステップ処理の詳細。LLM思考、アクション実行、エラーハンドリング | Agent開発者 |
 
 ### 🚧 今後追加予定
 
 以下のドキュメントは今後追加される予定です：
 
-- **agent_architecture.md** - Agentの内部アーキテクチャ、各コンポーネントの詳細
 - **agent_customization.md** - カスタムツール、システムプロンプト、フックの作成
 - **agent_optimization.md** - パフォーマンス最適化、メモリ管理、トークン削減
 - **agent_debugging.md** - デバッグテクニック、ログ分析、トラブルシューティング
@@ -156,28 +234,53 @@ print(f"使用トークン: {result.total_tokens}")
 class Agent:
     def __init__(
         self,
-        task: str,
-        llm: BaseChatModel,
-        browser_session: BrowserSession | None = None,
-        max_steps: int = 100,
-        use_vision: bool = True,
-        max_failures: int = 5,
-        retry_delay: float = 1.0,
-        system_prompt: str | None = None,
-        # ... その他多数のオプション
+        task: str | None = None,          # タスク内容
+        llm: BaseChatModel | None = None, # LLMインスタンス
+        config: AgentConfig | None = None, # 設定オブジェクト（推奨）
+        **kwargs                          # その他のパラメータ
     )
 
-    async def run(self) -> AgentHistoryList:
+    async def run(
+        self,
+        max_steps: int = 100,
+        on_step_start: AgentHookFunc | None = None,
+        on_step_end: AgentHookFunc | None = None,
+    ) -> AgentHistoryList:
         """Agent実行（非同期）"""
 
-    def run_sync(self) -> AgentHistoryList:
+    def run_sync(self, ...) -> AgentHistoryList:
         """Agent実行（同期）"""
 
-    async def step(self) -> AgentStepInfo:
+    async def step(self, step_info: AgentStepInfo | None = None) -> None:
         """単一ステップの実行"""
+
+    def pause(self) -> None:
+        """Agentを一時停止"""
+
+    def resume(self) -> None:
+        """Agentを再開"""
 
     async def close(self) -> AgentHistoryList:
         """リソースのクリーンアップ"""
+```
+
+### AgentConfig
+
+```python
+@dataclass
+class AgentConfig:
+    """Agent設定の集約"""
+
+    # 必須
+    task: str
+
+    # オプション（主要なもの）
+    llm: BaseChatModel | None = None
+    browser_session: BrowserSession | None = None
+    max_steps: int = 100
+    use_vision: bool = True
+    max_failures: int = 5
+    # ... 全42個のパラメータ
 ```
 
 ### AgentHistoryList
@@ -187,6 +290,7 @@ class AgentHistoryList:
     history: list[AgentHistory]      # 実行履歴
     final_result: str | None         # 最終結果
     model_actions: list[ActionModel] # 実行されたアクション
+    usage: UsageSummary | None       # トークン使用量とコスト
 
     def is_done(self) -> bool:
         """タスクが完了したか"""
@@ -197,6 +301,10 @@ class AgentHistoryList:
     @property
     def total_tokens(self) -> int:
         """使用トークン総数"""
+
+    @property
+    def total_cost(self) -> float:
+        """推定コスト（USD）"""
 ```
 
 ## 実用例
@@ -279,7 +387,7 @@ agent = Agent(
     task="タスク",
     llm=llm,
     use_vision=False,           # スクリーンショット不要なら False
-    max_history_messages=10,    # 履歴を制限
+    max_history_items=10,       # LLMへ渡す履歴を制限（5件超で設定可）
     max_steps=50,               # 無限ループを防ぐ
 )
 ```
@@ -360,7 +468,7 @@ agent = Agent(
     task="...",
     llm=llm,
     use_vision=False,
-    max_history_messages=5
+    max_history_items=5
 )
 ```
 
@@ -424,5 +532,5 @@ browser-useは[MITライセンス](../../LICENSE)の下で公開されていま�
 
 ---
 
-**最終更新**: 2025年10月14日
+**最終更新**: 2025年10月15日（Phase 1 + Phase 2リファクタリング反映）
 **バージョン**: 0.8.0
