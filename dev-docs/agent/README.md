@@ -28,6 +28,7 @@ print(result.final_result())
 | **📊 完全な履歴** | すべてのステップ、思考、結果を記録 |
 | **🛠️ 拡張可能** | カスタムツール、アクション、LLMを簡単に追加 |
 | **☁️ クラウド連携** | オプションでテレメトリとクラウド同期をサポート |
+| **🧑‍💻 HITLインタラクション** | インタラクティブモードでアクション実行前に人間が承認・修正 |
 
 ## 主要な概念
 
@@ -119,6 +120,7 @@ config = AgentConfig(
     max_steps=50,           # 最大ステップ数
     use_vision=True,        # スクリーンショットを使用
     max_failures=3,         # 失敗許容回数
+    interactive_mode=True,  # 人間による承認フローを有効化
 )
 agent = Agent(config=config)
 
@@ -130,6 +132,7 @@ agent = Agent(
     max_steps=50,
     use_vision=True,
     max_failures=3,
+    interactive_mode=True,
 )
 
 # 非同期実行
@@ -139,6 +142,32 @@ result = await agent.run()
 print(f"完了: {result.is_done()}")
 print(f"ステップ数: {len(result.history)}")
 print(f"使用トークン: {result.total_tokens}")
+
+### Human-in-the-Loop モード
+
+`interactive_mode=True` を指定すると、LLMが提案したアクションは**実行前に人間の承認を経る**ようになります。標準ではコンソールUIが起動し、以下のオプションを選択できます：
+
+- `[a]` 実行を承認
+- `[r]` フィードバックを入力して再度アクション案を生成
+- `[s]` このステップの実行をスキップ（履歴には「スキップ済み」として記録）
+- `[c]` エージェント全体を停止
+
+独自UIと統合したい場合は `approval_callback` を渡してください。コールバックは `(approved: bool, feedback: str | None)` または `ApprovalResult` を返します。例：
+
+```python
+from browser_use.agent.views import ApprovalResult
+
+async def approval_callback(step_info, output, browser_state):
+    # TODO: Web UI や Slack Bot で承認・修正フローを実装
+    return ApprovalResult(decision='approve')
+
+agent = Agent(
+    task="重要な管理操作",
+    llm=llm,
+    interactive_mode=True,
+    approval_callback=approval_callback,
+)
+```
 ```
 
 ## 内部アーキテクチャ

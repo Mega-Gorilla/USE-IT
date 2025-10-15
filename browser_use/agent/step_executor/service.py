@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import inspect
 import logging
+import textwrap
 import time
 from typing import TYPE_CHECKING
 
 from browser_use.agent.cloud_events import CreateAgentStepEvent
-from browser_use.agent.views import ActionResult, AgentError, AgentStepInfo, StepMetadata
+from browser_use.agent.views import ActionResult, AgentError, AgentStepInfo, ApprovalResult, StepMetadata
 from browser_use.browser.views import BrowserStateSummary
 from browser_use.llm.messages import UserMessage
 from browser_use.observability import observe, observe_debug
@@ -31,16 +33,167 @@ class StepExecutor:
 		agent = self.agent
 		agent.step_start_time = time.time()
 		browser_state_summary: BrowserStateSummary | None = None
-
 		try:
 			browser_state_summary = await self.prepare_context(step_info)
-			await self.get_next_action(browser_state_summary)
+
+			while True:
+				await self.get_next_action(browser_state_summary)
+
+				if not agent.settings.interactive_mode:
+					break
+
+				approval = await self.request_human_approval(step_info, browser_state_summary)
+
+				if approval.decision == 'approve':
+					agent.logger.debug('✅ Interactive approval granted - executing actions')
+					break
+
+				if approval.decision == 'retry':
+					if approval.feedback:
+						agent.logger.info('🔁 人間からのフィードバックを受け取り、再度アクション候補を生成します')
+						agent._message_manager._add_context_message(
+							UserMessage(content=f'<human_feedback>{approval.feedback}</human_feedback>')
+						)
+					else:
+						agent.logger.info('🔁 承認されなかったため、フィードバックなしでアクションを再生成します')
+
+					await agent._check_stop_or_pause()
+					continue
+
+				if approval.decision == 'skip':
+					agent.logger.info('⏭️ ユーザーがこのステップのアクション実行をスキップしました（インタラクティブモード）')
+					agent.state.last_result = [
+						ActionResult(
+							extracted_content='User skipped execution during interactive approval.',
+							include_in_memory=True,
+							long_term_memory='User skipped execution during interactive approval.',
+						)
+					]
+					return
+
+				if approval.decision == 'cancel':
+					agent.logger.info('🛑 ユーザーがインタラクティブモードでエージェント実行をキャンセルしました')
+					agent.stop()
+					agent.state.last_result = [
+						ActionResult(
+							error='User cancelled execution during interactive approval.',
+						)
+					]
+					return
+
 			await self.execute_actions()
 			await self.post_process()
 		except Exception as exc:
 			await self.handle_step_error(exc)
 		finally:
 			await self.finalize(browser_state_summary)
+
+	async def request_human_approval(
+		self,
+		step_info: AgentStepInfo | None,
+		browser_state_summary: BrowserStateSummary,
+	) -> ApprovalResult:
+		"""Request human approval before executing actions (アクション実行前に承認を取得)."""
+		agent = self.agent
+		model_output = agent.state.last_model_output
+
+		if model_output is None or not model_output.action:
+			agent.logger.debug('🛈 No actions proposed; skipping approval check')
+			return ApprovalResult(decision='approve')
+
+		approval_callback = getattr(agent, 'approval_callback', None)
+		if approval_callback:
+			raw_result = approval_callback(step_info, model_output, browser_state_summary)
+			if inspect.isawaitable(raw_result):
+				raw_result = await raw_result  # type: ignore[assignment]
+			return self._normalize_approval_result(raw_result)
+
+		return await self._console_approval_interface(step_info, model_output, browser_state_summary)
+
+	def _normalize_approval_result(self, value: ApprovalResult | tuple[bool, str | None]) -> ApprovalResult:
+		if isinstance(value, ApprovalResult):
+			return value
+		if isinstance(value, tuple) and len(value) == 2:
+			return ApprovalResult.from_tuple(value)
+		raise TypeError(
+			'approval_callback must return ApprovalResult or tuple[bool, str | None]'
+		)
+
+	async def _console_approval_interface(
+		self,
+		step_info: AgentStepInfo | None,
+		model_output,
+		browser_state_summary: BrowserStateSummary,
+	) -> ApprovalResult:
+		"""Default console-based approval flow (デフォルト対話UI)."""
+		agent = self.agent
+		actions = model_output.action
+		if not actions:
+			return ApprovalResult(decision='approve')
+
+		step_label = f'Step {agent.state.n_steps}'
+		if step_info:
+			step_label = f'Step {step_info.step_number}'
+
+		header_lines = [
+			'',
+			'🤖 インタラクティブモード: 実行前にアクションをレビューしてください',
+			'━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+			f'  ステップ: {step_label}',
+			f'  URL: {browser_state_summary.url}',
+			f'  アクション候補: {len(actions)}件',
+			'━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+		]
+		for line in header_lines:
+			agent.logger.info(line)
+
+		for idx, action in enumerate(actions, 1):
+			dumped = action.model_dump(exclude_unset=True)
+			action_name, action_body = next(iter(dumped.items()), ('unknown', dumped))
+			agent.logger.info(f'  アクション {idx}/{len(actions)}: {action_name}')
+			formatted = json.dumps(action_body, ensure_ascii=False, indent=2)
+			agent.logger.info(textwrap.indent(formatted, prefix='    '))
+			agent.logger.info('  ───────────────────────────────────────────────')
+
+		menu_lines = [
+			'選択肢:',
+			'  [a] 承認してアクションを実行',
+			'  [r] 拒否してフィードバックをLLMへ渡す',
+			'  [s] スキップ（このステップでは実行しない）',
+			'  [c] キャンセル（エージェントを停止）',
+		]
+		for line in menu_lines:
+			agent.logger.info(line)
+
+		while True:
+			try:
+				choice = (await asyncio.to_thread(input, '選択を入力してください [a/r/s/c]: ')).strip().lower()
+			except (EOFError, KeyboardInterrupt):
+				agent.logger.info('🛑 入力が中断されたため、エージェントをキャンセルします')
+				return ApprovalResult(decision='cancel')
+
+			if choice in {'a', 'approve', 'y', 'yes'}:
+				return ApprovalResult(decision='approve')
+
+			if choice in {'s', 'skip'}:
+				return ApprovalResult(decision='skip')
+
+			if choice in {'c', 'cancel', 'q', 'quit'}:
+				return ApprovalResult(decision='cancel')
+
+			if choice in {'r', 'reject'}:
+				try:
+					feedback = (await asyncio.to_thread(input, 'LLMへのフィードバックを入力してください: ')).strip()
+				except (EOFError, KeyboardInterrupt):
+					agent.logger.info('🛑 フィードバック入力が中断されたため、エージェントをキャンセルします')
+					return ApprovalResult(decision='cancel')
+
+				if not feedback:
+					agent.logger.warning('⚠️ フィードバックが空です。もう一度入力してください。')
+					continue
+				return ApprovalResult(decision='retry', feedback=feedback)
+
+			agent.logger.warning('⚠️ 無効な選択です。a/r/s/c のいずれかを入力してください。')
 
 	async def prepare_context(self, step_info: AgentStepInfo | None = None) -> BrowserStateSummary:
 		agent = self.agent
