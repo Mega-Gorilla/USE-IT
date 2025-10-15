@@ -165,7 +165,7 @@ await history_manager.create_history_item(
 |---------|------|-----|
 | **LLM思考** | thinking, evaluation_previous_goal, memory, next_goal | "検索ボックスが見つかったのでクリックする" |
 | **アクション** | 実行されたアクション名とパラメータ | `{"click_element": {"index": 5}}` |
-| **実行結果** | 成功/失敗、抽出コンテンツ、エラー | `{"success": true, "extracted_content": "..."}` |
+| **実行結果** | is_done, long_term_memory, extracted_content等 | `{"is_done": false, "extracted_content": "..."}` |
 | **ブラウザ状態** | URL、タイトル、タブ、操作した要素 | `{"url": "https://example.com", "title": "..."}` |
 | **スクリーンショット** | スクリーンショットのファイルパス | `"/tmp/screenshots/step_5.png"` |
 | **メタデータ** | ステップ番号、開始・終了時刻 | `{"step_number": 5, "duration": 12.3}` |
@@ -205,39 +205,73 @@ agent.save_history('/path/to/histories/task_001.json')
         "memory": "https://example.com にアクセス完了",
         "next_goal": "検索ボックスに「Python」と入力する",
         "action": [
-          {"type_text": {"index": 3, "text": "Python"}}
+          {
+            "type_text": {
+              "index": 3,
+              "text": "Python"
+            }
+          }
         ]
       },
       "result": [
         {
-          "success": true,
+          "is_done": false,
+          "long_term_memory": "入力ボックスにPythonと入力完了",
           "extracted_content": "入力完了",
-          "error": null
+          "include_extracted_content_only_once": false,
+          "include_in_memory": false
         }
       ],
       "state": {
         "url": "https://example.com",
         "title": "Example Domain",
-        "tabs": [...],
-        "interacted_element": [
+        "tabs": [
           {
-            "tag": "input",
-            "element_hash": "a1b2c3d4",
-            "attributes": {"type": "text", "name": "q"}
+            "url": "https://example.com",
+            "title": "Example Domain",
+            "target_id": "ABC123",
+            "parent_target_id": null
           }
         ],
-        "screenshot_path": "/tmp/browser_use/screenshots/step_2.png"
+        "screenshot_path": "/tmp/browser_use/screenshots/step_2.png",
+        "interacted_element": [
+          {
+            "node_id": 42,
+            "backend_node_id": 123,
+            "frame_id": null,
+            "node_type": 1,
+            "node_value": "",
+            "node_name": "INPUT",
+            "attributes": {
+              "type": "text",
+              "name": "q",
+              "placeholder": "検索..."
+            },
+            "x_path": "html/body/div/form/input",
+            "element_hash": 1234567890123456789,
+            "bounds": {
+              "x": 100.0,
+              "y": 200.0,
+              "width": 300.0,
+              "height": 40.0
+            }
+          }
+        ]
       },
       "metadata": {
         "step_number": 2,
         "step_start_time": 1697123456.789,
         "step_end_time": 1697123470.123
       },
-      "state_message": "現在のページ: https://example.com\n..."
+      "state_message": "<agent_history>\n...\n</agent_history>\n<agent_state>\n...\n</agent_state>\n<browser_state>\n...\n</browser_state>"
     }
   ]
 }
 ```
+
+**注**:
+- `state_message` は非常に長い文字列で、LLMに送られた完全なコンテキストが含まれます（簡潔化のため省略）
+- `interacted_element` がアクションによって要素を操作した場合は詳細な情報が、操作していない場合（navigateやscroll等）は `null` が格納されます
 
 **機密データの自動フィルタリング**:
 
@@ -337,14 +371,15 @@ sequenceDiagram
 {
     "click_element": {"index": 5},
     "interacted_element": {
-        "tag": "button",
-        "element_hash": "abc123def456",
-        "attributes": {"class": "submit-btn"}
+        "node_name": "BUTTON",
+        "element_hash": 1234567890123456789,
+        "attributes": {"class": "submit-btn"},
+        "x_path": "html/body/div/button"
     }
 }
 
 # 再実行時: 要素が追加されてインデックスが7に変わっている
-# → element_hash でマッチング → インデックスを7に自動更新
+# → element_hash (1234567890123456789) でマッチング → インデックスを7に自動更新
 ```
 
 **実装**: `_update_action_indices()` (browser_use/agent/history_manager/service.py:207-235)
@@ -439,7 +474,7 @@ class AgentHistoryList(BaseModel):
 
 ### BrowserStateHistory
 
-**実装場所**: `browser_use/browser/views.py:69-130`
+**実装場所**: `browser_use/browser/views.py`
 
 ```python
 @dataclass
@@ -449,9 +484,66 @@ class BrowserStateHistory:
     url: str                              # 現在のURL
     title: str                            # ページタイトル
     tabs: list[TabInfo]                   # 開いているタブ
-    interacted_element: list[DOMInteractedElement | None]  # 操作した要素
     screenshot_path: str | None           # スクリーンショットファイルパス
+    interacted_element: list[DOMInteractedElement | None]  # 操作した要素
+
+class TabInfo(BaseModel):
+    """タブ情報"""
+    url: str                              # タブのURL
+    title: str                            # タブのタイトル
+    target_id: str                        # CDP Target ID
+    parent_target_id: str | None          # 親TargetのID（ポップアップ等）
 ```
+
+### DOMInteractedElement
+
+**実装場所**: `browser_use/dom/views.py`
+
+操作された要素の詳細情報（要素を操作したアクションの場合のみ）:
+
+```python
+@dataclass
+class DOMInteractedElement:
+    """操作された要素の情報"""
+
+    node_id: int                          # CDP Node ID
+    backend_node_id: int                  # CDP Backend Node ID
+    frame_id: str | None                  # フレームID（iframe内の場合）
+    node_type: int                        # ノードタイプ（1=Element, 3=Text等）
+    node_value: str                       # ノードの値
+    node_name: str                        # タグ名（"A", "BUTTON", "INPUT"等）
+    attributes: dict[str, str]            # 要素の属性
+    x_path: str                           # XPath
+    element_hash: int                     # 要素の一意識別子（再実行時のマッチングに使用）
+    bounds: dict[str, float]              # 要素の位置とサイズ
+```
+
+**実際の例**:
+```json
+{
+  "node_id": 42,
+  "backend_node_id": 123,
+  "frame_id": null,
+  "node_type": 1,
+  "node_value": "",
+  "node_name": "A",
+  "attributes": {
+    "href": "https://example.com",
+    "class": "link-button",
+    "target": "_blank"
+  },
+  "x_path": "html/body/div[2]/a[3]",
+  "element_hash": 1234567890123456789,
+  "bounds": {
+    "x": 100.5,
+    "y": 200.0,
+    "width": 150.0,
+    "height": 40.0
+  }
+}
+```
+
+**注**: navigateやscroll等、特定の要素を操作しないアクションの場合、`interacted_element` は `null` になります。
 
 ### StepMetadata
 
@@ -571,7 +663,61 @@ async def _update_action_indices(
 
 **element_hashの計算**:
 
-要素のタグ、テキスト、主要な属性から一意のハッシュを生成します。詳細は `browser_use/dom/views.py` を参照。
+要素のタグ、テキスト、主要な属性から一意のハッシュ（整数）を生成します。このハッシュにより、DOMの順序が変わっても同じ要素を特定できます。詳細は `browser_use/dom/views.py` を参照。
+
+**実際の履歴ファイルの例**（temp/agent_history.jsonより）:
+
+```json
+{
+  "history": [
+    {
+      "model_output": {
+        "thinking": "検索を開始する",
+        "evaluation_previous_goal": "Agent initialized. Starting the task.",
+        "memory": "Initial step.",
+        "next_goal": "Search for information",
+        "action": [
+          {
+            "search": {
+              "query": "browser-use github",
+              "engine": "duckduckgo"
+            }
+          }
+        ]
+      },
+      "result": [
+        {
+          "is_done": false,
+          "long_term_memory": "Searched Duckduckgo for 'browser-use github'",
+          "extracted_content": "Searched Duckduckgo for 'browser-use github'",
+          "include_extracted_content_only_once": false,
+          "include_in_memory": false
+        }
+      ],
+      "state": {
+        "url": "about:blank",
+        "title": "Empty Tab",
+        "tabs": [
+          {
+            "url": "about:blank",
+            "title": "",
+            "target_id": "CB09",
+            "parent_target_id": null
+          }
+        ],
+        "screenshot_path": null,
+        "interacted_element": [null]
+      },
+      "metadata": {
+        "step_number": 1,
+        "step_start_time": 1760498023.5604107,
+        "step_end_time": 1760498028.0634792
+      },
+      "state_message": "<agent_history>...</agent_history><agent_state>...</agent_state><browser_state>...</browser_state>"
+    }
+  ]
+}
+```
 
 ## 使用例
 
