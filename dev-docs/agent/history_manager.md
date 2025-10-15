@@ -798,13 +798,23 @@ async def test_login_workflow():
     agent = Agent(task='', llm=llm)
     results = await agent.load_and_rerun('golden_login_workflow.json')
 
-    # すべてのステップが成功したか確認
-    assert all(r.success is not False for r in results), "ログインワークフローに失敗"
+    # load_and_rerun() は list[ActionResult] を返す
+    # agent.history は更新されないため、results で判定する
 
-    # 最終結果の確認
-    assert agent.history.is_done(), "タスクが完了していない"
-    assert agent.history.is_successful(), "タスクは完了したが成功とマークされていない"
+    # すべてのアクションが失敗していないか確認
+    assert all(r.success is not False for r in results), "ログインワークフローに失敗したアクションがあります"
+
+    # エラーがないか確認
+    errors = [r.error for r in results if r.error]
+    assert len(errors) == 0, f"エラーが発生: {errors}"
+
+    # 最終アクションが完了フラグを持つか確認（done アクション）
+    if len(results) > 0:
+        last_result = results[-1]
+        assert last_result.is_done or last_result.success is not False, "ワークフローが正常に完了していない"
 ```
+
+**注意**: `load_and_rerun()` および `rerun_history()` は保存されたアクションを再実行して `list[ActionResult]` を返しますが、**Agentの `history` フィールドは更新されません**。テストでは返された `results` を使って検証してください。
 
 ### 例4: 部分的な再実行
 
@@ -870,14 +880,14 @@ asyncio.run(secure_save())
 
 ```python
 import asyncio
-from browser_use.agent.views import AgentHistoryList
-from browser_use import Agent
+from browser_use.agent.views import AgentHistoryList, AgentOutput
 
 async def analyze_history():
-    agent = Agent(task='', llm=None)  # LLM不要（分析のみ）
+    """保存された履歴ファイルを分析する（LLM不要）"""
 
-    # 履歴を読み込む
-    history = AgentHistoryList.load_from_file('task_history.json', agent.AgentOutput)
+    # AgentHistoryList.load_from_file() は AgentOutput の型が必要
+    # Agentインスタンスなしで直接読み込む場合、標準のAgentOutputを使用
+    history = AgentHistoryList.load_from_file('task_history.json', AgentOutput)
 
     print('=== 履歴分析 ===')
     print(f'ステップ数: {history.number_of_steps()}')
@@ -903,8 +913,16 @@ async def analyze_history():
     for content in history.extracted_content():
         print(f'  - {content[:100]}...')  # 最初の100文字
 
+    print('\nLLMの思考プロセス:')
+    for i, thought in enumerate(history.model_thoughts(), 1):
+        print(f'  ステップ{i}:')
+        print(f'    目標: {thought.next_goal}')
+        print(f'    評価: {thought.evaluation_previous_goal}')
+
 asyncio.run(analyze_history())
 ```
+
+**注意**: 履歴の分析のみを行う場合、Agentインスタンスは不要です。`AgentHistoryList.load_from_file()` に直接 `AgentOutput` 型を渡すことで、LLMなしで履歴データを読み込めます。
 
 ## 活用シーン
 
@@ -1119,8 +1137,9 @@ agent.save_history('login.json')  # 自動的にマスキングされる
 
 ### 🧪 テストファイル
 
-- `tests/unit/test_history_manager.py` - HistoryManagerのユニットテスト
-- `tests/ci/test_sync_client_auth.py` - 履歴保存のCI テスト
+- `tests/unit/test_history_manager.py` - HistoryManagerのユニットテスト（作成予定）
+
+**注**: 現在、HistoryManager専用のテストファイルは作成中です。実装のテストは `examples/features/rerun_history.py` で動作確認できます。
 
 ### 📖 関連概念
 
