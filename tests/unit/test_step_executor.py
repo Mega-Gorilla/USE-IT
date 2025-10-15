@@ -9,7 +9,7 @@ import pytest
 from browser_use.agent.step_executor import StepExecutor
 from browser_use.llm.exceptions import ModelProviderError
 from browser_use.filesystem.file_system import FileSystem
-from browser_use.agent.views import ActionResult, AgentStepInfo
+from browser_use.agent.views import ActionResult, AgentStepInfo, ApprovalResult
 
 
 def make_browser_state(url: str = 'http://example.com', screenshot: str | None = None):
@@ -65,6 +65,7 @@ def build_agent(test_logger):
 			max_actions_per_step=5,
 			flash_mode=False,
 			page_extraction_llm=None,
+			interactive_mode=False,
 		),
 		logger=test_logger,
 		_check_and_update_downloads=AsyncMock(),
@@ -100,6 +101,8 @@ def build_agent(test_logger):
 	agent.history_manager = SimpleNamespace(create_history_item=AsyncMock())
 	agent.save_file_system_state = MagicMock()
 	agent.enable_cloud_sync = False
+	agent.approval_callback = None
+	agent.stop = MagicMock()
 	return agent
 
 
@@ -174,3 +177,53 @@ async def test_execute_step_handles_model_provider_error(test_logger):
 	assert agent.state.consecutive_failures == 1
 	assert agent.state.last_result
 	assert '503' in agent.state.last_result[0].error
+
+
+@pytest.mark.asyncio
+async def test_execute_step_interactive_skip(test_logger, dummy_action_model_class):
+	agent = build_agent(test_logger)
+	agent.settings.interactive_mode = True
+	action = dummy_action_model_class(click={'selector': '#submit'})
+	model_output = SimpleNamespace(action=[action])
+	agent.llm_handler.get_model_output_with_retry = AsyncMock(return_value=model_output)
+	agent.approval_callback = MagicMock(return_value=(False, None))
+
+	executor = StepExecutor(agent)
+
+	await executor.execute_step(step_info=None)
+
+	agent.tools.act.assert_not_called()
+	agent.stop.assert_not_called()
+	assert agent.state.last_result
+	assert 'skipped execution' in agent.state.last_result[0].long_term_memory
+	agent.approval_callback.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_execute_step_interactive_retry_then_approve(test_logger, dummy_action_model_class):
+	agent = build_agent(test_logger)
+	agent.settings.interactive_mode = True
+	first_action = dummy_action_model_class(click={'selector': '#one'})
+	second_action = dummy_action_model_class(click={'selector': '#two'})
+	first_output = SimpleNamespace(action=[first_action])
+	second_output = SimpleNamespace(action=[second_action])
+	agent.llm_handler.get_model_output_with_retry = AsyncMock(side_effect=[first_output, second_output])
+	agent.approval_callback = MagicMock(
+		side_effect=[
+			ApprovalResult(decision='retry', feedback='Use index #two'),
+			ApprovalResult(decision='approve'),
+		]
+	)
+	agent.tools.act = AsyncMock(return_value=ActionResult(is_done=True, success=True, extracted_content='done'))
+
+	executor = StepExecutor(agent)
+
+	await executor.execute_step(step_info=None)
+
+	assert agent.approval_callback.call_count == 2
+	assert agent.llm_handler.get_model_output_with_retry.await_count == 2
+	agent._message_manager._add_context_message.assert_called()
+	message_arg = agent._message_manager._add_context_message.call_args[0][0]
+	assert '<human_feedback>Use index #two</human_feedback>' in message_arg.content
+	agent.tools.act.assert_awaited()
+	agent.stop.assert_not_called()
