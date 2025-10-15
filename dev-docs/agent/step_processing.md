@@ -618,6 +618,8 @@ flowchart TD
 標準のコンソールUIでは `[a]`, `[r]`, `[s]`, `[c]` の4つの選択肢が提供されます。  
 独自のUIを組み合わせる場合は `approval_callback(step_info, model_output, browser_state)` を実装し、上記の戻り値を返してください。
 
+> ℹ️ 標準UIは [`questionary`](https://github.com/tmbo/questionary) に依存します。`pip install browser-use[cli]` で事前にインストールしておいてください。未導入の場合は実行時にエラーになります。
+
 ## Phase 3: 後処理
 
 **実装場所**: `browser_use/agent/step_executor/service.py`

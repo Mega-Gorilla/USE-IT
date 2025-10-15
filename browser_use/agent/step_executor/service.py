@@ -4,7 +4,6 @@ import asyncio
 import json
 import inspect
 import logging
-import textwrap
 import time
 from typing import TYPE_CHECKING
 
@@ -15,17 +14,15 @@ from browser_use.llm.messages import UserMessage
 from browser_use.observability import observe, observe_debug
 from browser_use.utils import time_execution_async
 
-# Rich library for beautiful console UI (optional dependency from cli extras)
+# Questionary is required for interactive approval UI
 try:
-	from rich.console import Console
-	from rich.panel import Panel
-	from rich.table import Table
-	from rich.prompt import Prompt
-	from rich import box
-
-	RICH_AVAILABLE = True
-except ImportError:
-	RICH_AVAILABLE = False
+	import questionary
+except ImportError as exc:  # pragma: no cover - error path is simple and deterministic
+	QUESTIONARY_ERROR: ImportError | None = exc
+	QUESTIONARY_AVAILABLE = False
+else:
+	QUESTIONARY_ERROR = None
+	QUESTIONARY_AVAILABLE = True
 
 if TYPE_CHECKING:
 	from browser_use.agent.service import Agent
@@ -138,26 +135,29 @@ class StepExecutor:
 		browser_state_summary: BrowserStateSummary,
 	) -> ApprovalResult:
 		"""Default console-based approval flow (デフォルト対話UI)."""
-		if RICH_AVAILABLE:
-			return await self._console_approval_interface_rich(step_info, model_output, browser_state_summary)
-		else:
-			return await self._console_approval_interface_fallback(step_info, model_output, browser_state_summary)
+		if not QUESTIONARY_AVAILABLE:
+			message = (
+				'Interactive approval requires questionary. '
+				"Install the CLI extras via `pip install browser-use[cli]`."
+			)
+			raise RuntimeError(message) from QUESTIONARY_ERROR
 
-	async def _console_approval_interface_rich(
+		return await self._console_approval_interface_questionary(step_info, model_output, browser_state_summary)
+
+	async def _console_approval_interface_questionary(
 		self,
 		step_info: AgentStepInfo | None,
 		model_output,
 		browser_state_summary: BrowserStateSummary,
 	) -> ApprovalResult:
-		"""Rich-based beautiful console UI for approval flow."""
+		"""Questionary-based cursor selection UI for approval flow (カーソルベースの選択UI)."""
 		agent = self.agent
 		actions = model_output.action
-		console = Console()
 
 		if not actions:
 			return ApprovalResult(decision='approve')
 
-		# ステップ情報の準備
+		# ステップ情報
 		if step_info:
 			current_step = step_info.step_number + 1
 			max_steps = step_info.max_steps
@@ -165,221 +165,99 @@ class StepExecutor:
 		else:
 			step_label = str(agent.state.n_steps)
 
-		# URL短縮
 		url_display = browser_state_summary.url
 		if len(url_display) > 80:
 			url_display = url_display[:77] + '...'
 
-		# ヘッダーパネル
-		console.print()
-		console.print(
-			Panel(
-				f'[bold cyan]🤖 Interactive Mode - Action Approval[/bold cyan]\n\n'
-				f'📍 Step: [yellow]{step_label}[/yellow]\n'
-				f'🌐 URL: [blue]{url_display}[/blue]',
-				border_style='cyan',
-				box=box.DOUBLE,
-			)
-		)
-
-		# アクションテーブル
-		action_count = len(actions)
-		table = Table(
-			title=f'📋 Proposed {action_count} action{"s" if action_count > 1 else ""}',
-			box=box.ROUNDED,
-			show_header=True,
-			header_style='bold magenta',
-			title_style='bold',
-		)
-		table.add_column('No.', style='cyan', width=4, justify='center')
-		table.add_column('Action', style='green', width=20)
-		table.add_column('Parameters', style='yellow')
-
+		print()
+		print('────────────────────────────────────────────────────────')
+		print('🤖 Interactive Mode - Action Approval')
+		print(f'📍 Step: {step_label}')
+		print(f'🌐 URL: {url_display}')
+		print('────────────────────────────────────────────────────────')
 		for idx, action in enumerate(actions, 1):
 			dumped = action.model_dump(exclude_unset=True)
 			action_name, action_body = next(iter(dumped.items()), ('unknown', dumped))
-
-			# パラメータを整形
+			print(f'  ▶ Action {idx}: {action_name}')
 			if isinstance(action_body, dict):
-				params_lines = []
 				for key, value in action_body.items():
 					value_str = str(value)
-					if len(value_str) > 60:
-						value_str = value_str[:57] + '...'
-					params_lines.append(f'• {key}: {value_str}')
-				params = '\n'.join(params_lines)
+					if len(value_str) > 80:
+						value_str = value_str[:77] + '...'
+					print(f'     • {key}: {value_str}')
 			else:
-				params = str(action_body)
-				if len(params) > 60:
-					params = params[:57] + '...'
+				value_str = str(action_body)
+				if len(value_str) > 80:
+					value_str = value_str[:77] + '...'
+				print(f'     {value_str}')
+			if idx < len(actions):
+				print('  ───────────────────────────────────────────────────')
+		print()
 
-			table.add_row(str(idx), action_name, params)
-
-		console.print(table)
-
-		# 選択肢の表示
-		console.print('\n[bold]Choose an option:[/bold]')
-		console.print('  [green][a][/green] Approve - Execute this action')
-		console.print('  [yellow][r][/yellow] Retry - Provide feedback to regenerate')
-		console.print('  [blue][s][/blue] Skip - Skip this step')
-		console.print('  [red][c][/red] Cancel - Stop the agent\n')
-
-		# 入力ループ
+		# Questionary cursor selection
 		while True:
 			try:
 				choice = await asyncio.to_thread(
-					Prompt.ask, '👉 Your choice', choices=['a', 'r', 's', 'c'], default='a'
+					lambda: questionary.select(
+						'👉 Your choice:',
+						choices=[
+							questionary.Choice(title='✅ Approve - Execute this action', value='approve'),
+							questionary.Choice(title='🔁 Retry - Provide feedback to regenerate', value='retry'),
+							questionary.Choice(title='⏭️  Skip - Skip this step', value='skip'),
+							questionary.Choice(title='🛑 Cancel - Stop the agent', value='cancel'),
+						],
+						style=questionary.Style(
+							[
+								('qmark', 'fg:#673ab7 bold'),
+								('question', 'bold'),
+								('answer', 'fg:#f44336 bold'),
+								('pointer', 'fg:#673ab7 bold'),
+								('highlighted', 'fg:#673ab7 bold'),
+								('selected', 'fg:#cc5454'),
+							]
+						),
+					).ask()
 				)
 			except (EOFError, KeyboardInterrupt):
-				console.print('\n🛑 [red]Input interrupted. Cancelling agent.[/red]\n')
+				print('\n🛑 Selection interrupted. Cancelling agent.\n')
 				return ApprovalResult(decision='cancel')
 
-			if choice in {'a', 'approve', 'y', 'yes'}:
-				console.print('✅ [green]Approved. Executing action...[/green]\n')
-				return ApprovalResult(decision='approve')
-
-			if choice in {'s', 'skip'}:
-				console.print('⏭️  [blue]Skipping this step.[/blue]\n')
-				return ApprovalResult(decision='skip')
-
-			if choice in {'c', 'cancel', 'q', 'quit'}:
-				console.print('🛑 [red]Stopping agent.[/red]\n')
+			if choice is None:  # User pressed Ctrl+C or closed the prompt
+				print('\n🛑 No selection made. Cancelling agent.\n')
 				return ApprovalResult(decision='cancel')
 
-			if choice in {'r', 'reject', 'retry'}:
-				console.print(
-					Panel(
-						'Describe what should be changed (leave empty to cancel)',
-						title='💬 Feedback to LLM',
-						border_style='yellow',
-					)
-				)
-				try:
-					feedback = await asyncio.to_thread(Prompt.ask, 'Feedback')
-				except (EOFError, KeyboardInterrupt):
-					console.print('\n🛑 [red]Feedback input interrupted. Cancelling agent.[/red]\n')
-					return ApprovalResult(decision='cancel')
-
-				feedback = feedback.strip()
-				if not feedback:
-					console.print('⚠️  [yellow]Feedback is empty. Please try again.[/yellow]\n')
-					continue
-
-				console.print('🔁 [yellow]Feedback received. Asking LLM to regenerate action...[/yellow]\n')
-				return ApprovalResult(decision='retry', feedback=feedback)
-
-			console.print('❌ [red]Invalid choice. Please enter [a/r/s/c].[/red]\n')
-
-	async def _console_approval_interface_fallback(
-		self,
-		step_info: AgentStepInfo | None,
-		model_output,
-		browser_state_summary: BrowserStateSummary,
-	) -> ApprovalResult:
-		"""Fallback console UI using plain print() when Rich is not available."""
-		agent = self.agent
-		actions = model_output.action
-		if not actions:
-			return ApprovalResult(decision='approve')
-
-		# ステップ番号の決定
-		if step_info:
-			current_step = step_info.step_number + 1
-			max_steps = step_info.max_steps
-			step_label = f'{current_step}/{max_steps}'
-		else:
-			step_label = str(agent.state.n_steps)
-
-		# URL短縮
-		url_display = browser_state_summary.url
-		if len(url_display) > 60:
-			url_display = url_display[:57] + '...'
-
-		# ボックスUIの表示
-		print()
-		print('╔══════════════════════════════════════════════════════════════╗')
-		print('║         🤖 Interactive Mode - Action Approval                ║')
-		print('╠══════════════════════════════════════════════════════════════╣')
-		print(f'║  📍 Step: {step_label:<51} ║')
-		print(f'║  🌐 URL: {url_display:<52} ║')
-		print('╠══════════════════════════════════════════════════════════════╣')
-		action_count = len(actions)
-		action_label = 'action' if action_count == 1 else 'actions'
-		print(f'║  📋 Proposed {action_count} {action_label}{" " * (43 - len(str(action_count)) - len(action_label))}║')
-		print('║                                                              ║')
-
-		# 各アクションを表示
-		for idx, action in enumerate(actions, 1):
-			dumped = action.model_dump(exclude_unset=True)
-			action_name, action_body = next(iter(dumped.items()), ('unknown', dumped))
-			print(f'║  ▶ Action {idx}: {action_name:<47} ║')
-
-			if isinstance(action_body, dict):
-				for key, value in action_body.items():
-					value_str = str(value)
-					max_value_len = 48
-					if len(value_str) > max_value_len:
-						value_str = value_str[:max_value_len - 3] + '...'
-					param_line = f'{key}: {value_str}'
-					display_width = len(param_line.encode('utf-8')) - len(param_line)
-					padding = max(0, 54 - len(param_line) - display_width // 2)
-					print(f'║    • {param_line}{" " * padding}║')
-			else:
-				value_str = str(action_body)
-				if len(value_str) > 54:
-					value_str = value_str[:51] + '...'
-				display_width = len(value_str.encode('utf-8')) - len(value_str)
-				padding = max(0, 58 - len(value_str) - display_width // 2)
-				print(f'║    {value_str}{" " * padding}║')
-
-			if idx < len(actions):
-				print('║                                                              ║')
-
-		print('╠══════════════════════════════════════════════════════════════╣')
-		print('║  Choose an option:                                           ║')
-		print('║    [a] Approve - Execute this action                         ║')
-		print('║    [r] Retry - Provide feedback to regenerate action         ║')
-		print('║    [s] Skip - Skip this step entirely                        ║')
-		print('║    [c] Cancel - Stop the agent                               ║')
-		print('╚══════════════════════════════════════════════════════════════╝')
-		print()
-
-		while True:
-			try:
-				choice = (await asyncio.to_thread(input, '\n👉 Your choice [a/r/s/c]: ')).strip().lower()
-			except (EOFError, KeyboardInterrupt):
-				print('\n🛑 Input interrupted. Cancelling agent.\n')
-				return ApprovalResult(decision='cancel')
-
-			if choice in {'a', 'approve', 'y', 'yes'}:
+			if choice == 'approve':
 				print('✅ Approved. Executing action...\n')
 				return ApprovalResult(decision='approve')
 
-			if choice in {'s', 'skip'}:
+			if choice == 'skip':
 				print('⏭️  Skipping this step.\n')
 				return ApprovalResult(decision='skip')
 
-			if choice in {'c', 'cancel', 'q', 'quit'}:
+			if choice == 'cancel':
 				print('🛑 Stopping agent.\n')
 				return ApprovalResult(decision='cancel')
 
-			if choice in {'r', 'reject', 'retry'}:
-				print('\n┌──────────────────────────────────────────────────────────┐')
-				print('│ Feedback to LLM (describe what should be changed)       │')
-				print('└──────────────────────────────────────────────────────────┘')
+			if choice == 'retry':
+				print('\n💬 Feedback to LLM (describe what should be changed)')
 				try:
-					feedback = (await asyncio.to_thread(input, '💬 Feedback: ')).strip()
+					feedback = await asyncio.to_thread(
+						lambda: questionary.text(
+							'💬 Feedback:', style=questionary.Style([('answer', 'fg:#f44336 bold')])
+						).ask()
+					)
 				except (EOFError, KeyboardInterrupt):
 					print('\n🛑 Feedback input interrupted. Cancelling agent.\n')
 					return ApprovalResult(decision='cancel')
 
-				if not feedback:
+				if feedback is None or not feedback.strip():
 					print('⚠️  Feedback is empty. Please try again.\n')
 					continue
-				print('🔁 Feedback received. Asking LLM to regenerate action...\n')
-				return ApprovalResult(decision='retry', feedback=feedback)
 
-			print('❌ Invalid choice. Please enter [a/r/s/c].\n')
+				print('🔁 Feedback received. Asking LLM to regenerate action...\n')
+				return ApprovalResult(decision='retry', feedback=feedback.strip())
+
+		print('❌ Invalid choice. Please enter one of the available options.\n')
 
 	async def prepare_context(self, step_info: AgentStepInfo | None = None) -> BrowserStateSummary:
 		agent = self.agent
