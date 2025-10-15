@@ -6,7 +6,7 @@ from typing import Literal
 from browser_use.agent.message_manager.views import (
 	HistoryItem,
 )
-from browser_use.agent.prompts import AgentMessagePrompt
+from browser_use.agent.prompt import AgentMessagePrompt
 from browser_use.agent.views import (
 	ActionResult,
 	AgentOutput,
@@ -100,7 +100,7 @@ class MessageManager:
 		self,
 		task: str,
 		system_message: SystemMessage,
-		file_system: FileSystem,
+		file_system: FileSystem | None,
 		state: MessageManagerState = MessageManagerState(),
 		use_thinking: bool = True,
 		include_attributes: list[str] | None = None,

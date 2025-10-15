@@ -37,9 +37,17 @@
 - デバッグの主な対象となる
 - カスタマイズの主な対象となる
 
+### Phase 1リファクタリングによる変更
+
+Phase 1のリファクタリングにより、ステップ処理は **StepExecutor** モジュールに分離されました：
+
+- **場所**: `browser_use/agent/step_executor/service.py`
+- **責務**: ステップ実行のコーディネーション（状態取得 → LLM思考 → アクション実行 → 後処理）
+- **連携**: FilesystemManager, HistoryManager, LLMHandler, TelemetryHandler と協調動作
+
 ## ステップ処理の全体構造
 
-**実装場所**: `browser_use/agent/service.py:661`
+**実装場所**: `browser_use/agent/step_executor/service.py`
 
 ### アーキテクチャ図
 
@@ -110,7 +118,7 @@ async def step(self) -> None:
 
 ## Phase 1: コンテキスト準備
 
-**実装場所**: `browser_use/agent/service.py:687`
+**実装場所**: `browser_use/agent/step_executor/service.py`
 
 **目的**: LLM が判断を下すために必要なすべての情報を収集・整理する
 
@@ -128,14 +136,14 @@ async def _prepare_context(self, step_info: AgentStepInfo | None) -> BrowserStat
     )
 
     # 2. ダウンロード確認
-    # （_check_and_update_downloads実装: browser_use/agent/service.py:483）
+    # （check_and_update_downloads実装: browser_use/agent/filesystem_manager/service.py）
     await self._check_and_update_downloads()
 
     # 3. 停止/一時停止の確認
     await self._check_stop_or_pause()
 
     # 4. アクションモデルの更新（ページ固有）
-    # （_update_action_models_for_page実装: browser_use/agent/service.py:2104）
+    # （_update_action_models_for_page実装: browser_use/agent/service.py）
     await self._update_action_models_for_page(browser_state.url)
 
     # 5. メッセージの作成
@@ -300,7 +308,7 @@ simplified_dom = simplify_dom_for_llm(
 
 ### Phase 2a: LLM呼び出し (`_get_next_action`)
 
-**実装場所**: `browser_use/agent/service.py:737`
+**実装場所**: `browser_use/agent/step_executor/service.py`
 
 **目的**: LLM に現在の状況を伝え、次に取るべきアクションを決定してもらう
 
@@ -404,70 +412,77 @@ class CurrentState:
 }
 ```
 
-### Phase 2b: アクション実行 (`_execute_actions`)
+### Phase 2b: アクション実行 (`execute_actions`)
 
-**実装場所**: `browser_use/agent/service.py:772`
+**実装場所**: `browser_use/agent/step_executor/service.py`
 
 **目的**: LLMが決定したアクションを実際にブラウザで実行する
 
 ```python
-async def _execute_actions(self) -> None:
-    """アクションの実行"""
+async def execute_actions(self) -> None:
+    """LLM が決定したアクションを実際にブラウザで実行"""
+    agent = self.agent
+    if agent.state.last_model_output is None:
+        raise ValueError('No model output to execute actions from')
 
-    if not self.state.last_model_output:
-        raise ValueError("実行するアクションがありません")
-
-    # アクションを順次実行
-    result = await self.multi_act(self.state.last_model_output.action)
-
-    # 結果を保存
-    self.state.last_result = result
+    agent.logger.debug(
+        f'⚡ Step {agent.state.n_steps}: Executing {len(agent.state.last_model_output.action)} actions...'
+    )
+    result = await self.multi_act(agent.state.last_model_output.action)
+    agent.logger.debug(f'✅ Step {agent.state.n_steps}: Actions completed')
+    agent.state.last_result = result
 ```
 
 #### multi_act の内部動作
 
-**実装場所**: `browser_use/agent/service.py:1662`
+**実装場所**: `browser_use/agent/step_executor/service.py`
 
 ```python
-async def multi_act(self, actions: list[ActionModel]) -> list[ActionResult]:
+async def multi_act(
+    self,
+    actions: list[ActionModel],
+    check_for_new_elements: bool = True,
+) -> list[ActionResult]:
     """複数のアクションを順次実行"""
-    results = []
+    agent = self.agent
+    results: list[ActionResult] = []
 
-    for i, action in enumerate(actions):
-        try:
-            # 1. アクション名を取得（"click_element", "type_text" 等）
-            action_name = action.model_dump().keys()[0]
-            action_params = action.model_dump()[action_name]
+    assert agent.browser_session is not None, 'BrowserSession is not set up'
 
-            # 2. ツールレジストリから対応する関数を取得
-            # （Tools実装: browser_use/tools/service.py:102）
-            tool_func = self.tools.registry.get_tool(action_name)
+    # DOM変化検知のためにセレクタマップをキャッシュ（実装では差分チェックに使用）
+    if (
+        agent.browser_session._cached_browser_state_summary
+        and agent.browser_session._cached_browser_state_summary.dom_state
+    ):
+        cached_selector_map = dict(
+            agent.browser_session._cached_browser_state_summary.dom_state.selector_map
+        )
+    else:
+        cached_selector_map = {}
 
-            # 3. アクションを実行
-            result = await tool_func(**action_params)
+    total_actions = len(actions)
+    for idx, action in enumerate(actions):
+        await agent._check_stop_or_pause()
+        action_data = action.model_dump(exclude_unset=True)
+        action_name = next(iter(action_data.keys())) if action_data else 'unknown'
 
-            # 4. 結果を記録
-            results.append(ActionResult(
-                success=True,
-                extracted_content=result.content,
-                error=None
-            ))
+        agent.logger.info(f'  🦾 [ACTION {idx + 1}/{total_actions}] {action_name}')
 
-            # 5. done アクションなら即座に終了
-            if action_name == "done":
-                break
+        # ここで cached_selector_map を使った新規要素検知などの安全確認ロジックが入る
 
-        except Exception as e:
-            # エラーを記録して継続
-            results.append(ActionResult(
-                success=False,
-                extracted_content=None,
-                error=str(e)
-            ))
+        result = await agent.tools.act(
+            action=action,
+            browser_session=agent.browser_session,
+            file_system=agent.file_system,
+            page_extraction_llm=agent.settings.page_extraction_llm,
+            sensitive_data=agent.sensitive_data,
+            available_file_paths=agent.available_file_paths,
+        )
 
-            # 致命的なエラーなら中断
-            if is_fatal_error(e):
-                break
+        results.append(result)
+
+        if result.is_done or result.error or idx == total_actions - 1:
+            break
 
     return results
 ```
@@ -557,7 +572,7 @@ class ActionResult:
 
 ## Phase 3: 後処理
 
-**実装場所**: `browser_use/agent/service.py:783`
+**実装場所**: `browser_use/agent/step_executor/service.py`
 
 **目的**: アクション実行後の状態を確認し、記録する
 
@@ -597,32 +612,19 @@ async def _post_process(self) -> None:
 
 ```python
 async def _check_and_update_downloads(self, context: str) -> None:
-    """新しいダウンロードを確認して記録"""
+    """FilesystemManager に委譲してダウンロード一覧を最新化"""
 
-    # ブラウザからダウンロードリストを取得
-    downloads = await self.browser_session.get_downloads()
-
-    # 新しいダウンロードをフィルタ
-    new_downloads = [
-        d for d in downloads
-        if d.path not in self.tracked_downloads
-    ]
-
-    if new_downloads:
-        for download in new_downloads:
-            logger.info(f"📥 新しいダウンロード: {download.path}")
-
-            # available_file_paths に追加
-            self.available_file_paths.append(download.path)
-            self.tracked_downloads.add(download.path)
-
-        # 次のステップでLLMに伝える
-        self._message_manager.add_download_notification(new_downloads)
+    if self.filesystem_manager:
+        await self.filesystem_manager.check_and_update_downloads(context)
 ```
+
+実際のダウンロード検知・`available_file_paths` 更新ロジックは
+`browser_use/agent/filesystem_manager/service.py` に切り出されており、
+`BrowserSession.downloaded_files` からの差分検出やログ出力を担います。
 
 ## エラーハンドリング
 
-**実装場所**: `browser_use/agent/service.py:813`
+**実装場所**: `browser_use/agent/step_executor/service.py`
 
 **目的**: 予期しないエラーを適切に処理し、可能な限り続行する
 
@@ -705,30 +707,25 @@ if self.state.consecutive_failures > self.settings.max_failures:
 
 ## 最終処理
 
-**実装場所**: `browser_use/agent/service.py:838`
+**実装場所**: `browser_use/agent/step_executor/service.py`
 
 **目的**: ステップの結果を記録し、履歴を更新する（必ず実行される）
 
 ```python
-async def _finalize(self, browser_state: BrowserStateSummary | None) -> None:
+async def finalize(self, browser_state: BrowserStateSummary | None) -> None:
     """最終処理（finally block で必ず実行）"""
 
-    step_end_time = time.time()
-
     if not self.state.last_result:
-        return  # 結果がない場合は何もしない
+        return
 
     if browser_state:
-        # 1. メタデータの作成
         metadata = StepMetadata(
             step_number=self.state.n_steps,
             step_start_time=self.step_start_time,
-            step_end_time=step_end_time,
+            step_end_time=time.time(),
         )
 
-        # 2. 履歴アイテムの作成
-        # （_make_history_item実装: browser_use/agent/service.py:982）
-        await self._make_history_item(
+        await self.history_manager.create_history_item(
             self.state.last_model_output,
             browser_state,
             self.state.last_result,
@@ -736,17 +733,15 @@ async def _finalize(self, browser_state: BrowserStateSummary | None) -> None:
             state_message=self._message_manager.last_state_message_text,
         )
 
-    # 3. ステップ完了のログ
-    self._log_step_completion_summary(
+    self.telemetry_handler.log_step_completion_summary(
         self.step_start_time,
-        self.state.last_result
+        self.state.last_result,
     )
 
-    # 4. ファイルシステムの保存
     self.save_file_system_state()
 
-    # 5. イベント送信（クラウド同期）
-    if self.enable_cloud_sync and browser_state:
+    if self.enable_cloud_sync and browser_state and self.state.last_model_output:
+        # actions_data は実装内で model_output.action から構築される
         step_event = CreateAgentStepEvent.from_agent_step(
             self,
             self.state.last_model_output,
@@ -756,9 +751,11 @@ async def _finalize(self, browser_state: BrowserStateSummary | None) -> None:
         )
         self.eventbus.dispatch(step_event)
 
-    # 6. ステップカウンタを増やす
     self.state.n_steps += 1
 ```
+
+`self.save_file_system_state()` は `FilesystemManager.save_state()` への薄いラッパーであり、
+実際の永続化処理は `browser_use/agent/filesystem_manager/service.py` 側に分離されました。
 
 ### 履歴アイテムの構造
 
@@ -835,89 +832,39 @@ sequenceDiagram
 
 ### ステート管理
 
+**実装場所**: `browser_use/agent/views.py` の `AgentState`
+
+Agent の状態は `AgentState` dataclass で管理され、ステップ間で情報を伝播します：
+
 ```python
-@dataclass
-class AgentState:
-    """Agent の状態"""
-
-    # ステップ情報
-    n_steps: int = 0                    # 現在のステップ数
-    consecutive_failures: int = 0       # 連続失敗回数
-
-    # 最後のステップの情報
-    last_model_output: AgentOutput | None = None
-    last_result: list[ActionResult] | None = None
-
-    # フラグ
-    is_paused: bool = False
-    is_stopped: bool = False
-    should_force_done: bool = False
-
-# ステップ間での状態遷移
-# Step 1
-state.last_model_output = output1
-state.last_result = result1
-state.n_steps = 1
-
-# Step 2（Step 1の結果を参照）
-messages = create_messages(
-    previous_output=state.last_model_output,  # Step 1の思考
-    previous_result=state.last_result,        # Step 1の結果
-)
-state.last_model_output = output2
-state.last_result = result2
-state.n_steps = 2
+# 主要なステート属性
+state.n_steps                   # 現在のステップ数
+state.consecutive_failures      # 連続失敗回数
+state.last_model_output         # 前のステップのLLM出力
+state.last_result              # 前のステップのアクション結果
+state.paused                   # 一時停止フラグ（PauseController管理）
+state.stopped                  # 停止フラグ
 ```
 
 ### メッセージ履歴の管理
 
-**実装場所**: `browser_use/agent/message_manager/service.py:96`
+**実装場所**: `browser_use/agent/message_manager/service.py`
 
+`MessageManager` がLLMに送るメッセージの構築と履歴管理を担当します：
+
+**主要な機能:**
+- システムプロンプトの構築とカスタマイズ
+- ステップ間の履歴メッセージ管理
+- コンテキストウィンドウの最適化（古いメッセージの自動削除）
+- ブラウザ状態のフォーマット（DOM、スクリーンショット等）
+
+**履歴サイズの制御:**
 ```python
-class MessageManager:
-    """LLMに送るメッセージを管理"""
-
-    def __init__(self, max_history_messages: int = 10):
-        self.max_history = max_history_messages
-        self.messages: list[BaseMessage] = []
-
-    def create_state_messages(
-        self,
-        browser_state: BrowserStateSummary,
-        model_output: AgentOutput | None,
-        result: list[ActionResult] | None,
-        **kwargs
-    ):
-        """現在のステップのメッセージを作成"""
-
-        # 1. 前のステップの結果を追加
-        if model_output and result:
-            # 思考
-            self.messages.append(AIMessage(
-                content=f"思考: {model_output.current_state.thought}"
-            ))
-
-            # アクション
-            self.messages.append(AIMessage(
-                content=f"アクション: {model_output.action}"
-            ))
-
-            # 結果
-            self.messages.append(UserMessage(
-                content=f"結果: {result}"
-            ))
-
-        # 2. 現在のブラウザ状態を追加
-        state_message = self._format_browser_state(browser_state, **kwargs)
-        self.messages.append(UserMessage(content=state_message))
-
-        # 3. 履歴が長すぎる場合は古いものを削除
-        if len(self.messages) > self.max_history:
-            # システムプロンプト + 最新のN件を保持
-            self.messages = (
-                self.messages[:1] +  # システムプロンプト
-                self.messages[-(self.max_history - 1):]  # 最新N-1件
-            )
+# max_history_items で履歴サイズを制限（5件超で設定可）
+agent = Agent(
+    task="...",
+    max_history_items=10  # 最新10件のみ保持
+)
 ```
 
 ## パフォーマンス最適化
@@ -1002,19 +949,18 @@ class ActionModelCache:
         return models
 ```
 
-### 5. 早期終了
+### 5. 早期終了とストリーミング
 
+**done アクションの早期検出:**
 ```python
 # done アクションが見つかったら即座に終了
-for i, action in enumerate(actions):
-    result = await execute_action(action)
-    results.append(result)
-
-    # done なら残りのアクションをスキップ
-    if action.get("done"):
-        logger.info(f"Done action detected, skipping {len(actions) - i - 1} remaining actions")
-        break
+if action.get("done"):
+    logger.info("Task completed")
+    break
 ```
+
+**ストリーミングモード:**
+AgentConfigで `flash_mode=True` を設定すると、LLMのストリーミング応答を利用して最初のアクションから即座に実行開始できます。
 
 ## デバッグとトラブルシューティング
 
@@ -1216,12 +1162,14 @@ class ResilientAgent(Agent):
 
 ### 関連ドキュメント
 
-- [agent_flow.md](./agent_flow.md) - Agent全体のフロー
-- [README.md](./README.md) - Agent概要
-- [BrowserSession](../browser/session.md) - ブラウザ制御
-- [Tools](../tools/README.md) - アクションシステム
+- [agent_flow.md](./agent_flow.md) - Agent全体の実行フロー
+- [README.md](./README.md) - Agent概要とモジュール構成
 
 ---
 
-**最終更新**: 2025年10月14日
+**最終更新**: 2025年10月15日（Phase 1 + Phase 2リファクタリング反映）
 **対応バージョン**: browser-use 0.8.0
+
+**関連ドキュメント**:
+- [agent_flow.md](./agent_flow.md) - Agent全体の実行フロー
+- [README.md](./README.md) - Agent概要とモジュール構成

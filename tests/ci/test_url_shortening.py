@@ -38,7 +38,7 @@ class TestUrlShorteningInputProcessing:
 		messages: list[BaseMessage] = [UserMessage(content=original_content)]
 
 		# Process messages (modifies messages in-place and returns URL mappings)
-		url_mappings = agent._process_messsages_and_replace_long_urls_shorter_ones(messages)
+		url_mappings = agent.llm_handler.shorten_urls_in_messages(messages)
 
 		# Verify URL was shortened in the message (modified in-place)
 		processed_content = messages[0].content or ''
@@ -59,7 +59,7 @@ class TestUrlShorteningInputProcessing:
 		messages: list[BaseMessage] = [UserMessage(content=user_content), AssistantMessage(content=assistant_content)]
 
 		# Process messages (modifies messages in-place and returns URL mappings)
-		url_mappings = agent._process_messsages_and_replace_long_urls_shorter_ones(messages)
+		url_mappings = agent.llm_handler.shorten_urls_in_messages(messages)
 
 		# Verify URL was shortened in both messages
 		user_processed_content = messages[0].content or ''
@@ -84,7 +84,7 @@ class TestUrlShorteningOutputProcessing:
 	def test_process_output_with_custom_actions_and_url_restoration(self, agent: Agent):
 		"""Test that shortened URLs in AgentOutput with custom actions are restored."""
 		# Set up URL mapping (simulating previous shortening)
-		shortened_url: str = agent._replace_urls_in_text(SUPER_LONG_URL)[0]
+		shortened_url, _ = agent.llm_handler.shorten_url_in_text(SUPER_LONG_URL)
 		url_mappings = {shortened_url: SUPER_LONG_URL}
 
 		# Create AgentOutput with shortened URLs using JSON parsing
@@ -103,7 +103,7 @@ class TestUrlShorteningOutputProcessing:
 		agent_output = AgentOutputWithActions.model_validate_json(json.dumps(output_json))
 
 		# Process the output to restore URLs (modifies agent_output in-place)
-		agent._recursive_process_all_strings_inside_pydantic_model(agent_output, url_mappings)
+		agent.llm_handler.restore_urls_in_model(agent_output, url_mappings)
 
 		# Verify URLs were restored in all locations
 		assert SUPER_LONG_URL in (agent_output.thinking or '')
@@ -123,7 +123,7 @@ class TestUrlShorteningEndToEnd:
 
 		messages: list[BaseMessage] = [UserMessage(content=original_content)]
 
-		url_mappings = agent._process_messsages_and_replace_long_urls_shorter_ones(messages)
+		url_mappings = agent.llm_handler.shorten_urls_in_messages(messages)
 
 		# Verify URL was shortened in input
 		assert len(url_mappings) == 1
@@ -147,7 +147,7 @@ class TestUrlShorteningEndToEnd:
 		agent_output = AgentOutputWithActions.model_validate_json(json.dumps(output_json))
 
 		# Step 3: Output processing with URL restoration (modifies agent_output in-place)
-		agent._recursive_process_all_strings_inside_pydantic_model(agent_output, url_mappings)
+		agent.llm_handler.restore_urls_in_model(agent_output, url_mappings)
 
 		# Verify complete pipeline worked correctly
 		assert SUPER_LONG_URL in (agent_output.thinking or '')

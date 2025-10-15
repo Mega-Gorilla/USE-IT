@@ -27,14 +27,16 @@ Run your first agent from the project root:
 
 ```python
 from browser_use import Agent, ChatGoogle
+from browser_use.agent.config import AgentConfig
 from dotenv import load_dotenv
 load_dotenv()
 
-agent = Agent(
+config = AgentConfig(
     task="Find the number of stars of the USE-IT repo",
     llm=ChatGoogle(model="gemini-flash-latest"),
     # browser=Browser(use_cloud=True),  # Uses Browser-Use cloud for the browser
 )
+agent = Agent(config=config)
 agent.run_sync()
 ```
 
@@ -86,13 +88,15 @@ cp .env.example .env  # GEMINI_API_KEY などを設定
 
 ```python
 from browser_use import Agent, ChatGoogle
+from browser_use.agent.config import AgentConfig
 from dotenv import load_dotenv
 load_dotenv()
 
-agent = Agent(
+config = AgentConfig(
     task="USE IT レポジトリのスター数を確認する",
     llm=ChatGoogle(model="gemini-flash-latest"),
 )
+agent = Agent(config=config)
 agent.run_sync()
 ```
 
