@@ -579,6 +579,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		self.state = injected_agent_state or AgentState()
 		self.history = AgentHistoryList(history=[], usage=None)
 		self.history_manager = HistoryManager(self)
+		self.step_start_time: float = 0.0
 
 	def _initialize_filesystem(self, file_system_path: str | None) -> None:
 		timestamp = int(time.time())
