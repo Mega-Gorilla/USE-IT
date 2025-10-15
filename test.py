@@ -11,6 +11,7 @@ def main() -> None:
     config = AgentConfig(
         task="Find the number of stars of the browser-use repo",
         llm=ChatGoogle(model="gemini-flash-latest"),
+        interactive_mode=True,
     )
     agent = Agent(config=config)
     result = agent.run_sync()

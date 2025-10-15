@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable, Literal
 from bubus import EventBus
 
 from browser_use import Browser, BrowserProfile, BrowserSession
-from browser_use.agent.views import AgentHistoryList, AgentOutput, AgentState
+from browser_use.agent.views import AgentHistoryList, AgentOutput, AgentState, ApprovalResult, AgentStepInfo
 from browser_use.llm.base import BaseChatModel
 from browser_use.llm.messages import ContentPartImageParam, ContentPartTextParam
 from browser_use.sync import CloudSync
@@ -20,6 +20,12 @@ if TYPE_CHECKING:
 
 
 AgentHook = Callable[['Agent'], Awaitable[None]]
+
+ApprovalCallbackResult = ApprovalResult | tuple[bool, str | None]
+ApprovalCallback = Callable[
+	[AgentStepInfo | None, AgentOutput, 'BrowserStateSummary'],
+	Awaitable[ApprovalCallbackResult] | ApprovalCallbackResult,
+]
 
 
 @dataclass
@@ -61,6 +67,8 @@ class AgentConfig:
 	) = None
 	register_external_agent_status_raise_error_callback: Callable[[], Awaitable[bool]] | None = None
 	register_should_stop_callback: Callable[[], Awaitable[bool]] | None = None
+	interactive_mode: bool = False
+	approval_callback: ApprovalCallback | None = None
 	# Behavioural settings
 	output_model_schema: type[Any] | None = None
 	use_vision: bool | Literal['auto'] = 'auto'

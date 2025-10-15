@@ -8,6 +8,7 @@
 - [ステップ処理の全体構造](#ステップ処理の全体構造)
 - [Phase 1: コンテキスト準備](#phase-1-コンテキスト準備)
 - [Phase 2: LLM思考とアクション実行](#phase-2-llm思考とアクション実行)
+- [インタラクティブモード（任意）](#インタラクティブモード任意)
 - [Phase 3: 後処理](#phase-3-後処理)
 - [エラーハンドリング](#エラーハンドリング)
 - [最終処理](#最終処理)
@@ -83,7 +84,24 @@ async def step(self) -> None:
         browser_state = await self._prepare_context(step_info)
 
         # Phase 2: LLM思考 + アクション実行
-        await self._get_next_action(browser_state)
+        while True:
+            await self._get_next_action(browser_state)
+
+            if not self.settings.interactive_mode:
+                break
+
+            decision = await self._request_human_approval(browser_state)
+            if decision.decision == "retry":
+                # 人間からのフィードバックをメッセージに追加し、再度 LLM を呼び出す
+                ...
+                continue
+            if decision.decision == "skip":
+                return
+            if decision.decision == "cancel":
+                raise InterruptedError("Human cancelled the run")
+
+            break
+
         await self._execute_actions()
 
         # Phase 3: 後処理
@@ -569,6 +587,38 @@ class ActionResult:
         attachments=[]
     )
 ```
+
+## インタラクティブモード（任意）
+
+`interactive_mode=True` を指定すると、`StepExecutor` は **アクション実行前に人間の承認を要求** します。  
+この機能は安全性・監査用途の Human-in-the-Loop (HITL) フローを実現するために導入されました。
+
+### 承認フローの流れ
+
+```mermaid
+flowchart TD
+    A[get_next_action] --> B{interactive_mode?}
+    B -->|No| C[execute_actions]
+    B -->|Yes| D[request_human_approval]
+    D -->|approve| C
+    D -->|retry| A
+    D -->|skip| E[結果を履歴に保存して終了]
+    D -->|cancel| F[agent.stop() を呼び出して停止]
+```
+
+### 承認結果のマッピング
+
+| 返り値 | 説明 | StepExecutor の挙動 |
+|--------|------|----------------------|
+| `ApprovalResult('approve')` | 承認された | `execute_actions()` へ進む |
+| `ApprovalResult('retry', feedback)` または `(False, "feedback")` | フィードバック付きで再試行 | `<human_feedback>` をメッセージに追加して LLM を再呼び出し |
+| `ApprovalResult('skip')` または `(False, None)` | このステップをスキップ | `ActionResult` に「skipped」メッセージを記録し、ブラウザ操作を行わない |
+| `ApprovalResult('cancel')` | ユーザーが全体を停止 | `agent.stop()` を実行し、`InterruptedError` と同様に終了 |
+
+標準のコンソールUIでは `[a]`, `[r]`, `[s]`, `[c]` の4つの選択肢が提供されます。  
+独自のUIを組み合わせる場合は `approval_callback(step_info, model_output, browser_state)` を実装し、上記の戻り値を返してください。
+
+> ℹ️ 標準UIは [`questionary`](https://github.com/tmbo/questionary) に依存します。`pip install browser-use[cli]` で事前にインストールしておいてください。未導入の場合は実行時にエラーになります。
 
 ## Phase 3: 後処理
 

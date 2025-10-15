@@ -1,17 +1,41 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import inspect
 import logging
 import time
 from typing import TYPE_CHECKING
 
 from browser_use.agent.cloud_events import CreateAgentStepEvent
-from browser_use.agent.views import ActionResult, AgentError, AgentStepInfo, StepMetadata
+from browser_use.agent.views import ActionResult, AgentError, AgentStepInfo, ApprovalResult, StepMetadata
 from browser_use.browser.views import BrowserStateSummary
 from browser_use.llm.messages import UserMessage
 from browser_use.observability import observe, observe_debug
 from browser_use.utils import time_execution_async
+
+# Questionary is required for interactive approval UI
+try:
+	import questionary
+except ImportError as exc:  # pragma: no cover - error path is simple and deterministic
+	QUESTIONARY_ERROR: ImportError | None = exc
+	QUESTIONARY_AVAILABLE = False
+else:
+	QUESTIONARY_ERROR = None
+	QUESTIONARY_AVAILABLE = True
+
+# Rich is optional but improves console readability when available
+try:
+	from rich import box
+	from rich.console import Console
+	from rich.panel import Panel
+	from rich.table import Table
+	from rich.text import Text
+
+	RICH_AVAILABLE = True
+except ImportError:  # pragma: no cover - optional dependency
+	RICH_AVAILABLE = False
+	Console = None  # type: ignore[assignment]
 
 if TYPE_CHECKING:
 	from browser_use.agent.service import Agent
@@ -31,16 +55,336 @@ class StepExecutor:
 		agent = self.agent
 		agent.step_start_time = time.time()
 		browser_state_summary: BrowserStateSummary | None = None
-
 		try:
 			browser_state_summary = await self.prepare_context(step_info)
-			await self.get_next_action(browser_state_summary)
+
+			while True:
+				await self.get_next_action(browser_state_summary)
+
+				if not agent.settings.interactive_mode:
+					break
+
+				approval = await self.request_human_approval(step_info, browser_state_summary)
+
+				if approval.decision == 'approve':
+					agent.logger.debug('✅ Interactive approval granted - executing actions')
+					break
+
+				if approval.decision == 'retry':
+					if approval.feedback:
+						agent.logger.info('🔁 人間からのフィードバックを受け取り、再度アクション候補を生成します')
+						agent._message_manager._add_context_message(
+							UserMessage(content=f'<human_feedback>{approval.feedback}</human_feedback>')
+						)
+					else:
+						agent.logger.info('🔁 承認されなかったため、フィードバックなしでアクションを再生成します')
+
+					await agent._check_stop_or_pause()
+					continue
+
+				if approval.decision == 'skip':
+					agent.logger.info('⏭️ ユーザーがこのステップのアクション実行をスキップしました（インタラクティブモード）')
+					agent.state.last_result = [
+						ActionResult(
+							extracted_content='User skipped execution during interactive approval.',
+							include_in_memory=True,
+							long_term_memory='User skipped execution during interactive approval.',
+						)
+					]
+					return
+
+				if approval.decision == 'cancel':
+					agent.logger.info('🛑 ユーザーがインタラクティブモードでエージェント実行をキャンセルしました')
+					agent.stop()
+					agent.state.last_result = [
+						ActionResult(
+							error='User cancelled execution during interactive approval.',
+						)
+					]
+					return
+
 			await self.execute_actions()
 			await self.post_process()
 		except Exception as exc:
 			await self.handle_step_error(exc)
 		finally:
 			await self.finalize(browser_state_summary)
+
+	async def request_human_approval(
+		self,
+		step_info: AgentStepInfo | None,
+		browser_state_summary: BrowserStateSummary,
+	) -> ApprovalResult:
+		"""Request human approval before executing actions (アクション実行前に承認を取得)."""
+		agent = self.agent
+		model_output = agent.state.last_model_output
+
+		if model_output is None or not model_output.action:
+			agent.logger.debug('🛈 No actions proposed; skipping approval check')
+			return ApprovalResult(decision='approve')
+
+		approval_callback = getattr(agent, 'approval_callback', None)
+		if approval_callback:
+			raw_result = approval_callback(step_info, model_output, browser_state_summary)
+			if inspect.isawaitable(raw_result):
+				raw_result = await raw_result  # type: ignore[assignment]
+			return self._normalize_approval_result(raw_result)
+
+		return await self._console_approval_interface(step_info, model_output, browser_state_summary)
+
+	def _normalize_approval_result(self, value: ApprovalResult | tuple[bool, str | None]) -> ApprovalResult:
+		if isinstance(value, ApprovalResult):
+			return value
+		if isinstance(value, tuple) and len(value) == 2:
+			return ApprovalResult.from_tuple(value)
+		raise TypeError(
+			'approval_callback must return ApprovalResult or tuple[bool, str | None]'
+		)
+
+	async def _console_approval_interface(
+		self,
+		step_info: AgentStepInfo | None,
+		model_output,
+		browser_state_summary: BrowserStateSummary,
+	) -> ApprovalResult:
+		"""Default console-based approval flow (デフォルト対話UI)."""
+		if not QUESTIONARY_AVAILABLE:
+			message = (
+				'Interactive approval requires questionary. '
+				"Install the CLI extras via `pip install browser-use[cli]`."
+			)
+			raise RuntimeError(message) from QUESTIONARY_ERROR
+
+		return await self._console_approval_interface_questionary(step_info, model_output, browser_state_summary)
+
+	async def _console_approval_interface_questionary(
+		self,
+		step_info: AgentStepInfo | None,
+		model_output,
+		browser_state_summary: BrowserStateSummary,
+	) -> ApprovalResult:
+		"""Questionary-based cursor selection UI for approval flow (カーソルベースの選択UI)."""
+		agent = self.agent
+		actions = model_output.action
+
+		if not actions:
+			return ApprovalResult(decision='approve')
+
+		def _format_field(value: str | None, max_length: int = 240) -> str:
+			if value is None:
+				return '—'
+			trimmed = value.strip()
+			if not trimmed:
+				return '—'
+			if len(trimmed) > max_length:
+				return trimmed[: max_length - 3] + '...'
+			return trimmed
+
+		# ステップ情報
+		if step_info:
+			current_step = step_info.step_number + 1
+			max_steps = step_info.max_steps
+			step_label = f'{current_step}/{max_steps}'
+		else:
+			step_label = str(agent.state.n_steps)
+
+		url_display = browser_state_summary.url
+		if len(url_display) > 80:
+			url_display = url_display[:77] + '...'
+
+		if RICH_AVAILABLE:
+			assert Console is not None  # for type checker
+			console = Console(width=100)  # Fixed width for consistent layout
+			console.print()
+
+			# Step metadata panel - compact and clean
+			step_info_lines = [
+				f'[cyan]Step:[/cyan] {step_label}',
+				f'[cyan]URL:[/cyan] {url_display}',
+			]
+			if browser_state_summary.title:
+				title_display = _format_field(browser_state_summary.title, 80)
+				step_info_lines.append(f'[cyan]Title:[/cyan] {title_display}')
+
+			console.print(
+				Panel(
+					'\n'.join(step_info_lines),
+					title='[bold cyan]🤖 Interactive Mode - Action Approval[/bold cyan]',
+					border_style='cyan',
+					box=box.ROUNDED,
+					padding=(0, 2),
+				)
+			)
+
+			# Model state panel - show agent's reasoning
+			state_lines = []
+
+			if model_output.evaluation_previous_goal:
+				eval_text = _format_field(model_output.evaluation_previous_goal, 200)
+				state_lines.append(f'[dim]Previous:[/dim] {eval_text}')
+
+			if model_output.next_goal:
+				goal_text = _format_field(model_output.next_goal, 200)
+				state_lines.append(f'[yellow]Goal:[/yellow] {goal_text}')
+
+			if model_output.thinking:
+				thinking_text = _format_field(model_output.thinking, 200)
+				state_lines.append(f'[magenta]Thinking:[/magenta] {thinking_text}')
+
+			if model_output.memory:
+				memory_text = _format_field(model_output.memory, 200)
+				state_lines.append(f'[blue]Memory:[/blue] {memory_text}')
+
+			if state_lines:
+				console.print(
+					Panel(
+						'\n\n'.join(state_lines),
+						title='[bold magenta]🧠 Agent Reasoning[/bold magenta]',
+						border_style='magenta',
+						box=box.ROUNDED,
+						padding=(0, 2),
+					)
+				)
+
+			# Action table - clear and organized
+			action_table = Table(
+				box=box.ROUNDED,
+				show_header=True,
+				header_style='bold green',
+				border_style='green',
+				padding=(0, 1),
+			)
+			action_table.add_column('#', justify='center', style='cyan bold', width=3)
+			action_table.add_column('Action', style='green bold', width=15)
+			action_table.add_column('Parameters', style='white', no_wrap=False)
+
+			for idx, action in enumerate(actions, 1):
+				dumped = action.model_dump(exclude_unset=True)
+				action_name, action_body = next(iter(dumped.items()), ('unknown', dumped))
+
+				if isinstance(action_body, dict):
+					param_lines = []
+					for key, value in action_body.items():
+						value_str = str(value)
+						if len(value_str) > 70:
+							value_str = value_str[:67] + '...'
+						param_lines.append(f'[dim]{key}:[/dim] {value_str}')
+					param_display = '\n'.join(param_lines)
+				else:
+					param_display = str(action_body)
+					if len(param_display) > 70:
+						param_display = param_display[:67] + '...'
+
+				action_table.add_row(str(idx), action_name, param_display)
+
+			action_count = len(actions)
+			action_label = 'action' if action_count == 1 else 'actions'
+			console.print(
+				Panel(
+					action_table,
+					title=f'[bold green]📋 Proposed {action_count} {action_label}[/bold green]',
+					border_style='green',
+					box=box.ROUNDED,
+					padding=(0, 1),
+				)
+			)
+			console.print()
+		else:
+			print()
+			print('────────────────────────────────────────────────────────')
+			print('🤖 Interactive Mode - Action Approval')
+			print(f'📍 Step: {step_label}')
+			print(f'🌐 URL: {url_display}')
+			print('────────────────────────────────────────────────────────')
+			print('🧠 Model State')
+			print(f'  Thinking        : {_format_field(model_output.thinking)}')
+			print(f'  Memory          : {_format_field(model_output.memory)}')
+			print(f'  Next Goal       : {_format_field(model_output.next_goal)}')
+			print(f'  Prev Goal Eval  : {_format_field(model_output.evaluation_previous_goal)}')
+			print('────────────────────────────────────────────────────────')
+			for idx, action in enumerate(actions, 1):
+				dumped = action.model_dump(exclude_unset=True)
+				action_name, action_body = next(iter(dumped.items()), ('unknown', dumped))
+				print(f'  ▶ Action {idx}: {action_name}')
+				if isinstance(action_body, dict):
+					for key, value in action_body.items():
+						value_str = str(value)
+						if len(value_str) > 80:
+							value_str = value_str[:77] + '...'
+						print(f'     • {key}: {value_str}')
+				else:
+					value_str = str(action_body)
+					if len(value_str) > 80:
+						value_str = value_str[:77] + '...'
+					print(f'     {value_str}')
+				if idx < len(actions):
+					print('  ───────────────────────────────────────────────────')
+			print()
+
+		# Questionary cursor selection
+		while True:
+			try:
+				choice = await asyncio.to_thread(
+					lambda: questionary.select(
+						'👉 Your choice:',
+						choices=[
+							questionary.Choice(title='✅ Approve - Execute this action', value='approve'),
+							questionary.Choice(title='🔁 Retry - Provide feedback to regenerate', value='retry'),
+							questionary.Choice(title='⏭️  Skip - Skip this step', value='skip'),
+							questionary.Choice(title='🛑 Cancel - Stop the agent', value='cancel'),
+						],
+						style=questionary.Style(
+							[
+								('qmark', 'fg:#673ab7 bold'),
+								('question', 'bold'),
+								('answer', 'fg:#f44336 bold'),
+								('pointer', 'fg:#673ab7 bold'),
+								('highlighted', 'fg:#673ab7 bold'),
+								('selected', 'fg:#cc5454'),
+							]
+						),
+					).ask()
+				)
+			except (EOFError, KeyboardInterrupt):
+				print('\n🛑 Selection interrupted. Cancelling agent.\n')
+				return ApprovalResult(decision='cancel')
+
+			if choice is None:  # User pressed Ctrl+C or closed the prompt
+				print('\n🛑 No selection made. Cancelling agent.\n')
+				return ApprovalResult(decision='cancel')
+
+			if choice == 'approve':
+				print('✅ Approved. Executing action...\n')
+				return ApprovalResult(decision='approve')
+
+			if choice == 'skip':
+				print('⏭️  Skipping this step.\n')
+				return ApprovalResult(decision='skip')
+
+			if choice == 'cancel':
+				print('🛑 Stopping agent.\n')
+				return ApprovalResult(decision='cancel')
+
+			if choice == 'retry':
+				print('\n💬 Feedback to LLM (describe what should be changed)')
+				try:
+					feedback = await asyncio.to_thread(
+						lambda: questionary.text(
+							'💬 Feedback:', style=questionary.Style([('answer', 'fg:#f44336 bold')])
+						).ask()
+					)
+				except (EOFError, KeyboardInterrupt):
+					print('\n🛑 Feedback input interrupted. Cancelling agent.\n')
+					return ApprovalResult(decision='cancel')
+
+				if feedback is None or not feedback.strip():
+					print('⚠️  Feedback is empty. Please try again.\n')
+					continue
+
+				print('🔁 Feedback received. Asking LLM to regenerate action...\n')
+				return ApprovalResult(decision='retry', feedback=feedback.strip())
+
+		print('❌ Invalid choice. Please enter one of the available options.\n')
 
 	async def prepare_context(self, step_info: AgentStepInfo | None = None) -> BrowserStateSummary:
 		agent = self.agent
