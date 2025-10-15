@@ -13,7 +13,7 @@ src/
 /<service name>/
 models.py
 services.py
-prompts.py
+prompt/
 views.py
 utils.py
 routers.py
@@ -42,9 +42,9 @@ Always split the views into two parts
 
 If too long → split into multiple files
 
-### Prompts.py
+### prompt/
 
-Single file; if too long → split into multiple files (one prompt per file or so)
+Single package; keep prompt builders in `__init__.py` and store prompt templates as markdown under `prompt/system_prompts/`.
 
 ### Routers.py
 
