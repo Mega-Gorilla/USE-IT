@@ -27,7 +27,7 @@ from browser_use import Browser, BrowserProfile, BrowserSession
 
 # 起動時に重い agent.views の読み込みを避けるため GIF のインポートは遅延させる
 # （参考） browser_use.agent.gif から create_history_gif をインポートするサンプル  # 遅延インポート例
-from browser_use.agent.config import AgentConfig
+from browser_use.agent.config import AgentConfig, ApprovalCallback
 from browser_use.agent.filesystem_manager import FilesystemManager
 from browser_use.agent.history_manager import HistoryManager
 from browser_use.agent.llm_handler import LLMHandler
@@ -130,6 +130,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		include_recent_events: bool = False,
 		sample_images: list[ContentPartTextParam | ContentPartImageParam] | None = None,
 		final_response_after_failure: bool = True,
+		interactive_mode: bool = False,
+		approval_callback: ApprovalCallback | None = None,
 		_url_shortening_limit: int = 25,
 		config: AgentConfig | None = None,
 		**kwargs,
@@ -181,6 +183,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				include_recent_events=include_recent_events,
 				sample_images=sample_images,
 				final_response_after_failure=final_response_after_failure,
+				interactive_mode=interactive_mode,
+				approval_callback=approval_callback,
 				url_shortening_limit=_url_shortening_limit,
 				extra=kwargs,
 			)  # type: ignore[call-arg]
@@ -249,7 +253,10 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			llm_timeout=llm_timeout,
 			step_timeout=cfg.step_timeout,
 			final_response_after_failure=cfg.final_response_after_failure,
+			interactive_mode=cfg.interactive_mode,
 		)
+
+		self.approval_callback = cfg.approval_callback
 
 		self._initialize_token_cost_service(cfg.calculate_cost, self.llm, page_extraction_llm)
 		self._initialize_history_components(cfg.injected_agent_state)
@@ -572,6 +579,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		self.state = injected_agent_state or AgentState()
 		self.history = AgentHistoryList(history=[], usage=None)
 		self.history_manager = HistoryManager(self)
+		self.step_start_time: float = 0.0
 
 	def _initialize_filesystem(self, file_system_path: str | None) -> None:
 		timestamp = int(time.time())

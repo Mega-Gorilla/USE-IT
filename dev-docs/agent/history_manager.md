@@ -136,6 +136,10 @@ class HistoryManager:
 
 ## 主要機能
 
+> 💡 **インタラクティブモードとの連携**  
+> `interactive_mode=True` の場合でも、HistoryManager は「人間がスキップしたステップ」「キャンセルによる中断」を `ActionResult` として記録します。  
+> そのため、承認待ちで何も実行されなかったステップでも履歴に痕跡が残り、後から監査・再現が可能です。
+
 ### 1. 履歴アイテムの自動作成
 
 **メソッド**: `create_history_item()`

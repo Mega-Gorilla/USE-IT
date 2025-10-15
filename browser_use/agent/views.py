@@ -53,6 +53,7 @@ class AgentSettings(BaseModel):
 	llm_timeout: int = 60  # Timeout in seconds for LLM calls (auto-detected: 30s for gemini, 90s for o3, 60s default)
 	step_timeout: int = 180  # Timeout in seconds for each step
 	final_response_after_failure: bool = True  # If True, attempt one final recovery call after max_failures
+	interactive_mode: bool = False  # Human approval flow before executing actions
 
 
 class AgentState(BaseModel):
@@ -85,6 +86,27 @@ class AgentStepInfo:
 	def is_last_step(self) -> bool:
 		"""Check if this is the last step"""
 		return self.step_number >= self.max_steps - 1
+
+
+ApprovalDecision = Literal['approve', 'retry', 'skip', 'cancel']
+
+
+@dataclass
+class ApprovalResult:
+	"""Human approval outcome for interactive mode (対話モードでの承認結果を表現)."""
+
+	decision: ApprovalDecision
+	feedback: str | None = None
+
+	@classmethod
+	def from_tuple(cls, value: tuple[bool, str | None]) -> 'ApprovalResult':
+		"""Convert legacy (approved, feedback) tuple into ApprovalResult."""
+		approved, feedback = value
+		if approved:
+			return cls(decision='approve')
+		if feedback:
+			return cls(decision='retry', feedback=feedback)
+		return cls(decision='skip')
 
 
 class ActionResult(BaseModel):
