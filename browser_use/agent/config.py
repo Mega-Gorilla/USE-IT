@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable, Literal
 from bubus import EventBus
 
 from browser_use import Browser, BrowserProfile, BrowserSession
-from browser_use.agent.views import AgentHistoryList, AgentOutput, AgentState, AgentStructuredOutput
+from browser_use.agent.views import AgentHistoryList, AgentOutput, AgentState
 from browser_use.llm.base import BaseChatModel
 from browser_use.llm.messages import ContentPartImageParam, ContentPartTextParam
 from browser_use.sync import CloudSync
@@ -15,8 +15,8 @@ from browser_use.telemetry.service import ProductTelemetry
 from browser_use.tools.service import Tools
 
 if TYPE_CHECKING:
-	from browser_use.browser.views import BrowserStateSummary
 	from browser_use.agent.service import Agent
+	from browser_use.browser.views import BrowserStateSummary
 
 
 AgentHook = Callable[['Agent'], Awaitable[None]]

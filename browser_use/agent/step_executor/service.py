@@ -9,13 +9,12 @@ from typing import TYPE_CHECKING
 from browser_use.agent.cloud_events import CreateAgentStepEvent
 from browser_use.agent.views import ActionResult, AgentError, AgentStepInfo, StepMetadata
 from browser_use.browser.views import BrowserStateSummary
-from browser_use.llm.messages import BaseMessage, UserMessage
+from browser_use.llm.messages import UserMessage
 from browser_use.observability import observe, observe_debug
 from browser_use.utils import time_execution_async
 
 if TYPE_CHECKING:
 	from browser_use.agent.service import Agent
-	from browser_use.agent.views import AgentOutput
 	from browser_use.tools.registry.views import ActionModel
 
 

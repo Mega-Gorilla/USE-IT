@@ -10,7 +10,6 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Generic, Literal, TypeVar
-from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
@@ -40,14 +39,12 @@ from browser_use.agent.step_executor import StepExecutor
 from browser_use.agent.telemetry import TelemetryHandler
 from browser_use.agent.views import (
 	ActionResult,
-	AgentHistory,
 	AgentHistoryList,
 	AgentOutput,
 	AgentSettings,
 	AgentState,
 	AgentStepInfo,
 	AgentStructuredOutput,
-	BrowserStateHistory,
 )
 from browser_use.browser.session import DEFAULT_BROWSER_PROFILE
 from browser_use.browser.views import BrowserStateSummary
@@ -55,12 +52,10 @@ from browser_use.config import CONFIG
 from browser_use.filesystem.file_system import FileSystem
 from browser_use.observability import observe
 from browser_use.sync import CloudSync
-from browser_use.telemetry.service import ProductTelemetry
 from browser_use.tools.registry.views import ActionModel
 from browser_use.tools.service import Tools
 from browser_use.utils import (
 	_log_pretty_path,
-	check_latest_browser_use_version,
 	get_browser_use_version,
 	get_git_info,
 	time_execution_async,
