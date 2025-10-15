@@ -156,6 +156,26 @@ Connection management lives in `browser_use/mcp/client.py`.
 - **Return `ActionResult` with structured content** to help agents reason better
 - **Run pre-commit hooks** before making PRs
 
+## GitHub Issue Management
+
+**CRITICAL: This is a FORK repository (Mega-Gorilla/USE-IT)**
+
+- **ALWAYS create GitHub issues in THIS repository**: `Mega-Gorilla/USE-IT`
+- **NEVER create issues in the upstream repository**: `browser-use/browser-use`
+- When using `gh issue create`, **ALWAYS** explicitly specify `--repo Mega-Gorilla/USE-IT`
+- Double-check the repository before executing any `gh issue` commands
+- If you accidentally create an issue in the wrong repository, immediately close it with a sincere apology explaining it was intended for your fork
+
+Example (CORRECT):
+```bash
+gh issue create --repo Mega-Gorilla/USE-IT --title "..." --body "..." --label "enhancement"
+```
+
+Example (WRONG - DO NOT DO THIS):
+```bash
+gh issue create --repo browser-use/browser-use --title "..." --body "..."  # ❌ WRONG REPO!
+```
+
 ## important-instruction-reminders
 Do what has been asked; nothing more, nothing less.
 NEVER create files unless they're absolutely necessary for achieving your goal.
