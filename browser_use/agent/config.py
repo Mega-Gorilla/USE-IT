@@ -83,6 +83,7 @@ class AgentConfig:
 	max_actions_per_step: int = 10
 	use_thinking: bool = True
 	flash_mode: bool = False
+	language: str = 'en'
 	max_history_items: int | None = None
 	page_extraction_llm: BaseChatModel | None = None
 	injected_agent_state: AgentState | None = None

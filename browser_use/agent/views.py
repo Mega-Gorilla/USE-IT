@@ -13,6 +13,7 @@ from typing_extensions import TypeVar
 from uuid_extensions import uuid7str
 
 from browser_use.agent.message_manager.views import MessageManagerState
+from browser_use.agent.prompt import DEFAULT_PROMPT_LANGUAGE, normalize_prompt_language
 from browser_use.browser.views import BrowserStateHistory
 from browser_use.dom.views import DEFAULT_INCLUDE_ATTRIBUTES, DOMInteractedElement, DOMSelectorMap
 
@@ -54,6 +55,12 @@ class AgentSettings(BaseModel):
 	step_timeout: int = 180  # Timeout in seconds for each step
 	final_response_after_failure: bool = True  # If True, attempt one final recovery call after max_failures
 	interactive_mode: bool = False  # Human approval flow before executing actions
+	language: str = DEFAULT_PROMPT_LANGUAGE
+
+	@model_validator(mode='after')
+	def _normalize_language(self):
+		self.language = normalize_prompt_language(self.language)
+		return self
 
 
 class AgentState(BaseModel):
