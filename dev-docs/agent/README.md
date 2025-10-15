@@ -152,6 +152,8 @@ print(f"使用トークン: {result.total_tokens}")
 - `[s]` このステップの実行をスキップ（履歴には「スキップ済み」として記録）
 - `[c]` エージェント全体を停止
 
+> ℹ️ コンソールUIは [`questionary`](https://github.com/tmbo/questionary) に依存します。`pip install browser-use[cli]` で CLI 依存関係をインストールしておいてください。
+
 独自UIと統合したい場合は `approval_callback` を渡してください。コールバックは `(approved: bool, feedback: str | None)` または `ApprovalResult` を返します。例：
 
 ```python
