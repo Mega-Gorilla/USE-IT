@@ -33,7 +33,7 @@ from browser_use.agent.history_manager import HistoryManager
 from browser_use.agent.llm_handler import LLMHandler
 from browser_use.agent.message_manager.service import MessageManager
 from browser_use.agent.pause_controller import PauseController
-from browser_use.agent.prompt import SystemPrompt
+from browser_use.agent.prompt import DEFAULT_PROMPT_LANGUAGE, SystemPrompt, normalize_prompt_language
 from browser_use.agent.runner import AgentRunner
 from browser_use.agent.step_executor import StepExecutor
 from browser_use.agent.telemetry import TelemetryHandler
@@ -113,6 +113,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		max_actions_per_step: int = 10,
 		use_thinking: bool = True,
 		flash_mode: bool = False,
+		language: str | None = None,
 		max_history_items: int | None = None,
 		page_extraction_llm: BaseChatModel | None = None,
 		injected_agent_state: AgentState | None = None,
@@ -166,6 +167,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				max_actions_per_step=max_actions_per_step,
 				use_thinking=use_thinking,
 				flash_mode=flash_mode,
+				language=language or DEFAULT_PROMPT_LANGUAGE,
 				max_history_items=max_history_items,
 				page_extraction_llm=page_extraction_llm,
 				injected_agent_state=injected_agent_state,
@@ -192,9 +194,12 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			# config 優先、追加の kwargs は余白に詰める
 			if kwargs:
 				config.extra.update(kwargs)
+			if language is not None:
+				config.language = language
 
 		self.config = config
 		cfg = config
+		cfg.language = normalize_prompt_language(cfg.language)
 		self.factories = cfg.factories
 
 		self.task = cfg.task
@@ -254,8 +259,10 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			step_timeout=cfg.step_timeout,
 			final_response_after_failure=cfg.final_response_after_failure,
 			interactive_mode=cfg.interactive_mode,
+			language=cfg.language,
 		)
 
+		self.language = self.settings.language
 		self.approval_callback = cfg.approval_callback
 
 		self._initialize_token_cost_service(cfg.calculate_cost, self.llm, page_extraction_llm)
@@ -309,6 +316,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				extend_system_message=cfg.extend_system_message,
 				use_thinking=self.settings.use_thinking,
 				flash_mode=self.settings.flash_mode,
+				language=self.settings.language,
 			).get_system_message(),
 			file_system=self.file_system,
 			state=self.state.message_manager_state,
