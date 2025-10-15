@@ -24,6 +24,19 @@ else:
 	QUESTIONARY_ERROR = None
 	QUESTIONARY_AVAILABLE = True
 
+# Rich is optional but improves console readability when available
+try:
+	from rich import box
+	from rich.console import Console
+	from rich.panel import Panel
+	from rich.table import Table
+	from rich.text import Text
+
+	RICH_AVAILABLE = True
+except ImportError:  # pragma: no cover - optional dependency
+	RICH_AVAILABLE = False
+	Console = None  # type: ignore[assignment]
+
 if TYPE_CHECKING:
 	from browser_use.agent.service import Agent
 	from browser_use.tools.registry.views import ActionModel
@@ -157,6 +170,16 @@ class StepExecutor:
 		if not actions:
 			return ApprovalResult(decision='approve')
 
+		def _format_field(value: str | None, max_length: int = 240) -> str:
+			if value is None:
+				return '—'
+			trimmed = value.strip()
+			if not trimmed:
+				return '—'
+			if len(trimmed) > max_length:
+				return trimmed[: max_length - 3] + '...'
+			return trimmed
+
 		# ステップ情報
 		if step_info:
 			current_step = step_info.step_number + 1
@@ -169,30 +192,110 @@ class StepExecutor:
 		if len(url_display) > 80:
 			url_display = url_display[:77] + '...'
 
-		print()
-		print('────────────────────────────────────────────────────────')
-		print('🤖 Interactive Mode - Action Approval')
-		print(f'📍 Step: {step_label}')
-		print(f'🌐 URL: {url_display}')
-		print('────────────────────────────────────────────────────────')
-		for idx, action in enumerate(actions, 1):
-			dumped = action.model_dump(exclude_unset=True)
-			action_name, action_body = next(iter(dumped.items()), ('unknown', dumped))
-			print(f'  ▶ Action {idx}: {action_name}')
-			if isinstance(action_body, dict):
-				for key, value in action_body.items():
-					value_str = str(value)
+		if RICH_AVAILABLE:
+			assert Console is not None  # for type checker
+			console = Console()
+			console.print()
+
+			# Step metadata panel
+			step_table = Table.grid(expand=True)
+			step_table.add_column(justify='right', style='cyan', ratio=1)
+			step_table.add_column(style='white', ratio=3)
+			step_table.add_row('Step', step_label)
+			step_table.add_row('URL', url_display)
+			if browser_state_summary.title:
+				step_table.add_row('Title', _format_field(browser_state_summary.title, 120))
+
+			console.print(
+				Panel(
+					step_table,
+					title='🤖 Interactive Mode - Action Approval',
+					border_style='cyan',
+					box=box.ROUNDED,
+				)
+			)
+
+			# Model state panel
+			state_table = Table.grid(expand=True)
+			state_table.add_column(justify='right', style='magenta', ratio=1)
+			state_table.add_column(style='white', ratio=3)
+			state_table.add_row('Thinking', _format_field(model_output.thinking))
+			state_table.add_row('Memory', _format_field(model_output.memory))
+			state_table.add_row('Next Goal', _format_field(model_output.next_goal))
+			state_table.add_row('Prev Goal Eval', _format_field(model_output.evaluation_previous_goal))
+
+			console.print(
+				Panel(
+					state_table,
+					title='🧠 Model State',
+					border_style='magenta',
+					box=box.ROUNDED,
+				)
+			)
+
+			# Action table
+			action_table = Table(
+				title=f'📋 Proposed {len(actions)} action{"s" if len(actions) > 1 else ""}',
+				box=box.SIMPLE_HEAD,
+				show_header=True,
+				header_style='bold yellow',
+			)
+			action_table.add_column('#', justify='right', style='cyan', width=3)
+			action_table.add_column('Action', style='green', width=16)
+			action_table.add_column('Parameters', style='white', ratio=2)
+
+			for idx, action in enumerate(actions, 1):
+				dumped = action.model_dump(exclude_unset=True)
+				action_name, action_body = next(iter(dumped.items()), ('unknown', dumped))
+
+				if isinstance(action_body, dict):
+					param_lines = []
+					for key, value in action_body.items():
+						value_str = str(value)
+						if len(value_str) > 120:
+							value_str = value_str[:117] + '...'
+						param_lines.append(f'[bold]{key}[/]: {value_str}')
+					param_display = '\n'.join(param_lines)
+				else:
+					param_display = str(action_body)
+					if len(param_display) > 120:
+						param_display = param_display[:117] + '...'
+
+				action_table.add_row(str(idx), action_name, Text.from_markup(param_display))
+
+			console.print(action_table)
+			console.print()
+		else:
+			print()
+			print('────────────────────────────────────────────────────────')
+			print('🤖 Interactive Mode - Action Approval')
+			print(f'📍 Step: {step_label}')
+			print(f'🌐 URL: {url_display}')
+			print('────────────────────────────────────────────────────────')
+			print('🧠 Model State')
+			print(f'  Thinking        : {_format_field(model_output.thinking)}')
+			print(f'  Memory          : {_format_field(model_output.memory)}')
+			print(f'  Next Goal       : {_format_field(model_output.next_goal)}')
+			print(f'  Prev Goal Eval  : {_format_field(model_output.evaluation_previous_goal)}')
+			print('────────────────────────────────────────────────────────')
+			for idx, action in enumerate(actions, 1):
+				dumped = action.model_dump(exclude_unset=True)
+				action_name, action_body = next(iter(dumped.items()), ('unknown', dumped))
+				print(f'  ▶ Action {idx}: {action_name}')
+				if isinstance(action_body, dict):
+					for key, value in action_body.items():
+						value_str = str(value)
+						if len(value_str) > 80:
+							value_str = value_str[:77] + '...'
+						print(f'     • {key}: {value_str}')
+				else:
+					value_str = str(action_body)
 					if len(value_str) > 80:
 						value_str = value_str[:77] + '...'
-					print(f'     • {key}: {value_str}')
-			else:
-				value_str = str(action_body)
-				if len(value_str) > 80:
-					value_str = value_str[:77] + '...'
-				print(f'     {value_str}')
-			if idx < len(actions):
-				print('  ───────────────────────────────────────────────────')
-		print()
+					print(f'     {value_str}')
+				if idx < len(actions):
+					print('  ───────────────────────────────────────────────────')
+			print()
 
 		# Questionary cursor selection
 		while True:
