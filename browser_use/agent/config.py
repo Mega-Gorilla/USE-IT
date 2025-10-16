@@ -104,3 +104,8 @@ class AgentConfig:
 	url_shortening_limit: int = 25
 	extra: dict[str, Any] = field(default_factory=dict)
 	factories: AgentFactories = field(default_factory=AgentFactories)
+
+	def __post_init__(self) -> None:
+		from browser_use.agent.prompt import normalize_prompt_language
+
+		self.language = normalize_prompt_language(self.language)
