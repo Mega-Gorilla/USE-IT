@@ -68,6 +68,7 @@ class AgentWorker(QtCore.QThread):
 
 	def run(self) -> None:  # noqa: D401
 		"""Qt thread entrypoint."""
+		logger = logging.getLogger(__name__)
 		self.status.emit('初期化中…')
 		self._loop = asyncio.new_event_loop()
 		asyncio.set_event_loop(self._loop)
@@ -77,11 +78,16 @@ class AgentWorker(QtCore.QThread):
 		except asyncio.CancelledError:
 			self.finished.emit(False, 'ユーザーによりキャンセルされました')
 		except Exception as exc:  # pragma: no cover - GUI side-effects
-			logging.getLogger(__name__).exception('GUI worker failed', exc_info=exc)
+			logger.exception('GUI worker failed', exc_info=exc)
 			self.finished.emit(False, str(exc))
 		else:
 			self.finished.emit(True, 'タスクが完了しました')
 		finally:
+			try:
+				self._loop.run_until_complete(self._cleanup())
+			except Exception as cleanup_exc:  # pragma: no cover - cleanup best-effort
+				logger.warning(f'Cleanup error: {cleanup_exc}')
+
 			try:
 				self._loop.run_until_complete(self._loop.shutdown_asyncgens())
 			except Exception:
@@ -97,8 +103,8 @@ class AgentWorker(QtCore.QThread):
 		agent = self._agent
 		loop = self._loop
 
-		if agent is not None and loop is not None:
-			loop.call_soon_threadsafe(agent.stop)
+			if agent is not None and loop is not None:
+				loop.call_soon_threadsafe(agent.stop)
 
 	async def _execute(self) -> None:
 		task = self._preferences.task.strip()
@@ -131,6 +137,19 @@ class AgentWorker(QtCore.QThread):
 		self.status.emit('エージェントを起動しています…')
 		await agent.run(max_steps=self._preferences.max_steps, on_step_end=on_step_end)
 
+	async def _cleanup(self) -> None:
+		"""Ensure agent resources are released."""
+		if self._agent is None:
+			return
+
+		agent = self._agent
+		try:
+			await asyncio.wait_for(agent.close(), timeout=5.0)
+		except asyncio.TimeoutError:
+			logging.getLogger(__name__).warning('ブラウザクリーンアップがタイムアウトしました')
+		except Exception as exc:
+			logging.getLogger(__name__).warning(f'クリーンアップエラー: {exc}')
+
 	def _default_language(self, config: dict[str, Any]) -> str:
 		agent_cfg = config.get('agent', {})
 		return agent_cfg.get('language', 'en')
@@ -143,38 +162,36 @@ class AgentWorker(QtCore.QThread):
 			raise RuntimeError('LLMモデルが設定されていません。設定ファイルか環境変数を確認してください。')
 
 		api_key = llm_cfg.get('api_key')
+		placeholder_keys = {
+			'your-openai-api-key-here',
+			'your-anthropic-api-key-here',
+			'your-google-api-key-here',
+		}
 		model_lower = model_name.lower()
 
+		def _ensure_key(value: str | None, provider: str) -> str:
+			match = value or ''
+			if not match or match in placeholder_keys:
+				raise RuntimeError(f'{provider} の API キーが設定されていません。環境変数または config を確認してください。')
+			return match
+
 		if 'gemini' in model_lower:
-			return ChatGoogle(model=model_name, api_key=api_key or CONFIG.GOOGLE_API_KEY)
+			key = api_key or CONFIG.GOOGLE_API_KEY
+			return ChatGoogle(model=model_name, api_key=_ensure_key(key, 'Google Gemini'))
 
 		if model_lower.startswith('claude') or 'claude' in model_lower:
-			return ChatAnthropic(model=model_name, api_key=api_key or CONFIG.ANTHROPIC_API_KEY)
+			key = api_key or CONFIG.ANTHROPIC_API_KEY
+			return ChatAnthropic(model=model_name, api_key=_ensure_key(key, 'Anthropic Claude'))
 
-		return ChatOpenAI(model=model_name, api_key=api_key or CONFIG.OPENAI_API_KEY)
+		key = api_key or CONFIG.OPENAI_API_KEY
+		return ChatOpenAI(model=model_name, api_key=_ensure_key(key, 'OpenAI'))
 
 	def _build_browser_profile(self, config: dict[str, Any]) -> BrowserProfile:
 		profile_cfg = config.get('browser_profile', {})
 		gui_profile_dir = CONFIG.BROWSER_USE_PROFILES_DIR / 'gui'
 		gui_profile_dir.mkdir(parents=True, exist_ok=True)
 
-		allowed_keys = {
-			'headless',
-			'keep_alive',
-			'ignore_https_errors',
-			'user_data_dir',
-			'allowed_domains',
-			'wait_between_actions',
-			'is_mobile',
-			'device_scale_factor',
-			'disable_security',
-			'window_width',
-			'window_height',
-			'proxy',
-			'channel',
-			'downloads_path',
-		}
-
+		allowed_keys = set(BrowserProfile.model_fields.keys())
 		filtered: dict[str, Any] = {key: value for key, value in profile_cfg.items() if key in allowed_keys and value is not None}
 
 		# GUI用のプロファイルディレクトリをデフォルトにする
@@ -199,6 +216,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		self._log_handler = QtLogHandler()
 		self._log_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
 		self._log_handler.signal.connect(self._append_log)
+		self._handler_attached = False
 
 		self._setup_ui()
 		self._setup_menu()
@@ -286,7 +304,9 @@ class MainWindow(QtWidgets.QMainWindow):
 		self._bind_worker_signals(self._worker)
 
 		root_logger = logging.getLogger()
-		root_logger.addHandler(self._log_handler)
+		if not any(handler is self._log_handler for handler in root_logger.handlers):
+			root_logger.addHandler(self._log_handler)
+			self._handler_attached = True
 		root_logger.setLevel(logging.INFO)
 
 		logging.getLogger(__name__).info('タスク実行を開始します。')
@@ -310,13 +330,21 @@ class MainWindow(QtWidgets.QMainWindow):
 
 	def _update_progress(self, current: int, total: int) -> None:
 		self.progress_bar.setVisible(True)
-		self.progress_bar.setMaximum(total if total > 0 else 1)
-		self.progress_bar.setValue(min(current, total if total > 0 else current))
-		self.statusBar().showMessage(f'ステップ {current}/{total}')
+		if total > 0:
+			self.progress_bar.setMaximum(total)
+			self.progress_bar.setValue(min(current, total))
+			percentage = int((current / total) * 100)
+			self.statusBar().showMessage(f'ステップ {current}/{total} ({percentage}%)')
+		else:
+			self.progress_bar.setMaximum(1)
+			self.progress_bar.setValue(0)
+			self.statusBar().showMessage(f'ステップ {current}')
 
 	def _on_finished(self, success: bool, message: str) -> None:
 		root_logger = logging.getLogger()
-		root_logger.removeHandler(self._log_handler)
+		if self._handler_attached and self._log_handler in root_logger.handlers:
+			root_logger.removeHandler(self._log_handler)
+			self._handler_attached = False
 		self.progress_bar.setVisible(False)
 		self._update_controls(running=False)
 		self._worker = None
@@ -336,6 +364,26 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.run_button.setEnabled(not running)
 		self.stop_button.setEnabled(running)
 		self.task_input.setReadOnly(running)
+
+	def closeEvent(self, event: QtGui.QCloseEvent) -> None:  # noqa: D401
+		if self._worker is not None and self._worker.isRunning():
+			reply = QtWidgets.QMessageBox.question(
+				self,
+				'確認',
+				'タスクが実行中です。停止して終了しますか？',
+				QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+				QtWidgets.QMessageBox.StandardButton.No,
+			)
+
+			if reply == QtWidgets.QMessageBox.StandardButton.Yes:
+				self._stop_execution()
+				event.ignore()
+				return
+
+			event.ignore()
+			return
+
+		super().closeEvent(event)
 
 
 def main() -> None:
