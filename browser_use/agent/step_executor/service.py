@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from browser_use.agent.cloud_events import CreateAgentStepEvent
 from browser_use.agent.views import ActionResult, AgentError, AgentStepInfo, ApprovalResult, StepMetadata
 from browser_use.browser.views import BrowserStateSummary
+from browser_use.llm.exceptions import ModelProviderError
 from browser_use.llm.messages import UserMessage
 from browser_use.observability import observe, observe_debug
 from browser_use.utils import time_execution_async
@@ -231,7 +232,19 @@ class StepExecutor:
 			return
 
 		include_trace = agent.logger.isEnabledFor(logging.DEBUG)
-		error_msg = AgentError.format_error(error, include_trace=include_trace)
+		provider_error: ModelProviderError | None = None
+		if isinstance(error, ModelProviderError):
+			provider_error = error
+		elif isinstance(getattr(error, '__cause__', None), ModelProviderError):
+			provider_error = getattr(error, '__cause__', None)
+
+		if provider_error:
+			error_msg = AgentError.format_model_provider_error(provider_error, getattr(agent.llm, 'model', None))
+			debug_details = AgentError.format_error(provider_error, include_trace=True)
+		else:
+			error_msg = AgentError.format_error(error, include_trace=include_trace)
+			debug_details = None
+
 		prefix = (
 			f'❌ Result failed {agent.state.consecutive_failures + 1}/'
 			f'{agent.settings.max_failures + int(agent.settings.final_response_after_failure)} times:\n '
@@ -243,6 +256,9 @@ class StepExecutor:
 			agent.logger.error(f'{prefix}{error_msg}')
 		else:
 			agent.logger.error(f'{prefix}{error_msg}')
+
+		if debug_details:
+			agent.logger.debug(f'Model provider error details:\n{debug_details}')
 
 		agent.state.last_result = [ActionResult(error=error_msg)]
 
