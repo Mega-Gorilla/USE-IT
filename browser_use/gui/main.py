@@ -134,7 +134,7 @@ class AgentWorker(QtCore.QThread):
 
 		async def on_step_end(agent_ref: Agent[Any, Any]) -> None:
 			current = agent_ref.state.n_steps
-			total = agent_ref.settings.max_steps
+			total = getattr(agent_ref.settings, 'max_steps', self._preferences.max_steps)
 			self.progress.emit(current, total)
 
 			if self._cancel_requested:
