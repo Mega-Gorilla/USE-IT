@@ -14,7 +14,7 @@ The MCP (Model Context Protocol) Server allows you to expose browser-use's brows
 ### Start MCP Server
 
 ```bash
-uvx browser-use --mcp
+uvx python -m browser_use.mcp.server
 ```
 
 The server will start in stdio mode, ready to accept MCP connections.
@@ -31,7 +31,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
   "mcpServers": {
     "browser-use": {
       "command": "uvx",
-      "args": ["browser-use", "--mcp"],
+      "args": ["python", "-m", "browser_use.mcp.server"],
       "env": {
         "OPENAI_API_KEY": "your-openai-api-key-here"
       }
@@ -48,7 +48,7 @@ Edit `%APPDATA%\Claude\claude_desktop_config.json`:
   "mcpServers": {
     "browser-use": {
       "command": "uvx",
-      "args": ["browser-use", "--mcp"],
+      "args": ["python", "-m", "browser_use.mcp.server"],
       "env": {
         "OPENAI_API_KEY": "your-openai-api-key-here"
       }
@@ -121,7 +121,7 @@ async def use_browser_mcp():
     # Connect to browser-use MCP server
     server_params = StdioServerParameters(
         command="uvx", 
-        args=["browser-use", "--mcp"]
+        args=["python", "-m", "browser_use.mcp.server"]
     )
     
     async with stdio_client(server_params) as (read, write):
@@ -174,7 +174,7 @@ uv pip install 'browser-use'
 Enable debug logging by setting:
 ```bash
 export BROWSER_USE_LOG_LEVEL=DEBUG
-uvx browser-use --mcp
+uvx python -m browser_use.mcp.server
 ```
 
 ## Security Considerations

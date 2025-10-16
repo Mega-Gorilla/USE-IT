@@ -146,8 +146,7 @@ class CloudSync:
 				# User not authenticated - show auth prompt
 				logger.info('─' * max(terminal_width - 40, 20))
 				logger.info('🔐 To view this run in Browser Use Cloud, authenticate with:')
-				logger.info('    👉  browser-use auth')
-				logger.info('    or: python -m browser_use.cli auth')
+				logger.info('    👉  Run a short Python snippet that calls Agent.authenticate_cloud_sync(); see the monitoring docs for details.')
 				logger.info('─' * max(terminal_width - 40, 20) + '\n')
 
 		except Exception as e:
