@@ -3,6 +3,7 @@ import logging
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -110,7 +111,7 @@ def build_agent(test_logger):
 @pytest.mark.asyncio
 async def test_prepare_context_sets_up_messages(test_logger):
 	agent = build_agent(test_logger)
-	executor = StepExecutor(agent)
+	executor = StepExecutor(cast(Any, agent))
 
 	summary = await executor.prepare_context(step_info=None)
 
@@ -124,7 +125,7 @@ async def test_prepare_context_sets_up_messages(test_logger):
 @pytest.mark.asyncio
 async def test_handle_step_error_records_failure(test_logger):
 	agent = build_agent(test_logger)
-	executor = StepExecutor(agent)
+	executor = StepExecutor(cast(Any, agent))
 
 	await executor.handle_step_error(RuntimeError('boom'))
 
