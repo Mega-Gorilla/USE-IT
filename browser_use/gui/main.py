@@ -381,7 +381,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
 		file_menu = menu_bar.addMenu('ファイル')
 		exit_action = QtGui.QAction('終了', self)
-		exit_action.setShortcut(QtGui.QKeySequence.Quit)
+		exit_action.setShortcut(QtGui.QKeySequence(QtGui.QKeySequence.StandardKey.Quit))
 		exit_action.triggered.connect(self.close)
 		file_menu.addAction(exit_action)
 
