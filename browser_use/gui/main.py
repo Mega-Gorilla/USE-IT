@@ -204,6 +204,8 @@ class AgentWorker(QtCore.QThread):
 		# GUI用のプロファイルディレクトリをデフォルトにする
 		filtered.setdefault('user_data_dir', str(gui_profile_dir))
 		filtered.setdefault('headless', False)
+		# GUIではタスク完了時にブラウザを自動で閉じたいので keep_alive を強制的に無効化する
+		filtered['keep_alive'] = False
 
 		if 'downloads_path' not in filtered:
 			downloads_dir = Path(CONFIG.BROWSER_USE_DOWNLOADS_DIR) / 'gui'
@@ -238,11 +240,11 @@ class AgentWorker(QtCore.QThread):
 
 	@property
 	def browser_summary(self) -> dict[str, Any]:
-		profile_cfg = self._raw_config.get('browser_profile', {})
+		profile = self._agent_config.browser_profile
 		return {
-			'headless': profile_cfg.get('headless', False),
-			'keep_alive': profile_cfg.get('keep_alive', True),
-			'proxy': profile_cfg.get('proxy'),
+			'headless': bool(getattr(profile, 'headless', False)),
+			'keep_alive': bool(getattr(profile, 'keep_alive', False)),
+			'proxy': getattr(profile, 'proxy', None),
 		}
 
 
