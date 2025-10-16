@@ -14,7 +14,9 @@ load_dotenv()
 
 from browser_use import Agent
 from browser_use.agent.config import AgentConfig
+from browser_use.agent.views import AgentOutput
 from browser_use.browser import BrowserProfile
+from browser_use.browser.views import BrowserStateSummary
 from browser_use.config import CONFIG
 from browser_use.llm.anthropic.chat import ChatAnthropic
 from browser_use.llm.google.chat import ChatGoogle
@@ -67,6 +69,7 @@ class AgentWorker(QtCore.QThread):
 	status = QtCore.Signal(str)
 	progress = QtCore.Signal(int, int)
 	finished = QtCore.Signal(bool, str)
+	step_update = QtCore.Signal(dict)
 
 	def __init__(self, preferences: UserPreferences, parent: QtCore.QObject | None = None) -> None:
 		super().__init__(parent)
@@ -223,6 +226,7 @@ class AgentWorker(QtCore.QThread):
 			browser_profile=browser_profile,
 			interactive_mode=False,
 			language=self._default_language(),
+			register_new_step_callback=self._handle_step_update,
 		)
 
 	@property
@@ -247,6 +251,47 @@ class AgentWorker(QtCore.QThread):
 			'proxy': getattr(profile, 'proxy', None),
 		}
 
+	def _handle_step_update(
+		self,
+		browser_state_summary: BrowserStateSummary,
+		model_output: AgentOutput,
+		step_number: int,
+	) -> None:
+		max_steps = self._preferences.max_steps
+		if self._agent and getattr(self._agent, 'settings', None):
+			max_steps = getattr(self._agent.settings, 'max_steps', max_steps)
+
+		payload = {
+			'step_number': step_number,
+			'max_steps': max_steps,
+			'url': browser_state_summary.url,
+			'title': browser_state_summary.title,
+			'thinking': model_output.thinking,
+			'evaluation_previous_goal': model_output.evaluation_previous_goal,
+			'memory': model_output.memory,
+			'next_goal': model_output.next_goal,
+			'actions': self._summarize_actions(model_output),
+		}
+		self.step_update.emit(payload)
+
+	@staticmethod
+	def _summarize_actions(model_output: AgentOutput) -> list[str]:
+		summaries: list[str] = []
+		for action in model_output.action:
+			data = action.model_dump(exclude_unset=True)
+			if not data:
+				continue
+			action_name, params = next(iter(data.items()))
+			if not params:
+				summaries.append(action_name)
+				continue
+			param_pairs = []
+			for key, value in params.items():
+				param_pairs.append(f'{key}={value}')
+			summary = f'{action_name}({", ".join(param_pairs)})'
+			summaries.append(summary)
+		return summaries
+
 
 class MainWindow(QtWidgets.QMainWindow):
 	def __init__(self) -> None:
@@ -262,6 +307,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		self._closing_after_stop = False
 		self._history_entries: List[TaskHistoryEntry] = []
 		self._current_history_index: int | None = None
+		self._last_step_snapshot: dict[str, Any] | None = None
 
 		self._setup_ui()
 		self._setup_menu()
@@ -332,8 +378,35 @@ class MainWindow(QtWidgets.QMainWindow):
 		model_form.addRow('Temperature', self.model_temperature_label)
 		model_form.addRow('Thinking', self.model_thinking_label)
 
+		agent_group = QtWidgets.QGroupBox('ステップ情報')
+		agent_form = QtWidgets.QFormLayout(agent_group)
+		agent_form.setRowWrapPolicy(QtWidgets.QFormLayout.RowWrapPolicy.WrapAllRows)
+
+		self.step_progress_label = QtWidgets.QLabel('—')
+		self.step_url_label = QtWidgets.QLabel('—')
+		self.step_url_label.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
+		self.step_url_label.setWordWrap(True)
+		self.step_title_label = QtWidgets.QLabel('—')
+		self.step_title_label.setWordWrap(True)
+
+		self.step_thinking_edit = self._create_step_text_edit()
+		self.step_memory_edit = self._create_step_text_edit()
+		self.step_next_goal_edit = self._create_step_text_edit()
+		self.step_eval_edit = self._create_step_text_edit()
+		self.step_actions_edit = self._create_step_text_edit(max_height=90)
+
+		agent_form.addRow('進捗', self.step_progress_label)
+		agent_form.addRow('URL', self.step_url_label)
+		agent_form.addRow('タイトル', self.step_title_label)
+		agent_form.addRow('Thinking', self.step_thinking_edit)
+		agent_form.addRow('Memory', self.step_memory_edit)
+		agent_form.addRow('Next Goal', self.step_next_goal_edit)
+		agent_form.addRow('前ゴール評価', self.step_eval_edit)
+		agent_form.addRow('Actions', self.step_actions_edit)
+
 		info_layout.addWidget(browser_group)
 		info_layout.addWidget(model_group)
+		info_layout.addWidget(agent_group)
 
 		right_layout.addLayout(info_layout)
 
@@ -377,6 +450,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.history_list.itemSelectionChanged.connect(self._on_history_selection_changed)
 		self.clear_button.clicked.connect(self._clear_logs)
 		self._load_initial_panels()
+		self._clear_step_info()
 
 	def _setup_menu(self) -> None:
 		menu_bar = self.menuBar()
@@ -427,6 +501,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		self._add_history_entry(task)
 		self._set_browser_status('実行中')
 		self._closing_after_stop = False
+		self._clear_step_info()
 
 		root_logger = logging.getLogger()
 		if not any(handler is self._log_handler for handler in root_logger.handlers):
@@ -442,6 +517,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		worker.status.connect(self._update_status)
 		worker.progress.connect(self._update_progress)
 		worker.finished.connect(self._on_finished)
+		worker.step_update.connect(self._on_step_update)
 
 	def _stop_execution(self) -> None:
 		if self._worker is None:
@@ -599,6 +675,57 @@ class MainWindow(QtWidgets.QMainWindow):
 			self._update_info_panels_from_worker(worker)
 		except Exception as exc:
 			logging.getLogger(__name__).debug(f'初期情報パネルの読み込みに失敗しました: {exc}')
+
+	def _create_step_text_edit(self, *, max_height: int = 70) -> QtWidgets.QPlainTextEdit:
+		edit = QtWidgets.QPlainTextEdit()
+		edit.setReadOnly(True)
+		edit.setUndoRedoEnabled(False)
+		edit.setMaximumBlockCount(200)
+		edit.setPlaceholderText('—')
+		edit.setMaximumHeight(max_height)
+		edit.setWordWrapMode(QtGui.QTextOption.WrapMode.WordWrap)
+		return edit
+
+	def _clear_step_info(self) -> None:
+		self._last_step_snapshot = None
+		self.step_progress_label.setText('—')
+		self.step_url_label.setText('—')
+		self.step_title_label.setText('—')
+		for edit in (
+			self.step_thinking_edit,
+			self.step_memory_edit,
+			self.step_next_goal_edit,
+			self.step_eval_edit,
+			self.step_actions_edit,
+		):
+			edit.clear()
+
+	def _on_step_update(self, payload: dict[str, Any]) -> None:
+		self._last_step_snapshot = payload
+		self._update_step_info(payload)
+
+	def _update_step_info(self, payload: dict[str, Any]) -> None:
+		step_number = payload.get('step_number')
+		max_steps = payload.get('max_steps')
+		if step_number is not None and max_steps:
+			self.step_progress_label.setText(f'{step_number}/{max_steps}')
+		elif step_number is not None:
+			self.step_progress_label.setText(str(step_number))
+		else:
+			self.step_progress_label.setText('—')
+
+		url = payload.get('url') or ''
+		self.step_url_label.setText(url if url else '—')
+		title = payload.get('title') or ''
+		self.step_title_label.setText(title if title else '—')
+
+		self.step_thinking_edit.setPlainText(payload.get('thinking') or '')
+		self.step_memory_edit.setPlainText(payload.get('memory') or '')
+		self.step_next_goal_edit.setPlainText(payload.get('next_goal') or '')
+		self.step_eval_edit.setPlainText(payload.get('evaluation_previous_goal') or '')
+
+		actions = payload.get('actions') or []
+		self.step_actions_edit.setPlainText('\n'.join(actions))
 
 
 def main() -> None:
