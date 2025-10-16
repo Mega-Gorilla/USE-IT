@@ -2,19 +2,15 @@ from __future__ import annotations
 
 import logging
 import sys
-from typing import List
 
 from PySide6 import QtCore, QtGui, QtWidgets
 from dotenv import load_dotenv
 
 from browser_use.gui.worker import AgentWorker, QtLogHandler, UserPreferences
 from browser_use.gui.widgets import (
-	BrowserInfoPanel,
-	LogTabsPanel,
-	ModelInfoPanel,
-	StepInfoPanel,
+	ExecutionTab,
+	HistoryTab,
 	TaskHistoryEntry,
-	TaskHistoryList,
 	TaskInputPanel,
 )
 
@@ -33,7 +29,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		self._log_handler.signal.connect(self._on_log_message)
 		self._handler_attached = False
 		self._closing_after_stop = False
-		self._history_entries: List[TaskHistoryEntry] = []
+		self._history_entries: list[TaskHistoryEntry] = []
 		self._current_history_index: int | None = None
 
 		self._init_ui()
@@ -50,47 +46,22 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.task_panel = TaskInputPanel()
 		main_layout.addWidget(self.task_panel)
 
-		# Split view for history and detail panes
-		splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
+		# Main area: 2-tab layout
+		self.main_tabs = QtWidgets.QTabWidget()
 
-		# Left: history
-		left_panel = QtWidgets.QWidget()
-		left_layout = QtWidgets.QVBoxLayout(left_panel)
-		self.history_panel = TaskHistoryList()
-		left_layout.addWidget(self.history_panel)
-		left_layout.addStretch(1)
-		splitter.addWidget(left_panel)
+		# ⚡ Execution tab
+		self.execution_tab = ExecutionTab()
+		self.main_tabs.addTab(self.execution_tab, '⚡ 実行')
 
-		# Right: info + logs
-		right_panel = QtWidgets.QWidget()
-		right_layout = QtWidgets.QVBoxLayout(right_panel)
+		# 📋 History tab
+		self.history_tab = HistoryTab()
+		self.main_tabs.addTab(self.history_tab, '📋 履歴')
 
-		info_layout = QtWidgets.QHBoxLayout()
-		self.browser_panel = BrowserInfoPanel()
-		self.model_panel = ModelInfoPanel()
-		self.step_panel = StepInfoPanel()
-		info_layout.addWidget(self.browser_panel)
-		info_layout.addWidget(self.model_panel)
-		info_layout.addWidget(self.step_panel)
+		main_layout.addWidget(self.main_tabs, stretch=1)
 
-		right_layout.addLayout(info_layout)
-
-		self.log_panel = LogTabsPanel()
-		right_layout.addWidget(self.log_panel, stretch=1)
-
-		splitter.addWidget(right_panel)
-		splitter.setStretchFactor(0, 1)
-		splitter.setStretchFactor(1, 3)
-
-		main_layout.addWidget(splitter, stretch=1)
-
-		# Status bar
+		# Status bar (プログレスバー廃止)
 		self.status_bar = QtWidgets.QStatusBar()
 		self.setStatusBar(self.status_bar)
-		self.progress_bar = QtWidgets.QProgressBar()
-		self.progress_bar.setMaximumWidth(220)
-		self.progress_bar.setVisible(False)
-		self.status_bar.addPermanentWidget(self.progress_bar)
 
 		self._setup_menu()
 
@@ -112,7 +83,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.task_panel.connect_run(self._start_execution)
 		self.task_panel.connect_stop(self._stop_execution)
 		self.task_panel.connect_clear(self._clear_logs)
-		self.history_panel.list_widget.itemSelectionChanged.connect(self._on_history_selection_changed)
+		self.history_tab.history_list.list_widget.itemSelectionChanged.connect(self._on_history_selection_changed)
 
 	def _show_about_dialog(self) -> None:
 		QtWidgets.QMessageBox.information(
@@ -123,7 +94,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		)
 
 	def _on_log_message(self, message: str) -> None:
-		self.log_panel.append_message(message)
+		self.execution_tab.log_panel.append_message(message)
 
 	def _start_execution(self) -> None:
 		task = self.task_panel.task_text().strip()
@@ -136,9 +107,9 @@ class MainWindow(QtWidgets.QMainWindow):
 		self._update_info_panels_from_worker(self._worker)
 		self._bind_worker_signals(self._worker)
 		self._add_history_entry(task)
-		self.browser_panel.set_status('実行中')
+		self.history_tab.browser_panel.set_status('実行中')
 		self._closing_after_stop = False
-		self.step_panel.clear()
+		self.execution_tab.step_panel.clear()
 
 		root_logger = logging.getLogger()
 		if not any(handler is self._log_handler for handler in root_logger.handlers):
@@ -154,30 +125,25 @@ class MainWindow(QtWidgets.QMainWindow):
 		worker.status.connect(self._update_status)
 		worker.progress.connect(self._update_progress)
 		worker.finished.connect(self._on_finished)
-		worker.step_update.connect(self.step_panel.update_snapshot)
+		worker.step_update.connect(self.execution_tab.step_panel.update_snapshot)
 
 	def _stop_execution(self) -> None:
 		if self._worker is None:
 			return
 
 		self._worker.request_cancel()
-		self.browser_panel.set_status('停止要求中')
+		self.history_tab.browser_panel.set_status('停止要求中')
 		self._update_status('停止要求を送信しました…')
 
 	def _update_status(self, message: str) -> None:
 		self.statusBar().showMessage(message)
 
 	def _update_progress(self, current: int, total: int) -> None:
-		self.progress_bar.setVisible(True)
+		# プログレスバーウィジェット廃止、Status barにはテキスト表示のみ
 		if total > 0:
-			self.progress_bar.setMaximum(total)
-			self.progress_bar.setValue(min(current, total))
-			percentage = int((current / total) * 100)
-			self.statusBar().showMessage(f'ステップ {current}/{total} ({percentage}%)')
+			self.statusBar().showMessage(f'ステップ {current}/{total} を実行中...')
 		else:
-			self.progress_bar.setMaximum(1)
-			self.progress_bar.setValue(0)
-			self.statusBar().showMessage(f'ステップ {current}')
+			self.statusBar().showMessage(f'ステップ {current} を実行中...')
 
 	def _on_finished(self, success: bool, message: str) -> None:
 		root_logger = logging.getLogger()
@@ -185,10 +151,9 @@ class MainWindow(QtWidgets.QMainWindow):
 			root_logger.removeHandler(self._log_handler)
 			self._handler_attached = False
 
-		self.progress_bar.setVisible(False)
 		self._update_controls(running=False)
 		self._worker = None
-		self.browser_panel.set_status('未接続')
+		self.history_tab.browser_panel.set_status('未接続')
 		self._finalize_history_entry(success, message)
 
 		self._update_status(message)
@@ -231,7 +196,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		event.accept()
 
 	def _clear_logs(self) -> None:
-		self.log_panel.clear_all()
+		self.execution_tab.log_panel.clear_all()
 
 	def _add_history_entry(self, task: str) -> None:
 		entry = TaskHistoryEntry(task=task, status='実行中')
@@ -240,7 +205,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		self._refresh_history_list(select_index=0)
 
 	def _refresh_history_list(self, select_index: int | None = None) -> None:
-		self.history_panel.set_entries(self._history_entries, select_index=select_index)
+		self.history_tab.history_list.set_entries(self._history_entries, select_index=select_index)
 
 	def _finalize_history_entry(self, success: bool, message: str) -> None:
 		if self._current_history_index is None:
@@ -261,17 +226,19 @@ class MainWindow(QtWidgets.QMainWindow):
 
 		self._refresh_history_list(select_index=self._current_history_index)
 		if self._current_history_index is not None:
-			self.history_panel.set_current_row(self._current_history_index)
+			self.history_tab.history_list.set_current_row(self._current_history_index)
 
 	def _on_history_selection_changed(self) -> None:
 		if self._worker is not None and self._worker.isRunning():
 			return
 
-		row = self.history_panel.current_row()
+		row = self.history_tab.history_list.current_row()
 		if row < 0 or row >= len(self._history_entries):
+			self.history_tab.detail_panel.clear()
 			return
 		entry = self._history_entries[row]
 		self._current_history_index = row
+		self.history_tab.detail_panel.update_entry(entry)
 		summary = entry.result_summary or entry.status
 		self._update_status(f'[{entry.status}] {summary}')
 
@@ -279,8 +246,8 @@ class MainWindow(QtWidgets.QMainWindow):
 		llm_summary = worker.llm_summary
 		browser_summary = worker.browser_summary
 
-		self.model_panel.update_summary(llm_summary)
-		self.browser_panel.update_summary(browser_summary)
+		self.history_tab.model_panel.update_summary(llm_summary)
+		self.history_tab.browser_panel.update_summary(browser_summary)
 
 	def _load_initial_panels(self) -> None:
 		try:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Iterable, List
+from typing import Iterable
 
 from PySide6 import QtCore, QtWidgets
 
@@ -28,7 +28,7 @@ class TaskHistoryList(QtWidgets.QGroupBox):
 		layout.addWidget(self.list_widget)
 
 	def set_entries(self, entries: Iterable[TaskHistoryEntry], select_index: int | None = None) -> None:
-		items: List[str] = []
+		items: list[str] = []
 		for entry in entries:
 			start_time = entry.started_at.toString('HH:mm:ss')
 			task_text = entry.task
