@@ -406,9 +406,9 @@ class MainWindow(QtWidgets.QMainWindow):
 		elif '[CDP]' in log_upper:
 			target = self.cdp_log
 
-		target.appendPlainText(message)
+		target.append(message)
 		cursor = target.textCursor()
-		cursor.movePosition(QtGui.QTextCursor.End)
+		cursor.movePosition(QtGui.QTextCursor.MoveOperation.End)
 		target.setTextCursor(cursor)
 
 	def _start_execution(self) -> None:
