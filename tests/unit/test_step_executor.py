@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -133,6 +134,34 @@ async def test_handle_step_error_records_failure(test_logger):
 
 
 @pytest.mark.asyncio
+async def test_handle_step_error_model_provider_shows_user_message(test_logger, caplog):
+	agent = build_agent(test_logger)
+	executor = StepExecutor(agent)
+
+	error = ModelProviderError(
+		"503 UNAVAILABLE. {'error': {'code': 503, 'message': 'The model is overloaded. Please try again later.', 'status': 'UNAVAILABLE'}}",
+		status_code=503,
+		model='gemini-flash-latest',
+	)
+
+	with caplog.at_level(logging.DEBUG, logger='browser_use.tests.unit'):
+		await executor.handle_step_error(error)
+
+	assert agent.state.consecutive_failures == 1
+	assert agent.state.last_result
+	user_message = agent.state.last_result[0].error
+	assert '過負荷' in user_message
+	assert '{' not in user_message
+	assert 'Stacktrace' not in user_message
+
+	error_logs = [rec.getMessage() for rec in caplog.records if rec.levelno == logging.ERROR]
+	assert any('503 Service Unavailable' in msg for msg in error_logs)
+
+	debug_logs = [rec.getMessage() for rec in caplog.records if rec.levelno == logging.DEBUG]
+	assert any('Model provider error details' in msg for msg in debug_logs)
+
+
+@pytest.mark.asyncio
 async def test_force_done_after_last_step_switches_output(test_logger):
 	agent = build_agent(test_logger)
 	executor = StepExecutor(agent)
@@ -176,7 +205,8 @@ async def test_execute_step_handles_model_provider_error(test_logger):
 
 	assert agent.state.consecutive_failures == 1
 	assert agent.state.last_result
-	assert '503' in agent.state.last_result[0].error
+	assert 'LLMプロバイダで内部エラーが発生しました' in agent.state.last_result[0].error
+	assert '{' not in agent.state.last_result[0].error
 
 
 @pytest.mark.asyncio
