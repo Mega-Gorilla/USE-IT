@@ -374,6 +374,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.stop_button.clicked.connect(self._stop_execution)
 		self.history_list.itemSelectionChanged.connect(self._on_history_selection_changed)
 		self.clear_button.clicked.connect(self._clear_logs)
+		self._load_initial_panels()
 
 	def _setup_menu(self) -> None:
 		menu_bar = self.menuBar()
@@ -477,13 +478,12 @@ class MainWindow(QtWidgets.QMainWindow):
 		if success:
 			self._update_status(message)
 			QtWidgets.QMessageBox.information(self, '完了', message)
-			return
-
-		self._update_status(message)
-		if 'キャンセル' in message:
-			QtWidgets.QMessageBox.warning(self, 'キャンセル', message)
 		else:
-			QtWidgets.QMessageBox.critical(self, 'エラー', message)
+			self._update_status(message)
+			if 'キャンセル' in message:
+				QtWidgets.QMessageBox.warning(self, 'キャンセル', message)
+			else:
+				QtWidgets.QMessageBox.critical(self, 'エラー', message)
 
 		if self._closing_after_stop:
 			self._closing_after_stop = False
@@ -527,16 +527,20 @@ class MainWindow(QtWidgets.QMainWindow):
 		entry = TaskHistoryEntry(task=task, status='実行中')
 		self._history_entries.insert(0, entry)
 		self._current_history_index = 0
-		self._refresh_history_list()
-		self.history_list.setCurrentRow(0)
+		self._refresh_history_list(select_index=0)
 
-	def _refresh_history_list(self) -> None:
+	def _refresh_history_list(self, select_index: int | None = None) -> None:
 		self.history_list.blockSignals(True)
 		self.history_list.clear()
 		for entry in self._history_entries:
 			start_time = entry.started_at.toString('HH:mm:ss')
-			self.history_list.addItem(f'[{entry.status}] {start_time}  {entry.task}')
+			task_text = entry.task
+			if len(task_text) > 50:
+				task_text = task_text[:47] + '...'
+			self.history_list.addItem(f'[{entry.status}] {start_time}  {task_text}')
 		self.history_list.blockSignals(False)
+		if select_index is not None and 0 <= select_index < self.history_list.count():
+			self.history_list.setCurrentRow(select_index)
 
 	def _finalize_history_entry(self, success: bool, message: str) -> None:
 		if self._current_history_index is None:
@@ -554,11 +558,14 @@ class MainWindow(QtWidgets.QMainWindow):
 			entry.status = 'キャンセル'
 		else:
 			entry.status = '失敗'
-		self._refresh_history_list()
+		self._refresh_history_list(select_index=self._current_history_index)
 		if self._current_history_index is not None:
 			self.history_list.setCurrentRow(self._current_history_index)
 
 	def _on_history_selection_changed(self) -> None:
+		if self._worker is not None and self._worker.isRunning():
+			return
+
 		row = self.history_list.currentRow()
 		if row < 0 or row >= len(self._history_entries):
 			return
@@ -583,6 +590,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
 	def _set_browser_status(self, status: str) -> None:
 		self.browser_status_label.setText(status)
+
+	def _load_initial_panels(self) -> None:
+		try:
+			worker = AgentWorker(UserPreferences(task=''))
+			self._update_info_panels_from_worker(worker)
+		except Exception as exc:
+			logging.getLogger(__name__).debug(f'初期情報パネルの読み込みに失敗しました: {exc}')
 
 
 def main() -> None:
