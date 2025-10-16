@@ -21,11 +21,13 @@ Browser-UseのAgentは、LLMと対話するために構造化されたプロン�
 
 ### テンプレートモード
 
-| モード | ファイル | 出力フィールド | 用途 |
-|--------|----------|----------------|------|
-| **Standard** | `system_prompt.md` | `thinking`, `evaluation_previous_goal`, `memory`, `next_goal`, `action` | デフォルト。詳細な推論が必要なタスク |
-| **Flash** | `system_prompt_flash.md` | `memory`, `action` | 高速・低コスト。単純なタスク向け |
-| **No Thinking** | `system_prompt_no_thinking.md` | `evaluation_previous_goal`, `memory`, `next_goal`, `action` | 推論プロセスが不要な場合 |
+| モード | 英語テンプレート | 出力フィールド | 用途 |
+|--------|-----------------|----------------|------|
+| **Standard** | `en/system_prompt.md` | `thinking`, `evaluation_previous_goal`, `memory`, `next_goal`, `action` | デフォルト。詳細な推論が必要なタスク |
+| **Flash** | `en/system_prompt_flash.md` | `memory`, `action` | 高速・低コスト。単純なタスク向け |
+| **No Thinking** | `en/system_prompt_no_thinking.md` | `evaluation_previous_goal`, `memory`, `next_goal`, `action` | 推論プロセスが不要な場合 |
+
+`language='jp'` を指定すると、同名の日本語テンプレート（例: `jp/system_prompt.md`）が自動的に使用されます。
 
 ### 初期化パラメータ
 
@@ -38,13 +40,22 @@ system_prompt = SystemPrompt(
     extend_system_message=None,           # システムプロンプトに追加ルールを付与
     use_thinking=True,                    # thinking フィールドを使用するか
     flash_mode=False,                     # Flash モードを使用するか
+    language='en',                        # 使用するテンプレート言語（'en' / 'jp'）
 )
 ```
 
 **モード選択ロジック**:
-1. `flash_mode=True` → `system_prompt_flash.md` (最小限)
-2. `use_thinking=False` → `system_prompt_no_thinking.md` (推論なし)
-3. デフォルト → `system_prompt.md` (標準)
+1. `flash_mode=True` → `system_prompt_flash.md`（`language` に応じたサブディレクトリからロード）
+2. `use_thinking=False` → `system_prompt_no_thinking.md`
+3. デフォルト → `system_prompt.md`
+
+### 言語設定
+
+`SystemPrompt` および `AgentConfig` / `AgentSettings` は `language` パラメータを受け取り、サポートされているテンプレート言語を切り替えます。
+
+- 指定可能な値: `'en'`（既定）, `'jp'`
+- 未サポートの値を指定した場合はログ警告を出しつつ `'en'` にフォールバック
+- `Agent(..., language='jp')` や `AgentConfig(language='jp')` のように Agent 初期化時に指定可能
 
 ### 使用例
 
@@ -56,9 +67,9 @@ from browser_use import Agent, ChatOpenAI
 agent = Agent(
     task='Find the price of iPhone 15 Pro on Apple website',
     llm=ChatOpenAI(model='gpt-4.1'),
+    language='en',  # 既定の英語テンプレート（en/system_prompt.md）
 )
 # use_thinking=True, flash_mode=False がデフォルト
-# system_prompt.md が使用される
 ```
 
 #### 例2: プロンプト拡張
@@ -116,6 +127,18 @@ agent = Agent(
     llm=ChatOpenAI(model='gpt-4.1'),
     override_system_message=custom_prompt,
 )
+
+#### 例4: 日本語テンプレートを使用
+
+```python
+from browser_use import Agent, ChatGoogle
+
+agent = Agent(
+    task='Apple公式サイトでiPhone 15 Proの価格を調べてください',
+    llm=ChatGoogle(model='gemini-flash-latest'),
+    language='jp',  # jp/system_prompt.md が適用される
+)
+```
 ```
 
 **`override_system_message` のユースケース**:
@@ -125,7 +148,7 @@ agent = Agent(
 
 **警告**: `override_system_message` を使用すると、標準的なブラウザルール、ファイルシステムガイドライン、エラーハンドリングロジックがすべて失われます。自己責任で使用してください。
 
-#### 例4: Flash モード（高速・低コスト）
+#### 例5: Flash モード（高速・低コスト）
 
 ```python
 from browser_use import Agent, ChatGoogle
@@ -150,7 +173,7 @@ agent = Agent(
 - コスト削減が優先事項
 - 複雑な推論や長期記憶が不要
 
-#### 例5: 推論なしモード
+#### 例6: 推論なしモード
 
 ```python
 from browser_use import Agent, ChatOpenAI
@@ -180,7 +203,7 @@ agent = Agent(
 
 ## システムプロンプトテンプレートの構造
 
-### Standard モード (`system_prompt.md`)
+### Standard モード (`en/system_prompt.md`)
 
 218行の詳細なプロンプトで、以下のセクションで構成されています:
 
@@ -326,7 +349,7 @@ done アクションの要件:
 action リストは空であってはならない。
 ```
 
-### Flash モード (`system_prompt_flash.md`)
+### Flash モード (`en/system_prompt_flash.md`)
 
 33行の最小限プロンプト:
 
@@ -361,7 +384,7 @@ action リストは空であってはならない。
 - 極小トークン使用
 - 処理速度最優先
 
-### No Thinking モード (`system_prompt_no_thinking.md`)
+### No Thinking モード (`en/system_prompt_no_thinking.md`)
 
 214行のプロンプト（Standard から `thinking` フィールドのみ削除）:
 
@@ -1239,9 +1262,12 @@ agent = Agent(
 
 - `browser_use/agent/prompt/__init__.py` - SystemPrompt, AgentMessagePrompt 実装（371行）
 - `browser_use/agent/message_manager/service.py` - MessageManager 実装（467行）
-- `browser_use/agent/prompt/system_prompts/system_prompt.md` - 標準プロンプトテンプレート（218行）
-- `browser_use/agent/prompt/system_prompts/system_prompt_flash.md` - Flashプロンプトテンプレート（33行）
-- `browser_use/agent/prompt/system_prompts/system_prompt_no_thinking.md` - No Thinkingプロンプトテンプレート（214行）
+- `browser_use/agent/prompt/system_prompts/en/system_prompt.md` - 標準プロンプトテンプレート（英語, 218行）
+- `browser_use/agent/prompt/system_prompts/en/system_prompt_flash.md` - Flashプロンプトテンプレート（英語, 33行）
+- `browser_use/agent/prompt/system_prompts/en/system_prompt_no_thinking.md` - No Thinkingテンプレート（英語, 214行）
+- `browser_use/agent/prompt/system_prompts/jp/system_prompt.md` - 標準プロンプトテンプレート（日本語, 218行）
+- `browser_use/agent/prompt/system_prompts/jp/system_prompt_flash.md` - Flashプロンプトテンプレート（日本語, 33行）
+- `browser_use/agent/prompt/system_prompts/jp/system_prompt_no_thinking.md` - No Thinkingテンプレート（日本語, 214行）
 
 ### 例とテスト
 

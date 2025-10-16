@@ -83,6 +83,7 @@ class AgentConfig:
 	max_actions_per_step: int = 10
 	use_thinking: bool = True
 	flash_mode: bool = False
+	language: str = 'en'
 	max_history_items: int | None = None
 	page_extraction_llm: BaseChatModel | None = None
 	injected_agent_state: AgentState | None = None
@@ -103,3 +104,8 @@ class AgentConfig:
 	url_shortening_limit: int = 25
 	extra: dict[str, Any] = field(default_factory=dict)
 	factories: AgentFactories = field(default_factory=AgentFactories)
+
+	def __post_init__(self) -> None:
+		from browser_use.agent.prompt import normalize_prompt_language
+
+		self.language = normalize_prompt_language(self.language)

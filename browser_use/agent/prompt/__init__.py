@@ -1,4 +1,5 @@
 import importlib.resources
+import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Literal, Optional
 
@@ -13,6 +14,29 @@ if TYPE_CHECKING:
 	from browser_use.filesystem.file_system import FileSystem
 
 
+logger = logging.getLogger(__name__)
+
+PROMPT_LANGUAGE_PACKAGES: dict[str, str] = {
+	'en': 'browser_use.agent.prompt.system_prompts.en',
+	'jp': 'browser_use.agent.prompt.system_prompts.jp',
+}
+DEFAULT_PROMPT_LANGUAGE = 'en'
+
+
+def normalize_prompt_language(language: str | None) -> str:
+	"""Normalize and validate system prompt language values."""
+	if language is None:
+		return DEFAULT_PROMPT_LANGUAGE
+	normalized = language.strip().lower()
+	if not normalized:
+		logger.warning('Empty system prompt language provided; falling back to "%s"', DEFAULT_PROMPT_LANGUAGE)
+		return DEFAULT_PROMPT_LANGUAGE
+	if normalized in PROMPT_LANGUAGE_PACKAGES:
+		return normalized
+	logger.warning('Unsupported system prompt language "%s"; falling back to "%s"', language, DEFAULT_PROMPT_LANGUAGE)
+	return DEFAULT_PROMPT_LANGUAGE
+
+
 class SystemPrompt:
 	def __init__(
 		self,
@@ -21,7 +45,9 @@ class SystemPrompt:
 		extend_system_message: str | None = None,
 		use_thinking: bool = True,
 		flash_mode: bool = False,
+		language: str = 'en',
 	):
+		self.language = normalize_prompt_language(language)
 		self.max_actions_per_step = max_actions_per_step
 		self.use_thinking = use_thinking
 		self.flash_mode = flash_mode
@@ -48,8 +74,10 @@ class SystemPrompt:
 			else:
 				template_filename = 'system_prompt_no_thinking.md'
 
+			package_name = PROMPT_LANGUAGE_PACKAGES[self.language]
+
 			# This works both in development and when installed as a package
-			with importlib.resources.files('browser_use.agent.prompt.system_prompts').joinpath(template_filename).open('r', encoding='utf-8') as f:
+			with importlib.resources.files(package_name).joinpath(template_filename).open('r', encoding='utf-8') as f:
 				self.prompt_template = f.read()
 		except Exception as e:
 			raise RuntimeError(f'Failed to load system prompt template: {e}')
