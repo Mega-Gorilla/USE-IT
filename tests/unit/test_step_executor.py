@@ -227,3 +227,16 @@ async def test_execute_step_interactive_retry_then_approve(test_logger, dummy_ac
 	assert '<human_feedback>Use index #two</human_feedback>' in message_arg.content
 	agent.tools.act.assert_awaited()
 	agent.stop.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_request_human_approval_requires_callback(test_logger, dummy_action_model_class):
+	agent = build_agent(test_logger)
+	agent.settings.interactive_mode = True
+	agent.state.last_model_output = SimpleNamespace(action=[dummy_action_model_class(click={'selector': '#ok'})])
+	executor = StepExecutor(agent)
+
+	with pytest.raises(RuntimeError) as exc:
+		await executor.request_human_approval(step_info=None, browser_state_summary=make_browser_state())
+
+	assert 'approval_callback' in str(exc.value)

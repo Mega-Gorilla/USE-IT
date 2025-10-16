@@ -106,6 +106,12 @@ class OldConfig:
 		return self.BROWSER_USE_PROFILES_DIR / 'default'
 
 	@property
+	def BROWSER_USE_DOWNLOADS_DIR(self) -> Path:
+		path = self.BROWSER_USE_CONFIG_DIR / 'downloads'
+		path.mkdir(parents=True, exist_ok=True)
+		return path
+
+	@property
 	def BROWSER_USE_EXTENSIONS_DIR(self) -> Path:
 		path = self.BROWSER_USE_CONFIG_DIR / 'extensions'
 		self._ensure_dirs()
@@ -120,6 +126,7 @@ class OldConfig:
 			config_dir.mkdir(parents=True, exist_ok=True)
 			(config_dir / 'profiles').mkdir(parents=True, exist_ok=True)
 			(config_dir / 'extensions').mkdir(parents=True, exist_ok=True)
+			(config_dir / 'downloads').mkdir(parents=True, exist_ok=True)
 			self._dirs_created = True
 
 	# LLM API key configuration

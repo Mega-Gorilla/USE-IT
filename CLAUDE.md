@@ -53,7 +53,7 @@ uv sync
 **MCP Server Mode:**
 The library can run as an MCP server for integration with Claude Desktop:
 ```bash
-uvx browser-use[cli] --mcp
+uvx python -m browser_use.mcp.server
 ```
 
 ## Code Style

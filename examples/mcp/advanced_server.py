@@ -9,10 +9,10 @@ This example shows how to build a more sophisticated MCP client that:
 
 Prerequisites:
 1. Install required packages:
-   pip install 'browser-use[cli]'
+   pip install 'browser-use'
 
 2. Start the browser-use MCP server:
-   uvx 'browser-use[cli]' --mcp
+   uvx python -m browser_use.mcp.server
 
 3. Run this example:
    python advanced_server.py
@@ -241,7 +241,7 @@ async def main():
 
 	try:
 		# Connect to browser-use MCP server
-		await assistant.connect_server(name='browser', command='uvx', args=['browser-use[cli]', '--mcp'])
+		await assistant.connect_server(name='browser', command='uvx', args=['python', '-m', 'browser_use.mcp.server'])
 
 		# Optionally connect to filesystem server
 		# Note: Uncomment to enable file operations
