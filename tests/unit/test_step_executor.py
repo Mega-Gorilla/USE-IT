@@ -137,7 +137,7 @@ async def test_handle_step_error_records_failure(test_logger):
 @pytest.mark.asyncio
 async def test_handle_step_error_model_provider_shows_user_message(test_logger, caplog):
 	agent = build_agent(test_logger)
-	executor = StepExecutor(agent)
+	executor = StepExecutor(cast(Any, agent))
 
 	error = ModelProviderError(
 		"503 UNAVAILABLE. {'error': {'code': 503, 'message': 'The model is overloaded. Please try again later.', 'status': 'UNAVAILABLE'}}",
@@ -165,7 +165,7 @@ async def test_handle_step_error_model_provider_shows_user_message(test_logger, 
 @pytest.mark.asyncio
 async def test_handle_step_error_rate_limit_message(test_logger, caplog):
 	agent = build_agent(test_logger)
-	executor = StepExecutor(agent)
+	executor = StepExecutor(cast(Any, agent))
 
 	error = ModelProviderError(
 		'429 Too Many Requests',
@@ -188,7 +188,7 @@ async def test_handle_step_error_rate_limit_message(test_logger, caplog):
 @pytest.mark.asyncio
 async def test_force_done_after_last_step_switches_output(test_logger):
 	agent = build_agent(test_logger)
-	executor = StepExecutor(agent)
+	executor = StepExecutor(cast(Any, agent))
 
 	step_info = AgentStepInfo(step_number=4, max_steps=5)
 	await executor.force_done_after_last_step(step_info)
