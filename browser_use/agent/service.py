@@ -194,8 +194,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			# config 優先、追加の kwargs は余白に詰める
 			if kwargs:
 				config.extra.update(kwargs)
-			if language is not None:
-				config.language = language
 
 		self.config = config
 		cfg = config
@@ -262,7 +260,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			language=cfg.language,
 		)
 
-		self.language = self.settings.language
 		self.approval_callback = cfg.approval_callback
 
 		self._initialize_token_cost_service(cfg.calculate_cost, self.llm, page_extraction_llm)

@@ -25,9 +25,12 @@ DEFAULT_PROMPT_LANGUAGE = 'en'
 
 def normalize_prompt_language(language: str | None) -> str:
 	"""Normalize and validate system prompt language values."""
-	if not language:
+	if language is None:
 		return DEFAULT_PROMPT_LANGUAGE
-	normalized = language.lower()
+	normalized = language.strip().lower()
+	if not normalized:
+		logger.warning('Empty system prompt language provided; falling back to "%s"', DEFAULT_PROMPT_LANGUAGE)
+		return DEFAULT_PROMPT_LANGUAGE
 	if normalized in PROMPT_LANGUAGE_PACKAGES:
 		return normalized
 	logger.warning('Unsupported system prompt language "%s"; falling back to "%s"', language, DEFAULT_PROMPT_LANGUAGE)
