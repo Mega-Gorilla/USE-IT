@@ -12,9 +12,6 @@ load_dotenv()
 
 # Third-party imports
 import gradio as gr  # type: ignore
-from rich.console import Console
-from rich.panel import Panel
-from rich.text import Text
 
 # Local module imports
 from browser_use import Agent, ChatOpenAI
@@ -32,27 +29,6 @@ class ActionResult:
 class AgentHistoryList:
 	all_results: list[ActionResult]
 	all_model_outputs: list[dict]
-
-
-def parse_agent_history(history_str: str) -> None:
-	console = Console()
-
-	# Split the content into sections based on ActionResult entries
-	sections = history_str.split('ActionResult(')
-
-	for i, section in enumerate(sections[1:], 1):  # Skip first empty section
-		# Extract relevant information
-		content = ''
-		if 'extracted_content=' in section:
-			content = section.split('extracted_content=')[1].split(',')[0].strip("'")
-
-		if content:
-			header = Text(f'Step {i}', style='bold blue')
-			panel = Panel(content, title=header, border_style='blue')
-			console.print(panel)
-			console.print()
-
-	return None
 
 
 async def run_browser_task(

@@ -49,17 +49,7 @@ dependencies = [
 # screeninfo: only used to get screen resolution on Linux/Windows
 # markdownify: used for page text content extraction for passing to LLM
 # openai: datalib,voice-helpers are actually NOT NEEDED but openai produces noisy errors on exit without them TODO: fix
-# rich: used for terminal formatting and styling in CLI
-# click: used for command-line argument parsing
-# textual: used for terminal UI
-
 [project.optional-dependencies]
-cli = [
-    "rich>=14.0.0",
-    "click>=8.1.8",
-    "textual>=3.2.0",
-    "questionary>=2.1.0",
-]
 aws = [
     "boto3>=1.38.45"
 ]
@@ -76,6 +66,10 @@ examples = [
     # "browserbase>=0.4.0",
     "langchain-openai>=0.3.26",
 ]
+gui = [
+    "PySide6>=6.8.0",
+    "PySide6-Addons>=6.8.0",
+]
 eval = [
     "lmnr[all]==0.7.17",
     "anyio>=4.9.0",
@@ -85,7 +79,7 @@ eval = [
     "browserbase==1.4.0",
 ]
 all = [
-    "browser-use[cli,examples,aws]",
+    "browser-use[examples,aws,gui]",
 ]
 
 # will prefer to use local source code checked out in ../../browser-use (if present) instead of pypi browser-use package
@@ -97,8 +91,7 @@ all = [
 Repository = "https://github.com/Mega-Gorilla/USE-IT"
 
 [project.scripts]
-browseruse = "browser_use.cli:main"
-browser-use = "browser_use.cli:main"
+browseruse-gui = "browser_use.gui.main:main"
 
 [build-system]
 requires = ["hatchling"]
