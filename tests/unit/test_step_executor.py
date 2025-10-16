@@ -150,7 +150,7 @@ async def test_handle_step_error_model_provider_shows_user_message(test_logger, 
 	assert agent.state.consecutive_failures == 1
 	assert agent.state.last_result
 	user_message = agent.state.last_result[0].error
-	assert '過負荷' in user_message
+	assert 'provider is overloaded' in user_message
 	assert '{' not in user_message
 	assert 'Stacktrace' not in user_message
 
@@ -205,7 +205,7 @@ async def test_execute_step_handles_model_provider_error(test_logger):
 
 	assert agent.state.consecutive_failures == 1
 	assert agent.state.last_result
-	assert 'LLMプロバイダで内部エラーが発生しました' in agent.state.last_result[0].error
+	assert 'provider returned an internal error' in agent.state.last_result[0].error
 	assert '{' not in agent.state.last_result[0].error
 
 

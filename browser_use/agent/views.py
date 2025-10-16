@@ -701,20 +701,20 @@ class AgentError:
 
 		if status_code == 429:
 			return (
-				f'LLMの呼び出しが制限に達しました ({status_phrase(status_code)})。'
-				f'モデル: {model_name}。少し待ってから再試行してください。'
+				f'The LLM request hit a rate limit ({status_phrase(status_code)}). '
+				f'Model: {model_name}. Please wait a moment and retry.'
 			)
 
 		if status_code == 503:
 			return (
-				f'LLMサーバーが過負荷です ({status_phrase(status_code)})。'
-				f'モデル: {model_name}。時間をおいて再試行してください。'
+				f'The LLM provider is overloaded ({status_phrase(status_code)}). '
+				f'Model: {model_name}. Please retry after a short delay.'
 			)
 
 		if status_code is not None and status_code >= 500:
 			return (
-				f'LLMプロバイダで内部エラーが発生しました ({status_phrase(status_code)})。'
-				f'モデル: {model_name}。時間をおいて再試行するか、プロバイダのステータスを確認してください。'
+				f'The LLM provider returned an internal error ({status_phrase(status_code)}). '
+				f'Model: {model_name}. Retry later or check the provider status.'
 			)
 
 		detail = str(error).strip()
@@ -722,6 +722,6 @@ class AgentError:
 			detail = detail[:177] + '...'
 
 		return (
-			f'LLMプロバイダからエラー応答が返されました ({status_phrase(status_code)})。'
-			f'モデル: {model_name}。詳細: {detail}'
+			f'The LLM provider returned an error response ({status_phrase(status_code)}). '
+			f'Model: {model_name}. Details: {detail}'
 		)
