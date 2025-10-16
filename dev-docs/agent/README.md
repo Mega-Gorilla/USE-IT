@@ -145,16 +145,7 @@ print(f"使用トークン: {result.total_tokens}")
 
 ### Human-in-the-Loop モード
 
-`interactive_mode=True` を指定すると、LLMが提案したアクションは**実行前に人間の承認を経る**ようになります。標準ではコンソールUIが起動し、以下のオプションを選択できます：
-
-- `[a]` 実行を承認
-- `[r]` フィードバックを入力して再度アクション案を生成
-- `[s]` このステップの実行をスキップ（履歴には「スキップ済み」として記録）
-- `[c]` エージェント全体を停止
-
-> ℹ️ コンソールUIは [`questionary`](https://github.com/tmbo/questionary) に依存します。`pip install browser-use[cli]` で CLI 依存関係をインストールしておいてください。
-
-独自UIと統合したい場合は `approval_callback` を渡してください。コールバックは `(approved: bool, feedback: str | None)` または `ApprovalResult` を返します。例：
+`interactive_mode=True` を指定すると、LLMが提案したアクションは**実行前に人間の承認を経る**ようになります。CLI版は廃止されたため、インタラクティブ承認を有効にする場合は必ず `approval_callback` を渡してください。公式GUIではダイアログ越しに承認フローを処理しますが、プログラムから利用する際は以下のようにコールバックを実装します：
 
 ```python
 from browser_use.agent.views import ApprovalResult

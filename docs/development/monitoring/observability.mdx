@@ -65,9 +65,16 @@ Browser Use can sync your agent runs to the cloud for easy viewing and sharing. 
 
 ```bash
 # Authenticate once to enable cloud sync for all future runs
-browser-use auth
-# Or if using module directly:
-python -m browser_use.cli auth
+uv run python - <<'PY'
+import asyncio
+from browser_use import Agent
+
+async def main():
+    agent = Agent(task="cloud auth bootstrap")
+    await agent.authenticate_cloud_sync(show_instructions=True)
+
+asyncio.run(main())
+PY
 ```
 
 **Note**: Cloud sync is enabled by default. If you've disabled it, you can re-enable with `export BROWSER_USE_CLOUD_SYNC=true`.

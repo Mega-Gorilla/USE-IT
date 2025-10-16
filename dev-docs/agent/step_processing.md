@@ -615,10 +615,7 @@ flowchart TD
 | `ApprovalResult('skip')` または `(False, None)` | このステップをスキップ | `ActionResult` に「skipped」メッセージを記録し、ブラウザ操作を行わない |
 | `ApprovalResult('cancel')` | ユーザーが全体を停止 | `agent.stop()` を実行し、`InterruptedError` と同様に終了 |
 
-標準のコンソールUIでは `[a]`, `[r]`, `[s]`, `[c]` の4つの選択肢が提供されます。  
-独自のUIを組み合わせる場合は `approval_callback(step_info, model_output, browser_state)` を実装し、上記の戻り値を返してください。
-
-> ℹ️ 標準UIは [`questionary`](https://github.com/tmbo/questionary) に依存します。`pip install browser-use[cli]` で事前にインストールしておいてください。未導入の場合は実行時にエラーになります。
+CLI版は廃止されたため、インタラクティブ承認を利用する際は `approval_callback(step_info, model_output, browser_state)` を必ず実装してください。公式GUIではこのコールバックを内部で差し込み、承認ダイアログを表示します。
 
 ## Phase 3: 後処理
 
