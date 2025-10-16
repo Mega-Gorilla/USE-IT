@@ -3,9 +3,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, List
 
 from PySide6 import QtCore, QtGui, QtWidgets
 from dotenv import load_dotenv
@@ -27,6 +27,15 @@ from browser_use.llm.base import BaseChatModel
 class UserPreferences:
 	task: str
 	max_steps: int = 100
+
+
+@dataclass(slots=True)
+class TaskHistoryEntry:
+	task: str
+	status: str = '準備中'
+	started_at: QtCore.QDateTime = field(default_factory=QtCore.QDateTime.currentDateTime)
+	finished_at: QtCore.QDateTime | None = None
+	result_summary: str | None = None
 
 
 class LogEmitter(QtCore.QObject):
@@ -65,6 +74,8 @@ class AgentWorker(QtCore.QThread):
 		self._cancel_requested = False
 		self._loop: asyncio.AbstractEventLoop | None = None
 		self._agent: Agent[Any, Any] | None = None
+		self._raw_config: dict[str, Any] = CONFIG.load_config()
+		self._agent_config: AgentConfig = self._build_agent_config()
 
 	def run(self) -> None:  # noqa: D401
 		"""Qt thread entrypoint."""
@@ -111,18 +122,14 @@ class AgentWorker(QtCore.QThread):
 		if not task:
 			raise ValueError('タスク内容が空です。')
 
-		config = CONFIG.load_config()
-		llm = self._resolve_llm(config)
-		browser_profile = self._build_browser_profile(config)
+		current_config = CONFIG.load_config()
+		if current_config != self._raw_config:
+			self._raw_config = current_config
+			self._agent_config = self._build_agent_config()
 
-		config = AgentConfig(
-			task=task,
-			llm=llm,
-			browser_profile=browser_profile,
-			interactive_mode=False,
-			language=self._default_language(config),
-		)
-		agent = Agent(config=config)
+		self._agent_config.task = task
+
+		agent = Agent(config=self._agent_config)
 		self._agent = agent
 
 		async def on_step_end(agent_ref: Agent[Any, Any]) -> None:
@@ -150,12 +157,12 @@ class AgentWorker(QtCore.QThread):
 		except Exception as exc:
 			logging.getLogger(__name__).warning(f'クリーンアップエラー: {exc}')
 
-	def _default_language(self, config: dict[str, Any]) -> str:
-		agent_cfg = config.get('agent', {})
+	def _default_language(self) -> str:
+		agent_cfg = self._raw_config.get('agent', {})
 		return agent_cfg.get('language', 'en')
 
-	def _resolve_llm(self, config: dict[str, Any]) -> BaseChatModel:
-		llm_cfg = config.get('llm', {})
+	def _resolve_llm(self) -> BaseChatModel:
+		llm_cfg = self._raw_config.get('llm', {})
 		model_name = llm_cfg.get('model', '')
 
 		if not model_name:
@@ -186,8 +193,8 @@ class AgentWorker(QtCore.QThread):
 		key = api_key or CONFIG.OPENAI_API_KEY
 		return ChatOpenAI(model=model_name, api_key=_ensure_key(key, 'OpenAI'))
 
-	def _build_browser_profile(self, config: dict[str, Any]) -> BrowserProfile:
-		profile_cfg = config.get('browser_profile', {})
+	def _build_browser_profile(self) -> BrowserProfile:
+		profile_cfg = self._raw_config.get('browser_profile', {})
 		gui_profile_dir = CONFIG.BROWSER_USE_PROFILES_DIR / 'gui'
 		gui_profile_dir.mkdir(parents=True, exist_ok=True)
 
@@ -205,6 +212,39 @@ class AgentWorker(QtCore.QThread):
 
 		return BrowserProfile(**filtered)
 
+	def _build_agent_config(self) -> AgentConfig:
+		llm = self._resolve_llm()
+		browser_profile = self._build_browser_profile()
+		return AgentConfig(
+			task=self._preferences.task,
+			llm=llm,
+			browser_profile=browser_profile,
+			interactive_mode=False,
+			language=self._default_language(),
+		)
+
+	@property
+	def agent_config(self) -> AgentConfig:
+		return self._agent_config
+
+	@property
+	def llm_summary(self) -> dict[str, Any]:
+		llm_cfg = self._raw_config.get('llm', {})
+		return {
+			'model': self._agent_config.llm.model if self._agent_config.llm else llm_cfg.get('model', '不明'),
+			'temperature': llm_cfg.get('temperature', '—'),
+			'use_thinking': self._agent_config.use_thinking,
+		}
+
+	@property
+	def browser_summary(self) -> dict[str, Any]:
+		profile_cfg = self._raw_config.get('browser_profile', {})
+		return {
+			'headless': profile_cfg.get('headless', False),
+			'keep_alive': profile_cfg.get('keep_alive', True),
+			'proxy': profile_cfg.get('proxy'),
+		}
+
 
 class MainWindow(QtWidgets.QMainWindow):
 	def __init__(self) -> None:
@@ -218,6 +258,8 @@ class MainWindow(QtWidgets.QMainWindow):
 		self._log_handler.signal.connect(self._append_log)
 		self._handler_attached = False
 		self._closing_after_stop = False
+		self._history_entries: List[TaskHistoryEntry] = []
+		self._current_history_index: int | None = None
 
 		self._setup_ui()
 		self._setup_menu()
@@ -225,9 +267,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
 	def _setup_ui(self) -> None:
 		central = QtWidgets.QWidget()
-		layout = QtWidgets.QVBoxLayout(central)
+		main_layout = QtWidgets.QVBoxLayout(central)
 
-		task_label = QtWidgets.QLabel('タスクの内容')
+		input_group = QtWidgets.QGroupBox('タスク入力')
+		input_layout = QtWidgets.QVBoxLayout(input_group)
+
 		self.task_input = QtWidgets.QPlainTextEdit()
 		self.task_input.setPlaceholderText('例: Amazonで最新のノイズキャンセリングヘッドフォンを探してレポートしてください')
 
@@ -241,16 +285,81 @@ class MainWindow(QtWidgets.QMainWindow):
 		controls_layout.addWidget(self.clear_button)
 		controls_layout.addStretch(1)
 
-		log_label = QtWidgets.QLabel('ログ')
-		self.log_view = QtWidgets.QPlainTextEdit()
-		self.log_view.setReadOnly(True)
-		self.log_view.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
+		input_layout.addWidget(self.task_input)
+		input_layout.addLayout(controls_layout)
 
-		layout.addWidget(task_label)
-		layout.addWidget(self.task_input)
-		layout.addLayout(controls_layout)
-		layout.addWidget(log_label)
-		layout.addWidget(self.log_view, stretch=1)
+		main_layout.addWidget(input_group)
+
+		splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
+
+		# Left pane: Task history
+		left_panel = QtWidgets.QWidget()
+		left_layout = QtWidgets.QVBoxLayout(left_panel)
+
+		history_group = QtWidgets.QGroupBox('タスク履歴')
+		history_layout = QtWidgets.QVBoxLayout(history_group)
+		self.history_list = QtWidgets.QListWidget()
+		self.history_list.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
+		history_layout.addWidget(self.history_list)
+		left_layout.addWidget(history_group)
+		left_layout.addStretch(1)
+
+		# Right pane: Info panels + log tabs
+		right_panel = QtWidgets.QWidget()
+		right_layout = QtWidgets.QVBoxLayout(right_panel)
+
+		info_layout = QtWidgets.QHBoxLayout()
+
+		browser_group = QtWidgets.QGroupBox('ブラウザ情報')
+		browser_form = QtWidgets.QFormLayout(browser_group)
+		self.browser_status_label = QtWidgets.QLabel('未接続')
+		self.browser_mode_label = QtWidgets.QLabel('表示')
+		self.browser_keep_alive_label = QtWidgets.QLabel('有効')
+		self.browser_proxy_label = QtWidgets.QLabel('なし')
+		browser_form.addRow('ステータス', self.browser_status_label)
+		browser_form.addRow('モード', self.browser_mode_label)
+		browser_form.addRow('Keep-Alive', self.browser_keep_alive_label)
+		browser_form.addRow('プロキシ', self.browser_proxy_label)
+
+		model_group = QtWidgets.QGroupBox('モデル情報')
+		model_form = QtWidgets.QFormLayout(model_group)
+		self.model_name_label = QtWidgets.QLabel('—')
+		self.model_temperature_label = QtWidgets.QLabel('—')
+		self.model_thinking_label = QtWidgets.QLabel('—')
+		model_form.addRow('モデル', self.model_name_label)
+		model_form.addRow('Temperature', self.model_temperature_label)
+		model_form.addRow('Thinking', self.model_thinking_label)
+
+		info_layout.addWidget(browser_group)
+		info_layout.addWidget(model_group)
+
+		right_layout.addLayout(info_layout)
+
+		log_group = QtWidgets.QGroupBox('ログ')
+		log_layout = QtWidgets.QVBoxLayout(log_group)
+		self.log_tabs = QtWidgets.QTabWidget()
+		self.main_log = QtWidgets.QTextEdit()
+		self.main_log.setReadOnly(True)
+		self.main_log.setLineWrapMode(QtWidgets.QTextEdit.LineWrapMode.NoWrap)
+		self.event_log = QtWidgets.QTextEdit()
+		self.event_log.setReadOnly(True)
+		self.event_log.setLineWrapMode(QtWidgets.QTextEdit.LineWrapMode.NoWrap)
+		self.cdp_log = QtWidgets.QTextEdit()
+		self.cdp_log.setReadOnly(True)
+		self.cdp_log.setLineWrapMode(QtWidgets.QTextEdit.LineWrapMode.NoWrap)
+		self.log_tabs.addTab(self.main_log, 'メイン')
+		self.log_tabs.addTab(self.event_log, 'イベント')
+		self.log_tabs.addTab(self.cdp_log, 'CDP')
+		log_layout.addWidget(self.log_tabs)
+
+		right_layout.addWidget(log_group, stretch=1)
+
+		splitter.addWidget(left_panel)
+		splitter.addWidget(right_panel)
+		splitter.setStretchFactor(0, 1)
+		splitter.setStretchFactor(1, 3)
+
+		main_layout.addWidget(splitter, stretch=1)
 
 		self.setCentralWidget(central)
 
@@ -263,7 +372,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
 		self.run_button.clicked.connect(self._start_execution)
 		self.stop_button.clicked.connect(self._stop_execution)
-		self.clear_button.clicked.connect(self.log_view.clear)
+		self.history_list.itemSelectionChanged.connect(self._on_history_selection_changed)
+		self.clear_button.clicked.connect(self._clear_logs)
 
 	def _setup_menu(self) -> None:
 		menu_bar = self.menuBar()
@@ -288,10 +398,17 @@ class MainWindow(QtWidgets.QMainWindow):
 		)
 
 	def _append_log(self, message: str) -> None:
-		self.log_view.appendPlainText(message)
-		cursor = self.log_view.textCursor()
+		target = self.main_log
+		log_upper = message.upper()
+		if '[EVENT]' in log_upper:
+			target = self.event_log
+		elif '[CDP]' in log_upper:
+			target = self.cdp_log
+
+		target.appendPlainText(message)
+		cursor = target.textCursor()
 		cursor.movePosition(QtGui.QTextCursor.End)
-		self.log_view.setTextCursor(cursor)
+		target.setTextCursor(cursor)
 
 	def _start_execution(self) -> None:
 		task = self.task_input.toPlainText().strip()
@@ -302,7 +419,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
 		preferences = UserPreferences(task=task)
 		self._worker = AgentWorker(preferences)
+		self._update_info_panels_from_worker(self._worker)
 		self._bind_worker_signals(self._worker)
+		self._add_history_entry(task)
+		self._set_browser_status('実行中')
+		self._closing_after_stop = False
 
 		root_logger = logging.getLogger()
 		if not any(handler is self._log_handler for handler in root_logger.handlers):
@@ -324,6 +445,7 @@ class MainWindow(QtWidgets.QMainWindow):
 			return
 
 		self._worker.request_cancel()
+		self._set_browser_status('停止要求中')
 		self._update_status('停止要求を送信しました…')
 
 	def _update_status(self, message: str) -> None:
@@ -349,6 +471,8 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.progress_bar.setVisible(False)
 		self._update_controls(running=False)
 		self._worker = None
+		self._set_browser_status('未接続')
+		self._finalize_history_entry(success, message)
 
 		if success:
 			self._update_status(message)
@@ -378,7 +502,7 @@ class MainWindow(QtWidgets.QMainWindow):
 				'タスクが実行中です。停止して終了しますか？',
 				QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
 				QtWidgets.QMessageBox.StandardButton.No,
-				)
+			)
 
 			if reply == QtWidgets.QMessageBox.StandardButton.Yes:
 				self._stop_execution()
@@ -394,6 +518,71 @@ class MainWindow(QtWidgets.QMainWindow):
 			return
 
 		event.accept()
+
+	def _clear_logs(self) -> None:
+		for edit in (self.main_log, self.event_log, self.cdp_log):
+			edit.clear()
+
+	def _add_history_entry(self, task: str) -> None:
+		entry = TaskHistoryEntry(task=task, status='実行中')
+		self._history_entries.insert(0, entry)
+		self._current_history_index = 0
+		self._refresh_history_list()
+		self.history_list.setCurrentRow(0)
+
+	def _refresh_history_list(self) -> None:
+		self.history_list.blockSignals(True)
+		self.history_list.clear()
+		for entry in self._history_entries:
+			start_time = entry.started_at.toString('HH:mm:ss')
+			self.history_list.addItem(f'[{entry.status}] {start_time}  {entry.task}')
+		self.history_list.blockSignals(False)
+
+	def _finalize_history_entry(self, success: bool, message: str) -> None:
+		if self._current_history_index is None:
+			return
+		try:
+			entry = self._history_entries[self._current_history_index]
+		except IndexError:
+			return
+
+		entry.finished_at = QtCore.QDateTime.currentDateTime()
+		entry.result_summary = message
+		if success:
+			entry.status = '完了'
+		elif 'キャンセル' in message:
+			entry.status = 'キャンセル'
+		else:
+			entry.status = '失敗'
+		self._refresh_history_list()
+		if self._current_history_index is not None:
+			self.history_list.setCurrentRow(self._current_history_index)
+
+	def _on_history_selection_changed(self) -> None:
+		row = self.history_list.currentRow()
+		if row < 0 or row >= len(self._history_entries):
+			return
+		entry = self._history_entries[row]
+		self._current_history_index = row
+		summary = entry.result_summary or entry.status
+		self._update_status(f'[{entry.status}] {summary}')
+
+	def _update_info_panels_from_worker(self, worker: AgentWorker) -> None:
+		llm_summary = worker.llm_summary
+		browser_summary = worker.browser_summary
+
+		self.model_name_label.setText(str(llm_summary.get('model', '—')))
+		self.model_temperature_label.setText(str(llm_summary.get('temperature', '—')))
+		self.model_thinking_label.setText('有効' if llm_summary.get('use_thinking') else '無効')
+
+		headless = browser_summary.get('headless', False)
+		self.browser_mode_label.setText('ヘッドレス' if headless else '表示')
+		self.browser_keep_alive_label.setText('有効' if browser_summary.get('keep_alive', True) else '無効')
+		proxy = browser_summary.get('proxy')
+		self.browser_proxy_label.setText(str(proxy) if proxy else 'なし')
+
+	def _set_browser_status(self, status: str) -> None:
+		self.browser_status_label.setText(status)
 
 
 def main() -> None:
