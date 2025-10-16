@@ -162,6 +162,29 @@ async def test_handle_step_error_model_provider_shows_user_message(test_logger, 
 
 
 @pytest.mark.asyncio
+async def test_handle_step_error_rate_limit_message(test_logger, caplog):
+	agent = build_agent(test_logger)
+	executor = StepExecutor(agent)
+
+	error = ModelProviderError(
+		'429 Too Many Requests',
+		status_code=429,
+		model='mock-model',
+	)
+
+	with caplog.at_level(logging.DEBUG, logger='browser_use.tests.unit'):
+		await executor.handle_step_error(error)
+
+	user_message = agent.state.last_result[0].error
+	assert 'rate limit' in user_message.lower()
+	assert 'retry' in user_message.lower()
+	assert '{' not in user_message
+
+	error_logs = [rec.getMessage() for rec in caplog.records if rec.levelno == logging.ERROR]
+	assert any('429 Too Many Requests' in msg for msg in error_logs)
+
+
+@pytest.mark.asyncio
 async def test_force_done_after_last_step_switches_output(test_logger):
 	agent = build_agent(test_logger)
 	executor = StepExecutor(agent)
