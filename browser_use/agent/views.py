@@ -25,6 +25,7 @@ from browser_use.dom.views import DEFAULT_INCLUDE_ATTRIBUTES, DOMInteractedEleme
 # from browser_use.dom.views import SelectorMap
 from browser_use.filesystem.file_system import FileSystemState
 from browser_use.llm.base import BaseChatModel
+from browser_use.llm.exceptions import ModelProviderError
 from browser_use.tokens.views import UsageSummary
 from browser_use.tools.registry.views import ActionModel
 
@@ -681,3 +682,46 @@ class AgentError:
 		if include_trace:
 			return f'{str(error)}\nStacktrace:\n{traceback.format_exc()}'
 		return f'{str(error)}'
+
+	@staticmethod
+	def format_model_provider_error(error: ModelProviderError, model: str | None = None) -> str:
+		"""Return a concise, user-facing message for model provider failures."""
+
+		def status_phrase(status_code: int | None) -> str:
+			if status_code is None:
+				return '不明なステータス'
+			status_map = {
+				429: '429 Too Many Requests',
+				503: '503 Service Unavailable',
+			}
+			return status_map.get(status_code, str(status_code))
+
+		model_name = model or getattr(error, 'model', None) or '不明なモデル'
+		status_code = getattr(error, 'status_code', None)
+
+		if status_code == 429:
+			return (
+				f'The LLM request hit a rate limit ({status_phrase(status_code)}). '
+				f'Model: {model_name}. Please wait a moment and retry.'
+			)
+
+		if status_code == 503:
+			return (
+				f'The LLM provider is overloaded ({status_phrase(status_code)}). '
+				f'Model: {model_name}. Please retry after a short delay.'
+			)
+
+		if status_code is not None and status_code >= 500:
+			return (
+				f'The LLM provider returned an internal error ({status_phrase(status_code)}). '
+				f'Model: {model_name}. Retry later or check the provider status.'
+			)
+
+		detail = str(error).strip()
+		if len(detail) > 180:
+			detail = detail[:177] + '...'
+
+		return (
+			f'The LLM provider returned an error response ({status_phrase(status_code)}). '
+			f'Model: {model_name}. Details: {detail}'
+		)
