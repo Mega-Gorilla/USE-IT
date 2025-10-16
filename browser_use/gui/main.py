@@ -103,8 +103,8 @@ class AgentWorker(QtCore.QThread):
 		agent = self._agent
 		loop = self._loop
 
-			if agent is not None and loop is not None:
-				loop.call_soon_threadsafe(agent.stop)
+		if agent is not None and loop is not None:
+			loop.call_soon_threadsafe(agent.stop)
 
 	async def _execute(self) -> None:
 		task = self._preferences.task.strip()
@@ -217,6 +217,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		self._log_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
 		self._log_handler.signal.connect(self._append_log)
 		self._handler_attached = False
+		self._closing_after_stop = False
 
 		self._setup_ui()
 		self._setup_menu()
@@ -360,6 +361,10 @@ class MainWindow(QtWidgets.QMainWindow):
 		else:
 			QtWidgets.QMessageBox.critical(self, 'エラー', message)
 
+		if self._closing_after_stop:
+			self._closing_after_stop = False
+			QtCore.QTimer.singleShot(0, self.close)
+
 	def _update_controls(self, running: bool) -> None:
 		self.run_button.setEnabled(not running)
 		self.stop_button.setEnabled(running)
@@ -373,17 +378,22 @@ class MainWindow(QtWidgets.QMainWindow):
 				'タスクが実行中です。停止して終了しますか？',
 				QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
 				QtWidgets.QMessageBox.StandardButton.No,
-			)
+				)
 
 			if reply == QtWidgets.QMessageBox.StandardButton.Yes:
 				self._stop_execution()
+				self._closing_after_stop = True
+				self.run_button.setEnabled(False)
+				self.stop_button.setEnabled(False)
+				self.task_input.setReadOnly(True)
+				self._update_status('停止処理中...')
 				event.ignore()
 				return
 
 			event.ignore()
 			return
 
-		super().closeEvent(event)
+		event.accept()
 
 
 def main() -> None:
