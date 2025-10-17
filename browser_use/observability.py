@@ -19,9 +19,6 @@ from functools import wraps
 from typing import Any, Literal, TypeVar, cast
 
 logger = logging.getLogger(__name__)
-from dotenv import load_dotenv
-
-load_dotenv()
 
 # Type definitions
 F = TypeVar('F', bound=Callable[..., Any])

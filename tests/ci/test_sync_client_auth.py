@@ -10,12 +10,7 @@ from pathlib import Path
 import anyio
 import httpx
 import pytest
-from dotenv import load_dotenv
 from pytest_httpserver import HTTPServer
-
-# Load environment variables before any imports
-load_dotenv()
-
 
 from browser_use.agent.cloud_events import CreateAgentSessionEvent, CreateAgentTaskEvent
 from browser_use.sync.auth import TEMP_USER_ID, DeviceAuthClient
