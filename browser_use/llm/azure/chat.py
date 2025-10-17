@@ -43,6 +43,9 @@ class ChatAzureOpenAI(ChatOpenAILike):
 		return 'azure'
 
 	def __post_init__(self) -> None:
+		"""
+		Populate Azure credentials from config/environment and ensure required fields exist.
+		"""
 		if not self.api_key:
 			self.api_key = (
 				CONFIG.AZURE_OPENAI_KEY
@@ -64,6 +67,8 @@ class ChatAzureOpenAI(ChatOpenAILike):
 				message=f"Azure OpenAI configuration missing: {', '.join(missing)}.",
 				model=str(self.model),
 			)
+
+		super().__post_init__()
 
 	def _get_client_params(self) -> dict[str, Any]:
 		_client_params: dict[str, Any] = {}
