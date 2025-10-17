@@ -1,0 +1,121 @@
+---
+title: "Migrate from .env to config.yaml"
+description: "Step-by-step guide for migrating legacy Browser Use installations to the YAML-based configuration."
+icon: "repeat"
+---
+
+## Why migrate?
+
+Older versions of Browser Use relied on a mix of `.env` files, environment variables, and `~/.config/browseruse/config.json`. The new configuration flow consolidates everything into a single `config.yaml`, while still letting you override secrets with real environment variables.
+
+Moving to the YAML setup gives you:
+
+- **A single source of truth** that is easy to read and diff.
+- **Clear defaults** that ship with the repository.
+- **Explicit secret handling** without silently loading `.env`.
+
+This guide walks you through the migration in four quick steps.
+
+---
+
+## 1. Create your `config.yaml`
+
+From the project root copy the example file and tweak values as needed:
+
+```bash copy
+cp config.yaml.example config.yaml
+```
+
+Open `config.yaml` and adjust any defaults you rely on (browser profile paths, logging level, proxy, etc.). You can leave API keys as `${ENV_VAR}` placeholders if you prefer to inject secrets at runtime.
+
+---
+
+## 2. Move API keys & secrets
+
+If you previously stored keys in `.env`, export them in your shell (recommended) or paste them directly into the YAML file.
+
+### Option A — environment variables (preferred)
+
+```bash copy
+export OPENAI_API_KEY=sk-***********************
+export GOOGLE_API_KEY=AIza************************
+# Add other providers as needed
+```
+
+`config.yaml` already references these variables under `llm.api_keys.*`, so the loader will resolve them automatically.
+
+### Option B — inline YAML (not recommended for shared repos)
+
+```yaml copy
+llm:
+  api_keys:
+    openai: sk-***********************
+    google: AIza************************
+```
+
+> ⚠️  Keep in mind that committing raw secrets to Git is strongly discouraged.
+
+---
+
+## 3. Translate browser settings (if any)
+
+If you had custom values inside `~/.config/browseruse/config.json`, replicate them under the `browser` block. Example:
+
+```json title="Old config.json snippet"
+{
+  "browser": {
+    "headless": true,
+    "user_data_dir": "./profiles/team",
+    "downloads_path": "./downloads"
+  }
+}
+```
+
+becomes
+
+```yaml title="New config.yaml snippet"
+browser:
+  headless: true
+  user_data_dir: ./profiles/team
+  downloads_path: ./downloads
+```
+
+You can override additional values such as allowed domains or proxy settings in the same section.
+
+---
+
+## 4. (Optional) Clean up legacy files
+
+Once you confirm your agents run correctly, remove the old configuration sources to avoid confusion:
+
+```bash copy
+rm .env .env.example          # No longer auto-loaded
+rm ~/.config/browseruse/config.json
+```
+
+If you keep a `.env` for other tooling, remember Browser Use will not auto-load it anymore. Export the variables manually or use your process manager to inject them.
+
+---
+
+## Frequently asked questions
+
+### Do I have to use `config.yaml`?
+
+Yes—core settings now live there. You can still override values with environment variables at runtime, but the YAML file is required for defaults and path configuration.
+
+### Can I store multiple profiles or environments?
+
+You can maintain several YAML files (e.g., `config.dev.yaml`, `config.prod.yaml`) and point to one with the `BROWSER_USE_CONFIG_PATH` environment variable before launching Browser Use.
+
+### What happens to the GUI / MCP?
+
+Both components read from `config.yaml` through the shared loader. No additional steps are required beyond the migration above.
+
+---
+
+## Next steps
+
+- Verify your migration by running a quick smoke test:  
+  `uv run --with pytest==8.3.5 pytest tests/ci/test_config.py`
+- Review the [Phase 3 checklist](/phase3-plan) for remaining cleanup tasks.
+- Report any edge cases in the issue tracker so we can refine this guide.

@@ -11,6 +11,7 @@ from google.genai import types
 from google.genai.types import MediaModality
 from pydantic import BaseModel
 
+from browser_use.config import CONFIG
 from browser_use.llm.base import BaseChatModel
 from browser_use.llm.exceptions import ModelProviderError
 from browser_use.llm.google.serializer import GoogleMessageSerializer
@@ -103,6 +104,22 @@ class ChatGoogle(BaseChatModel):
 	def logger(self) -> logging.Logger:
 		"""Get logger for this chat instance"""
 		return logging.getLogger(f'browser_use.llm.google.{self.model}')
+
+	def __post_init__(self) -> None:
+		"""Populate credentials from config and validate Gemini configuration."""
+		if not self.api_key and not self.credentials and not self.vertexai:
+			configured_key = CONFIG.GOOGLE_API_KEY
+			if configured_key:
+				self.api_key = configured_key
+
+		if not (self.api_key or self.credentials or self.vertexai):
+			raise ModelProviderError(
+				message=(
+					'Google API key is missing. Add `llm.api_keys.google` to config.yaml, '
+					'set the `GOOGLE_API_KEY` environment variable, or provide Vertex AI credentials.'
+				),
+				model=str(self.model),
+			)
 
 	def _get_client_params(self) -> dict[str, Any]:
 		"""Prepare client parameters dictionary."""

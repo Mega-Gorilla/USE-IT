@@ -45,3 +45,13 @@ For common development tasks
 ```bash
 uv run examples/simple.py
 ```
+
+## Use the GUI
+
+Launch the desktop helper with:
+
+```bash
+uv run browseruse-gui
+```
+
+Changes you make in the GUI are written straight to `config.yaml` (project-local or the file under `~/.config/browseruse/`). Keep that YAML checked into version control only if it does not contain secrets—otherwise manage keys via environment variables before starting the GUI.

@@ -183,11 +183,21 @@ def _resolved_paths(settings: dict[str, Any]) -> dict[str, Path | str]:
 		paths_settings.get('default_user_data_dir') or (profiles_dir / 'default')
 	).expanduser()
 
-	for directory in (config_dir, profiles_dir, downloads_dir, extensions_dir):
+	def _ensure_directory(directory: Path) -> None:
 		try:
 			directory.mkdir(parents=True, exist_ok=True)
+			if os.name != 'nt':
+				try:
+					directory.chmod(0o700)
+				except PermissionError:
+					logger.warning(
+						'Could not set permissions on %s; please ensure it is not world-readable.', directory
+					)
 		except Exception as exc:
-			logger.warning(f'Failed to create directory {directory}: {exc}')
+			logger.warning('Failed to create directory %s: %s', directory, exc)
+
+	for directory in (config_dir, profiles_dir, downloads_dir, extensions_dir):
+		_ensure_directory(directory)
 
 	windows_font_dir = os.getenv('WIN_FONT_DIR') or paths_settings.get('windows_font_dir') or 'C:\\Windows\\Fonts'
 
