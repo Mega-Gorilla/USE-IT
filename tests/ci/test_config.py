@@ -3,6 +3,8 @@
 import os
 from pathlib import Path
 
+import pytest
+
 from browser_use.config import CONFIG, load_browser_use_config, load_config_yaml
 
 
@@ -210,6 +212,17 @@ class TestLazyConfig:
 		CONFIG.reload()
 
 		assert CONFIG.BROWSER_USE_LOGGING_LEVEL == 'debug'
+
+	@pytest.mark.skipif(os.name == 'nt', reason='POSIX permission check only')
+	def test_config_directories_have_secure_permissions(self, tmp_path, monkeypatch):
+		"""Test that config directories are created with 0700 permissions on POSIX systems."""
+		home = tmp_path / 'home'
+		monkeypatch.setenv('HOME', str(home))
+		monkeypatch.setenv('USERPROFILE', str(home))
+		monkeypatch.delenv('BROWSER_USE_CONFIG_DIR', raising=False)
+		CONFIG.reload()
+		config_dir = CONFIG.BROWSER_USE_CONFIG_DIR
+		assert (config_dir.stat().st_mode & 0o777) == 0o700
 
 	def test_config_path_resolution_priority(self, tmp_path, monkeypatch):
 		"""Ensure config resolution prefers explicit path, then cwd, then user config."""
