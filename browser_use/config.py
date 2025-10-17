@@ -129,13 +129,19 @@ def _load_config_data() -> tuple[dict[str, Any], Path | None]:
 			with source_path.open('r', encoding='utf-8') as handle:
 				loaded = yaml.safe_load(handle) or {}
 				if not isinstance(loaded, dict):
-					raise ConfigLoadError(f'Config file must contain a mapping at top level: {source_path}')
+					raise ConfigLoadError(
+						f'Config file {source_path} must contain a mapping at the top level. '
+						'Please verify the YAML structure.'
+					)
 				config = _deep_merge(config, loaded)
 		except FileNotFoundError:
 			logger.debug('Config file %s disappeared during load, falling back to defaults', source_path)
 			source_path = None
 		except Exception as exc:
-			raise ConfigLoadError(f'Failed to read config file at {source_path}: {exc}') from exc
+			raise ConfigLoadError(
+				f'Failed to read config file at {source_path}: {exc}\n'
+				'Check the YAML syntax and file permissions.'
+			) from exc
 
 	config = _expand_env_vars(config)
 	return config, source_path
@@ -178,7 +184,10 @@ def _resolved_paths(settings: dict[str, Any]) -> dict[str, Path | str]:
 	).expanduser()
 
 	for directory in (config_dir, profiles_dir, downloads_dir, extensions_dir):
-		directory.mkdir(parents=True, exist_ok=True)
+		try:
+			directory.mkdir(parents=True, exist_ok=True)
+		except Exception as exc:
+			logger.warning(f'Failed to create directory {directory}: {exc}')
 
 	windows_font_dir = os.getenv('WIN_FONT_DIR') or paths_settings.get('windows_font_dir') or 'C:\\Windows\\Fonts'
 
@@ -488,26 +497,27 @@ def _apply_env_overrides(config: dict[str, Any]) -> dict[str, Any]:
 		'password': os.getenv('BROWSER_USE_PROXY_PASSWORD'),
 	}
 
-	proxy_override: dict[str, Any] = {}
+	existing_proxy: dict[str, Any] = dict(result['browser_profile'].get('proxy') or {})
 	if proxy_env['server']:
-		proxy_override['server'] = proxy_env['server']
+		existing_proxy['server'] = proxy_env['server']
 	if proxy_env['bypass']:
 		bypass_entries = [entry.strip() for entry in proxy_env['bypass'].split(',') if entry.strip()]
 		if bypass_entries:
-			proxy_override['bypass'] = ','.join(bypass_entries)
+			existing_proxy['bypass'] = ','.join(bypass_entries)
 	if proxy_env['username']:
-		proxy_override['username'] = proxy_env['username']
+		existing_proxy['username'] = proxy_env['username']
 	if proxy_env['password']:
-		proxy_override['password'] = proxy_env['password']
+		existing_proxy['password'] = proxy_env['password']
 
-	if proxy_override:
-		result['browser_profile']['proxy'] = proxy_override
+	if existing_proxy:
+		result['browser_profile']['proxy'] = existing_proxy
 
+	llm_section = result.setdefault('llm', {})
 	if os.getenv('OPENAI_API_KEY'):
-		result.setdefault('llm', {})['api_key'] = os.getenv('OPENAI_API_KEY', '')
+		llm_section['api_key'] = os.getenv('OPENAI_API_KEY', '')
 
 	if os.getenv('BROWSER_USE_LLM_MODEL'):
-		result.setdefault('llm', {})['model'] = os.getenv('BROWSER_USE_LLM_MODEL', '')
+		llm_section['model'] = os.getenv('BROWSER_USE_LLM_MODEL', '')
 
 	return result
 

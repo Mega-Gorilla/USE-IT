@@ -1,8 +1,9 @@
 """Tests for the YAML-backed configuration system."""
 
 import os
+from pathlib import Path
 
-from browser_use.config import CONFIG, load_config_yaml
+from browser_use.config import CONFIG, load_browser_use_config, load_config_yaml
 
 
 class TestLazyConfig:
@@ -137,4 +138,94 @@ class TestLazyConfig:
 				os.environ.pop('BROWSER_USE_CONFIG_PATH', None)
 			else:
 				os.environ['BROWSER_USE_CONFIG_PATH'] = original_config_path
+			CONFIG.reload()
+
+	def test_proxy_env_vars_merge(self, tmp_path):
+		"""Proxy environment variables should merge with existing config values."""
+		config_path = tmp_path / 'config-with-proxy.yaml'
+		config_path.write_text(
+			'browser:\n  proxy:\n    server: http://config.example.com:8080\n    username: config-user\n',
+			encoding='utf-8',
+		)
+
+		original_config_path = os.environ.get('BROWSER_USE_CONFIG_PATH')
+		original_proxy_env = {
+			'BROWSER_USE_PROXY_URL': os.environ.get('BROWSER_USE_PROXY_URL'),
+			'BROWSER_USE_PROXY_USERNAME': os.environ.get('BROWSER_USE_PROXY_USERNAME'),
+			'BROWSER_USE_PROXY_PASSWORD': os.environ.get('BROWSER_USE_PROXY_PASSWORD'),
+		}
+		try:
+			os.environ['BROWSER_USE_CONFIG_PATH'] = str(config_path)
+			CONFIG.reload()
+
+			initial_config = load_browser_use_config()
+			assert initial_config['browser_profile']['proxy']['server'] == 'http://config.example.com:8080'
+			assert initial_config['browser_profile']['proxy']['username'] == 'config-user'
+			assert 'password' not in initial_config['browser_profile']['proxy']
+
+			os.environ['BROWSER_USE_PROXY_PASSWORD'] = 'env-secret'
+			updated_config = load_browser_use_config(reload=True)
+			assert updated_config['browser_profile']['proxy']['server'] == 'http://config.example.com:8080'
+			assert updated_config['browser_profile']['proxy']['username'] == 'config-user'
+			assert updated_config['browser_profile']['proxy']['password'] == 'env-secret'
+		finally:
+			if original_config_path is None:
+				os.environ.pop('BROWSER_USE_CONFIG_PATH', None)
+			else:
+				os.environ['BROWSER_USE_CONFIG_PATH'] = original_config_path
+			for key, value in original_proxy_env.items():
+				if value is None:
+					os.environ.pop(key, None)
+				else:
+					os.environ[key] = value
+			CONFIG.reload()
+
+	def test_config_path_resolution_priority(self, tmp_path, monkeypatch):
+		"""Ensure config resolution prefers explicit path, then cwd, then user config."""
+		workspace = tmp_path / 'workspace'
+		workspace.mkdir()
+		monkeypatch.chdir(workspace)
+
+		home_dir = tmp_path / 'home'
+		home_dir.mkdir()
+		monkeypatch.setenv('HOME', str(home_dir))
+		monkeypatch.setenv('USERPROFILE', str(home_dir))
+
+		# Prepare user config (lowest priority)
+		user_config = home_dir / '.config' / 'browseruse' / 'config.yaml'
+		user_config.parent.mkdir(parents=True, exist_ok=True)
+		user_config.write_text('logging:\n  level: warning\n', encoding='utf-8')
+
+		# Prepare project config (middle priority)
+		project_config = workspace / 'config.yaml'
+		project_config.write_text('logging:\n  level: info\n', encoding='utf-8')
+
+		# Prepare explicit config (highest priority)
+		explicit_config = tmp_path / 'explicit-config.yaml'
+		explicit_config.write_text('logging:\n  level: debug\n', encoding='utf-8')
+
+		original_config_path = os.environ.get('BROWSER_USE_CONFIG_PATH')
+		try:
+			# Highest priority: explicit env path
+			os.environ['BROWSER_USE_CONFIG_PATH'] = str(explicit_config)
+			CONFIG.reload()
+			config = load_config_yaml()
+			assert config['logging']['level'] == 'debug'
+
+			# Remove explicit override -> should use project config
+			os.environ.pop('BROWSER_USE_CONFIG_PATH', None)
+			CONFIG.reload()
+			config = load_config_yaml(reload=True)
+			assert config['logging']['level'] == 'info'
+
+			# Remove project config -> should fall back to user config
+			project_config.unlink()
+			CONFIG.reload()
+			config = load_config_yaml(reload=True)
+			assert config['logging']['level'] == 'warning'
+		finally:
+			if original_config_path is not None:
+				os.environ['BROWSER_USE_CONFIG_PATH'] = original_config_path
+			else:
+				os.environ.pop('BROWSER_USE_CONFIG_PATH', None)
 			CONFIG.reload()
