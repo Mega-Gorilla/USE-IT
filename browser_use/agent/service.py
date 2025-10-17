@@ -11,14 +11,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Generic, Literal, TypeVar
 
-from dotenv import load_dotenv
-
 from browser_use.llm.base import BaseChatModel
 from browser_use.llm.google.chat import ChatGoogle
 from browser_use.llm.messages import ContentPartImageParam, ContentPartTextParam
 from browser_use.tokens.service import TokenCost
-
-load_dotenv()
 
 from bubus import EventBus
 from uuid_extensions import uuid7str

@@ -4,7 +4,6 @@ import logging
 import sys
 
 from PySide6 import QtCore, QtGui, QtWidgets
-from dotenv import load_dotenv
 
 from browser_use.gui.worker import AgentWorker, QtLogHandler, UserPreferences
 from browser_use.gui.widgets import (
@@ -13,8 +12,6 @@ from browser_use.gui.widgets import (
 	TaskHistoryEntry,
 	TaskInputPanel,
 )
-
-load_dotenv()
 
 
 class MainWindow(QtWidgets.QMainWindow):
