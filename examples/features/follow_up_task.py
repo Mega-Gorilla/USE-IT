@@ -1,8 +1,6 @@
-from dotenv import load_dotenv
 
 from browser_use import Agent, Browser
 
-load_dotenv()
 
 import asyncio
 

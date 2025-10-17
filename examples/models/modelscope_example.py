@@ -7,12 +7,10 @@ Simple try of the agent.
 import asyncio
 import os
 
-from dotenv import load_dotenv
 
 from browser_use import Agent, ChatOpenAI
 
 # dotenv
-load_dotenv()
 
 api_key = os.getenv('MODELSCOPE_API_KEY', '')
 if not api_key:

@@ -12,8 +12,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from dotenv import load_dotenv
-
 from browser_use import Agent, ChatGoogle
 from browser_use.agent.config import AgentConfig
 from browser_use.config import CONFIG
@@ -21,8 +19,6 @@ from browser_use.config import CONFIG
 
 def main() -> None:
 	"""Run a manual agent task if API credentials are configured."""
-	load_dotenv()
-
 	if not CONFIG.GOOGLE_API_KEY or 'your-google-api-key' in CONFIG.GOOGLE_API_KEY:
 		print('Skip manual agent run: GOOGLE_API_KEY is not configured.')
 		return
