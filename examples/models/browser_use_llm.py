@@ -9,12 +9,10 @@ Setup:
 import asyncio
 import os
 
-from dotenv import load_dotenv
 
 from browser_use import Agent
 from browser_use.llm import ChatBrowserUse
 
-load_dotenv()
 
 if not os.getenv('BROWSER_USE_API_KEY'):
 	raise ValueError('BROWSER_USE_API_KEY is not set')

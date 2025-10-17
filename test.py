@@ -2,12 +2,9 @@ from pathlib import Path
 
 from browser_use import Agent, ChatGoogle
 from browser_use.agent.config import AgentConfig
-from dotenv import load_dotenv
 
 
 def main() -> None:
-    load_dotenv()
-
     config = AgentConfig(
         task='browser-use リポジトリのスター数を調べてください',
         llm=ChatGoogle(model='gemini-flash-latest'),

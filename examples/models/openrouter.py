@@ -7,11 +7,9 @@ Simple try of the agent.
 import asyncio
 import os
 
-from dotenv import load_dotenv
 
 from browser_use import Agent, ChatOpenAI
 
-load_dotenv()
 
 # All the models are type safe from OpenAI in case you need a list of supported models
 llm = ChatOpenAI(
