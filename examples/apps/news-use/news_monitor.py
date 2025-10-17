@@ -17,7 +17,6 @@ from typing import Literal
 from dateutil import parser as dtparser
 from pydantic import BaseModel
 
-
 def setup_environment(debug: bool):
 	if not debug:
 		os.environ['BROWSER_USE_SETUP_LOGGING'] = 'false'
@@ -26,7 +25,6 @@ def setup_environment(debug: bool):
 	else:
 		os.environ['BROWSER_USE_SETUP_LOGGING'] = 'true'
 		os.environ['BROWSER_USE_LOGGING_LEVEL'] = 'info'
-
 
 parser = argparse.ArgumentParser(description='News extractor using Browser-Use + Gemini')
 parser.add_argument('--url', default='https://www.techcrunch.com', help='News site root URL')
@@ -48,7 +46,6 @@ if GEMINI_API_KEY == 'xxxx':
 	print("   Then run: export GEMINI_API_KEY='your-api-key-here'")
 	print()
 
-
 class NewsArticle(BaseModel):
 	title: str
 	url: str
@@ -57,11 +54,9 @@ class NewsArticle(BaseModel):
 	long_summary: str
 	sentiment: Literal['positive', 'neutral', 'negative']
 
-
 # ---------------------------------------------------------
 # Core extractor
 # ---------------------------------------------------------
-
 
 async def extract_latest_article(site_url: str, debug: bool = False) -> dict:
 	"""Open site_url, navigate to the newest article and return structured JSON."""
@@ -167,11 +162,9 @@ async def extract_latest_article(site_url: str, debug: bool = False) -> dict:
 		return {'status': 'success', 'data': data}
 	return {'status': 'error', 'error': f'JSON parse failed. Raw head: {text[:200]}'}
 
-
 # ---------------------------------------------------------
 # Persistence helpers
 # ---------------------------------------------------------
-
 
 def load_seen_hashes(file_path: str = 'news_data.json') -> set:
 	"""Load already-saved article URL hashes from disk for dedup across restarts."""
@@ -183,7 +176,6 @@ def load_seen_hashes(file_path: str = 'news_data.json') -> set:
 		return {entry['hash'] for entry in items if 'hash' in entry}
 	except Exception:
 		return set()
-
 
 def save_article(article: dict, file_path: str = 'news_data.json'):
 	"""Append article to disk with a hash for future dedup."""
@@ -208,11 +200,9 @@ def save_article(article: dict, file_path: str = 'news_data.json'):
 	with open(file_path, 'w') as f:
 		json.dump(existing, f, ensure_ascii=False, indent=2)
 
-
 # ---------------------------------------------------------
 # CLI functions
 # ---------------------------------------------------------
-
 
 def _fmt(ts_raw: str) -> str:
 	"""Format timestamp string"""
@@ -220,7 +210,6 @@ def _fmt(ts_raw: str) -> str:
 		return dtparser.parse(ts_raw).strftime('%Y-%m-%d %H:%M:%S')
 	except Exception:
 		return datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
-
 
 async def run_once(url: str, output_path: str, debug: bool):
 	"""Run a single extraction and exit"""
@@ -246,7 +235,6 @@ async def run_once(url: str, output_path: str, debug: bool):
 	else:
 		print(f'Error: {res["error"]}')
 		return None
-
 
 async def monitor(url: str, interval: int, output_path: str, debug: bool):
 	"""Continuous monitoring mode"""
@@ -287,7 +275,6 @@ async def monitor(url: str, interval: int, output_path: str, debug: bool):
 
 		await asyncio.sleep(interval)
 
-
 def main():
 	"""Main entry point"""
 	if args.once:
@@ -297,7 +284,6 @@ def main():
 			asyncio.run(monitor(args.url, args.interval, args.output, args.debug))
 		except KeyboardInterrupt:
 			print('\nStopped by user')
-
 
 if __name__ == '__main__':
 	main()

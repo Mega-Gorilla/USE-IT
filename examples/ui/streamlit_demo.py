@@ -11,10 +11,6 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 import streamlit as st  # type: ignore
 
 from browser_use import Agent
@@ -23,7 +19,6 @@ from browser_use.tools.service import Tools
 
 if os.name == 'nt':
 	asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-
 
 # Function to get the LLM based on provider
 def get_llm(provider: str):
@@ -50,7 +45,6 @@ def get_llm(provider: str):
 		st.stop()
 		return None  # Never reached, but helps with type checking
 
-
 # Function to initialize the agent
 def initialize_agent(query: str, provider: str):
 	llm = get_llm(provider)
@@ -65,7 +59,6 @@ def initialize_agent(query: str, provider: str):
 		use_vision=True,
 		max_actions_per_step=1,
 	), browser_session
-
 
 # Streamlit UI
 st.title('Automated Browser Agent with LLMs 🤖')

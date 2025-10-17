@@ -4,13 +4,7 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
-
 from browser_use import Agent, ChatGoogle
-
 
 async def main():
 	task = 'browser-use の GitHub リポジトリで最新の更新内容を調べ、要点を報告してください。'
@@ -28,7 +22,6 @@ async def main():
 	print('-----------------------------------------------')
 
 	await agent.run()
-
 
 if __name__ == '__main__':
 	asyncio.run(main())

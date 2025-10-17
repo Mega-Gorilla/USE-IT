@@ -17,7 +17,6 @@ import asyncio
 from browser_use import Agent
 from browser_use.llm import ChatAnthropicBedrock, ChatAWSBedrock
 
-
 async def example_anthropic_bedrock():
 	"""Example using ChatAnthropicBedrock - convenience class for Claude models."""
 	print('🔹 ChatAnthropicBedrock Example')
@@ -43,7 +42,6 @@ async def example_anthropic_bedrock():
 	# Run the agent
 	result = await agent.run(max_steps=2)
 	print(f'Result: {result}')
-
 
 async def example_aws_bedrock():
 	"""Example using ChatAWSBedrock - general client for any Bedrock model."""
@@ -71,7 +69,6 @@ async def example_aws_bedrock():
 	result = await agent.run(max_steps=2)
 	print(f'Result: {result}')
 
-
 async def main():
 	"""Run AWS Bedrock examples."""
 	print('🚀 AWS Bedrock Examples')
@@ -94,7 +91,6 @@ async def main():
 		print('- Valid AWS credentials configured')
 		print('- Access to AWS Bedrock in your region')
 		print('- boto3 installed: pip install boto3')
-
 
 if __name__ == '__main__':
 	asyncio.run(main())

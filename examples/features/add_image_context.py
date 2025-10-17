@@ -7,15 +7,9 @@ import base64
 from pathlib import Path
 from typing import Any
 
-from dotenv import load_dotenv
-
 from browser_use import Agent
 from browser_use.llm import ChatOpenAI
 from browser_use.llm.messages import ContentPartImageParam, ContentPartTextParam, ImageURL
-
-# Load environment variables
-load_dotenv()
-
 
 def image_to_base64(image_path: str) -> str:
 	"""
@@ -41,7 +35,6 @@ def image_to_base64(image_path: str) -> str:
 			return encoded_string.decode('utf-8')
 	except OSError as e:
 		raise OSError(f'Failed to read image file: {e}')
-
 
 def create_sample_images() -> list[ContentPartTextParam | ContentPartImageParam]:
 	"""
@@ -85,7 +78,6 @@ def create_sample_images() -> list[ContentPartTextParam | ContentPartImageParam]
 
 	return content_parts
 
-
 async def main() -> None:
 	"""
 	Main function to run the browser agent with image context.
@@ -107,7 +99,6 @@ async def main() -> None:
 	# Initialize and run the agent
 	agent = Agent(task=task_str, llm=model, sample_images=sample_images)
 	await agent.run()
-
 
 if __name__ == '__main__':
 	asyncio.run(main())

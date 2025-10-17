@@ -6,10 +6,6 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 from pydantic import BaseModel
 
 from browser_use import ChatOpenAI
@@ -21,18 +17,15 @@ if not os.getenv('OPENAI_API_KEY'):
 
 tools = Tools()
 
-
 class WebpageInfo(BaseModel):
 	"""Model for webpage link."""
 
 	link: str = 'https://appointment.mfa.gr/en/reservations/aero/ireland-grcon-dub/'
 
-
 @tools.action('Go to the webpage', param_model=WebpageInfo)
 def go_to_webpage(webpage_info: WebpageInfo):
 	"""Returns the webpage link."""
 	return webpage_info.link
-
 
 async def main():
 	"""Main function to execute the agent task."""
@@ -46,7 +39,6 @@ async def main():
 	agent = Agent(task, model, tools=tools, use_vision=True)
 
 	await agent.run()
-
 
 if __name__ == '__main__':
 	asyncio.run(main())

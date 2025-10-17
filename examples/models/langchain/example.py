@@ -16,7 +16,6 @@ from langchain_openai import ChatOpenAI  # pyright: ignore
 from browser_use import Agent
 from examples.models.langchain.chat import ChatLangchain
 
-
 async def main():
 	"""Basic example using ChatLangchain with OpenAI through LangChain."""
 
@@ -51,7 +50,6 @@ async def main():
 		print(f'📋 Final result: {history.final_result()}')
 
 		return history
-
 
 if __name__ == '__main__':
 	print('🌐 Browser-use LangChain Integration Example')

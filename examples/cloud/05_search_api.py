@@ -31,7 +31,6 @@ BASE_URL = os.getenv('BROWSER_USE_BASE_URL', 'https://api.browser-use.com/api/v1
 TIMEOUT = int(os.getenv('BROWSER_USE_TIMEOUT', '30'))
 HEADERS = {'Authorization': f'Bearer {API_KEY}', 'Content-Type': 'application/json'}
 
-
 async def simple_search(query: str, max_websites: int = 5, depth: int = 2) -> dict[str, Any]:
 	"""
 	Search Google and extract content from multiple top results.
@@ -75,7 +74,6 @@ async def simple_search(query: str, max_websites: int = 5, depth: int = 2) -> di
 				error_text = await response.text()
 				print(f'❌ Search failed: {response.status} - {error_text} (after {elapsed:.1f}s)')
 				return {'error': f'HTTP {response.status}', 'details': error_text}
-
 
 async def search_url(url: str, query: str, depth: int = 2) -> dict[str, Any]:
 	"""
@@ -121,7 +119,6 @@ async def search_url(url: str, query: str, depth: int = 2) -> dict[str, Any]:
 				print(f'❌ URL search failed: {response.status} - {error_text} (after {elapsed:.1f}s)')
 				return {'error': f'HTTP {response.status}', 'details': error_text}
 
-
 def display_simple_search_results(results: dict[str, Any]):
 	"""Display simple search results in a readable format."""
 	if 'error' in results:
@@ -155,7 +152,6 @@ def display_simple_search_results(results: dict[str, Any]):
 	elif results.get('share_url'):
 		print(f'🌐 Share URL: {results["share_url"]}')
 
-
 def display_url_search_results(results: dict[str, Any]):
 	"""Display URL search results in a readable format."""
 	if 'error' in results:
@@ -177,7 +173,6 @@ def display_url_search_results(results: dict[str, Any]):
 	elif results.get('share_url'):
 		print(f'🌐 Share URL: {results["share_url"]}')
 
-
 async def demo_news_search():
 	"""Demo: Search for latest news across multiple sources."""
 	print('\n📰 Demo 1: Latest News Search')
@@ -193,7 +188,6 @@ async def demo_news_search():
 
 	return results
 
-
 async def demo_competitive_analysis():
 	"""Demo: Analyze competitor websites."""
 	print('\n🏢 Demo 2: Competitive Analysis')
@@ -204,7 +198,6 @@ async def demo_competitive_analysis():
 	display_simple_search_results(results)
 
 	return results
-
 
 async def demo_deep_website_analysis():
 	"""Demo: Deep analysis of a specific website."""
@@ -222,7 +215,6 @@ async def demo_deep_website_analysis():
 
 	return results
 
-
 async def demo_product_research():
 	"""Demo: Product research and comparison."""
 	print('\n🛍️  Demo 4: Product Research')
@@ -233,7 +225,6 @@ async def demo_product_research():
 	display_simple_search_results(results)
 
 	return results
-
 
 async def demo_real_time_vs_cached():
 	"""Demo: Show difference between real-time and cached results."""
@@ -255,7 +246,6 @@ async def demo_real_time_vs_cached():
 	display_simple_search_results(results)
 
 	return results
-
 
 async def demo_search_depth_comparison():
 	"""Demo: Compare different search depths."""
@@ -291,7 +281,6 @@ async def demo_search_depth_comparison():
 			print(f'Depth {depth}: Error or no content')
 
 	return results
-
 
 async def main():
 	"""Demonstrate comprehensive Search API usage."""
@@ -349,7 +338,6 @@ async def main():
 		print(f'❌ Network Error: {e}')
 	except Exception as e:
 		print(f'❌ Error: {e}')
-
 
 if __name__ == '__main__':
 	asyncio.run(main())

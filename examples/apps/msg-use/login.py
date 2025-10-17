@@ -14,7 +14,6 @@ USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
 # Storage state file for cookies
 STORAGE_STATE_FILE = USER_DATA_DIR / 'storage_state.json'
 
-
 async def login_to_whatsapp():
 	"""Open WhatsApp Web and wait for user to scan QR code"""
 	if not GOOGLE_API_KEY:
@@ -65,7 +64,6 @@ async def login_to_whatsapp():
 	except Exception as e:
 		print(f'\n❌ Error during login: {str(e)}')
 		print('Please try again.')
-
 
 if __name__ == '__main__':
 	asyncio.run(login_to_whatsapp())

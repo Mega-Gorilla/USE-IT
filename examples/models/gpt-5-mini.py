@@ -6,11 +6,7 @@ Simple try of the agent.
 
 import asyncio
 
-from dotenv import load_dotenv
-
 from browser_use import Agent, ChatOpenAI
-
-load_dotenv()
 
 # All the models are type safe from OpenAI in case you need a list of supported models
 llm = ChatOpenAI(model='gpt-5-mini')
@@ -19,10 +15,8 @@ agent = Agent(
 	task='Find out which one is cooler: the monkey park or a dolphin tour in Tenerife?',
 )
 
-
 async def main():
 	await agent.run(max_steps=20)
 	input('Press Enter to continue...')
-
 
 asyncio.run(main())

@@ -5,10 +5,6 @@ from typing import Annotated
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 from fastapi import Depends, FastAPI, HTTPException, Request
 from slack_sdk.errors import SlackApiError  # type: ignore
 from slack_sdk.signature import SignatureVerifier  # type: ignore
@@ -23,7 +19,6 @@ setup_logging()
 logger = logging.getLogger('slack')
 
 app = FastAPI()
-
 
 class SlackBot:
 	def __init__(
@@ -104,7 +99,6 @@ class SlackBot:
 			await self.client.chat_postMessage(channel=channel, text=text, thread_ts=thread_ts)
 		except SlackApiError as e:
 			logger.error(f'Error sending message: {e.response["error"]}')
-
 
 @app.post('/slack/events')
 async def slack_events(request: Request, slack_bot: Annotated[SlackBot, Depends()]):

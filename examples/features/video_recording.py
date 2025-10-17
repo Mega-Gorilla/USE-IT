@@ -5,7 +5,6 @@ from browser_use import Agent, Browser, ChatOpenAI
 
 # NOTE: To use this example, install imageio[ffmpeg], e.g. with uv pip install "browser-use[video]"
 
-
 async def main():
 	browser_session = Browser(record_video_dir=Path('./tmp/recordings'))
 
@@ -19,7 +18,6 @@ async def main():
 
 	# The video will be saved automatically when the agent finishes and the session closes.
 	print('Agent run finished. Check the ./tmp/recordings directory for the video.')
-
 
 if __name__ == '__main__':
 	asyncio.run(main())

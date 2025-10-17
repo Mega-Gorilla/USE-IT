@@ -5,10 +5,6 @@ from pathlib import Path
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 from browser_use import ChatOpenAI
 from browser_use.agent.service import Agent
 from browser_use.browser import BrowserProfile, BrowserSession
@@ -22,7 +18,6 @@ browser_session = BrowserSession(
 	)
 )
 llm = ChatOpenAI(model='gpt-4.1-mini')
-
 
 # NOTE: This is experimental - you will have multiple agents running in the same browser session
 async def main():
@@ -45,7 +40,6 @@ async def main():
 
 	print(await asyncio.gather(*[agent.run() for agent in agents]))
 	await browser_session.kill()
-
 
 if __name__ == '__main__':
 	asyncio.run(main())

@@ -16,14 +16,15 @@ uv sync --all-extras --dev
 
 ## Configuration
 
-Set up your environment variables:
+Configure API keys with `config.yaml`:
 
 ```bash
-# Copy the example environment file
-cp .env.example .env
+# Copy the example configuration file
+cp config.yaml.example config.yaml
 
-# set logging level
-# BROWSER_USE_LOGGING_LEVEL=debug
+# Override values with environment variables if needed, e.g.
+# export OPENAI_API_KEY=sk-...
+# export BROWSER_USE_LOGGING_LEVEL=debug
 ```
 
 

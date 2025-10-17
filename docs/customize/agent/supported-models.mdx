@@ -29,11 +29,15 @@ llm = ChatOpenAI(
 agent = Agent(config=AgentConfig(task="...", llm=llm))
 ```
 
-Required environment variables:
+Add to `config.yaml`:
 
-```bash .env
-OPENAI_API_KEY=
+```yaml config.yaml
+llm:
+  api_keys:
+    openai: your-openai-key
 ```
+
+Or export `OPENAI_API_KEY`.
 
 <Info>
   You can use any OpenAI compatible model by passing the model name to the
@@ -58,11 +62,15 @@ agent = Agent(
 )
 ```
 
-And add the variable:
+Add to `config.yaml`:
 
-```bash .env
-ANTHROPIC_API_KEY=
+```yaml config.yaml
+llm:
+  api_keys:
+    anthropic: your-anthropic-key
 ```
+
+Or export `ANTHROPIC_API_KEY`.
 
 ### Azure OpenAI [example](https://github.com/Mega-Gorilla/USE-IT/blob/main/examples/models/azure_openai.py)
 
@@ -83,12 +91,16 @@ agent = Agent(
 )
 ```
 
-Required environment variables:
+Add to `config.yaml`:
 
-```bash .env
-AZURE_OPENAI_ENDPOINT=https://your-endpoint.openai.azure.com/
-AZURE_OPENAI_API_KEY=
+```yaml config.yaml
+llm:
+  api_keys:
+    azure: your-azure-api-key
+  azure_endpoint: https://your-endpoint.openai.azure.com/
 ```
+
+Environment override: `AZURE_OPENAI_KEY` and `AZURE_OPENAI_ENDPOINT`.
 
 ### Gemini [example](https://github.com/Mega-Gorilla/USE-IT/blob/main/examples/models/gemini.py)
 
@@ -96,10 +108,6 @@ AZURE_OPENAI_API_KEY=
 
 ```python
 from browser_use import Agent, ChatGoogle
-from dotenv import load_dotenv
-
-# Read GOOGLE_API_KEY into env
-load_dotenv()
 
 # Initialize the model
 llm = ChatGoogle(model='gemini-flash-latest')
@@ -111,11 +119,15 @@ agent = Agent(
 )
 ```
 
-Required environment variables:
+Add to `config.yaml`:
 
-```bash .env
-GOOGLE_API_KEY=
+```yaml config.yaml
+llm:
+  api_keys:
+    google: your-gemini-key
 ```
+
+Or export `GOOGLE_API_KEY`.
 
 ### AWS Bedrock [example](https://github.com/Mega-Gorilla/USE-IT/blob/main/examples/models/aws.py)
 
@@ -159,13 +171,16 @@ agent = Agent(
 
 #### AWS Authentication
 
-Required environment variables:
+Add to `config.yaml`:
 
-```bash .env
-AWS_ACCESS_KEY_ID=
-AWS_SECRET_ACCESS_KEY=
-AWS_DEFAULT_REGION=us-east-1
+```yaml config.yaml
+aws:
+  access_key_id: your-access-key
+  secret_access_key: your-secret
+  region: us-east-1
 ```
+
+Or rely on the standard AWS credential chain (environment variables, profiles, IAM roles).
 
 You can also use AWS profiles or IAM roles instead of environment variables. The implementation supports:
 
@@ -188,11 +203,15 @@ agent = Agent(
 )
 ```
 
-Required environment variables:
+Add to `config.yaml`:
 
-```bash .env
-GROQ_API_KEY=
+```yaml config.yaml
+llm:
+  api_keys:
+    groq: your-groq-key
 ```
+
+Or export `GROQ_API_KEY`.
 
 ## Ollama
 
@@ -217,16 +236,9 @@ Smaller Qwen models may return incorrect action schema formats (e.g., `actions: 
 
 ```python
 from browser_use import Agent, ChatOpenAI
-from dotenv import load_dotenv
-import os
 
-load_dotenv()
-
-# Get API key from https://modelstudio.console.alibabacloud.com/?tab=playground#/api-key
-api_key = os.getenv('ALIBABA_CLOUD')
 base_url = 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1'
-
-llm = ChatOpenAI(model='qwen-vl-max', api_key=api_key, base_url=base_url)
+llm = ChatOpenAI(model='qwen-vl-max', base_url=base_url)
 
 agent = Agent(
     task="Your task here",
@@ -235,26 +247,24 @@ agent = Agent(
 )
 ```
 
-Required environment variables:
+Add to `config.yaml`:
 
-```bash .env
-ALIBABA_CLOUD=
+```yaml config.yaml
+llm:
+  api_keys:
+    openai: your-alibaba-key
+  base_url: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
 ```
+
+Or export `OPENAI_API_KEY` and set `BASE_URL` when instantiating `ChatOpenAI`.
 
 ## ModelScope [example](https://github.com/Mega-Gorilla/USE-IT/blob/main/examples/models/modelscope_example.py)
 
 ```python
 from browser_use import Agent, ChatOpenAI
-from dotenv import load_dotenv
-import os
 
-load_dotenv()
-
-# Get API key from https://www.modelscope.cn/docs/model-service/API-Inference/intro
-api_key = os.getenv('MODELSCOPE_API_KEY')
 base_url = 'https://api-inference.modelscope.cn/v1/'
-
-llm = ChatOpenAI(model='Qwen/Qwen2.5-VL-72B-Instruct', api_key=api_key, base_url=base_url)
+llm = ChatOpenAI(model='Qwen/Qwen2.5-VL-72B-Instruct', base_url=base_url)
 
 agent = Agent(
     task="Your task here",
@@ -263,11 +273,16 @@ agent = Agent(
 )
 ```
 
-Required environment variables:
+Add to `config.yaml`:
 
-```bash .env
-MODELSCOPE_API_KEY=
+```yaml config.yaml
+llm:
+  api_keys:
+    openai: your-modelscope-key
+  base_url: https://api-inference.modelscope.cn/v1/
 ```
+
+Or export `OPENAI_API_KEY` and set `BASE_URL` when instantiating `ChatOpenAI`.
 
 ## Other models (DeepSeek, Novita, X...)
 

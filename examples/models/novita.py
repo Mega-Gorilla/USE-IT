@@ -10,17 +10,11 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
-
 from browser_use import Agent, ChatOpenAI
 
 api_key = os.getenv('NOVITA_API_KEY', '')
 if not api_key:
 	raise ValueError('NOVITA_API_KEY is not set')
-
 
 async def run_search():
 	agent = Agent(
@@ -39,7 +33,6 @@ async def run_search():
 	)
 
 	await agent.run()
-
 
 if __name__ == '__main__':
 	asyncio.run(run_search())

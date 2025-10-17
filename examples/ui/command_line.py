@@ -20,14 +20,9 @@ import sys
 # Ensure local repository (browser_use) is accessible
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 from browser_use import Agent
 from browser_use.browser import BrowserSession
 from browser_use.tools.service import Tools
-
 
 def get_llm(provider: str):
 	if provider == 'anthropic':
@@ -50,7 +45,6 @@ def get_llm(provider: str):
 	else:
 		raise ValueError(f'Unsupported provider: {provider}')
 
-
 def parse_arguments():
 	"""Parse command-line arguments."""
 	parser = argparse.ArgumentParser(description='Automate browser tasks using an LLM agent.')
@@ -65,7 +59,6 @@ def parse_arguments():
 		help='The model provider to use (default: openai)',
 	)
 	return parser.parse_args()
-
 
 def initialize_agent(query: str, provider: str):
 	"""Initialize the browser agent with the given query and provider."""
@@ -82,7 +75,6 @@ def initialize_agent(query: str, provider: str):
 		max_actions_per_step=1,
 	), browser_session
 
-
 async def main():
 	"""Main async function to run the agent."""
 	args = parse_arguments()
@@ -92,7 +84,6 @@ async def main():
 
 	input('Press Enter to close the browser...')
 	await browser_session.kill()
-
 
 if __name__ == '__main__':
 	asyncio.run(main())

@@ -33,7 +33,6 @@ BASE_URL = os.getenv('BROWSER_USE_BASE_URL', 'https://api.browser-use.com/api/v1
 TIMEOUT = int(os.getenv('BROWSER_USE_TIMEOUT', '30'))
 HEADERS = {'Authorization': f'Bearer {API_KEY}', 'Content-Type': 'application/json'}
 
-
 def _request_with_retry(method: str, url: str, **kwargs) -> requests.Response:
 	"""Make HTTP request with timeout and retry logic."""
 	kwargs.setdefault('timeout', TIMEOUT)
@@ -51,7 +50,6 @@ def _request_with_retry(method: str, url: str, **kwargs) -> requests.Response:
 			time.sleep(sleep_time)
 
 	raise RuntimeError('Unexpected error in retry logic')
-
 
 def create_task_with_proxy(instructions: str, country_code: str = 'us') -> str:
 	"""
@@ -87,7 +85,6 @@ def create_task_with_proxy(instructions: str, country_code: str = 'us') -> str:
 	print(f'✅ Task created with {country_code.upper()} proxy: {task_id}')
 	return task_id
 
-
 def test_ip_location(country_code: str) -> dict[str, Any]:
 	"""Test IP address and location detection with proxy."""
 	task = """
@@ -103,7 +100,6 @@ def test_ip_location(country_code: str) -> dict[str, Any]:
 	task_id = create_task_with_proxy(task, country_code)
 	return wait_for_completion(task_id)
 
-
 def test_geo_restricted_content(country_code: str) -> dict[str, Any]:
 	"""Test access to geo-restricted content."""
 	task = """
@@ -118,7 +114,6 @@ def test_geo_restricted_content(country_code: str) -> dict[str, Any]:
 
 	task_id = create_task_with_proxy(task, country_code)
 	return wait_for_completion(task_id)
-
 
 def test_streaming_service_access(country_code: str) -> dict[str, Any]:
 	"""Test access to region-specific streaming content."""
@@ -138,7 +133,6 @@ def test_streaming_service_access(country_code: str) -> dict[str, Any]:
 	task_id = create_task_with_proxy(task, country_code)
 	return wait_for_completion(task_id)
 
-
 def test_search_results_by_location(country_code: str) -> dict[str, Any]:
 	"""Test how search results vary by location."""
 	task = """
@@ -155,7 +149,6 @@ def test_search_results_by_location(country_code: str) -> dict[str, Any]:
 
 	task_id = create_task_with_proxy(task, country_code)
 	return wait_for_completion(task_id)
-
 
 def wait_for_completion(task_id: str) -> dict[str, Any]:
 	"""Wait for task completion and return results."""
@@ -189,7 +182,6 @@ def wait_for_completion(task_id: str) -> dict[str, Any]:
 			return details
 
 		time.sleep(3)
-
 
 def demo_proxy_countries():
 	"""Demonstrate proxy usage across different countries."""
@@ -228,7 +220,6 @@ def demo_proxy_countries():
 		status = result.get('status', 'unknown')
 		print(f'{code.upper()}: {status}')
 
-
 def demo_geo_restrictions():
 	"""Demonstrate geo-restriction bypass."""
 	print('\n🚫 Demo 2: Geo-Restriction Testing')
@@ -246,7 +237,6 @@ def demo_geo_restrictions():
 
 		time.sleep(2)
 
-
 def demo_streaming_access():
 	"""Demonstrate streaming service access with different proxies."""
 	print('\n📺 Demo 3: Streaming Service Access')
@@ -263,7 +253,6 @@ def demo_streaming_access():
 
 		time.sleep(2)
 
-
 def demo_search_localization():
 	"""Demonstrate search result localization."""
 	print('\n🔍 Demo 4: Search Localization')
@@ -279,7 +268,6 @@ def demo_search_localization():
 			print(f'🔍 Search Results: {result["output"][:200]}...')
 
 		time.sleep(2)
-
 
 def main():
 	"""Demonstrate comprehensive proxy usage."""
@@ -325,7 +313,6 @@ def main():
 		print(f'❌ API Error: {e}')
 	except Exception as e:
 		print(f'❌ Error: {e}')
-
 
 if __name__ == '__main__':
 	main()

@@ -31,7 +31,6 @@ from browser_use.agent.views import ActionResult
 playwright_browser: Browser | None = None
 playwright_page: Page | None = None
 
-
 # Custom action parameter models
 class PlaywrightFillFormAction(BaseModel):
 	"""Parameters for Playwright form filling action."""
@@ -41,19 +40,16 @@ class PlaywrightFillFormAction(BaseModel):
 	email: str = Field(..., description='Email address to fill')
 	size_option: str = Field(..., description='Size option (small/medium/large)')
 
-
 class PlaywrightScreenshotAction(BaseModel):
 	"""Parameters for Playwright screenshot action."""
 
 	filename: str = Field(default='playwright_screenshot.png', description='Filename for screenshot')
 	quality: int | None = Field(default=None, description='JPEG quality (1-100), only for .jpg/.jpeg files')
 
-
 class PlaywrightGetTextAction(BaseModel):
 	"""Parameters for getting text using Playwright selectors."""
 
 	selector: str = Field(..., description='CSS selector to get text from. Use "title" for page title.')
-
 
 async def start_chrome_with_debug_port(port: int = 9222):
 	"""
@@ -124,7 +120,6 @@ async def start_chrome_with_debug_port(port: int = 9222):
 
 	return process
 
-
 async def connect_playwright_to_cdp(cdp_url: str):
 	"""
 	Connect Playwright to the same Chrome instance Browser-Use is using.
@@ -142,10 +137,8 @@ async def connect_playwright_to_cdp(cdp_url: str):
 		context = await playwright_browser.new_context()
 		playwright_page = await context.new_page()
 
-
 # Create custom tools that use Playwright functions
 tools = Tools()
-
 
 @tools.registry.action(
 	"Fill out a form using Playwright's precise form filling capabilities. This uses Playwright selectors for reliable form interaction.",
@@ -208,7 +201,6 @@ async def playwright_fill_form(params: PlaywrightFillFormAction, browser_session
 		error_msg = f'❌ Playwright form filling failed: {str(e)}'
 		return ActionResult(error=error_msg)
 
-
 @tools.registry.action(
 	"Take a screenshot using Playwright's screenshot capabilities with high quality and precision.",
 	param_model=PlaywrightScreenshotAction,
@@ -241,7 +233,6 @@ async def playwright_screenshot(params: PlaywrightScreenshotAction, browser_sess
 	except Exception as e:
 		error_msg = f'❌ Playwright screenshot failed: {str(e)}'
 		return ActionResult(error=error_msg)
-
 
 @tools.registry.action(
 	"Extract text from elements using Playwright's powerful CSS selectors and XPath support.", param_model=PlaywrightGetTextAction
@@ -301,7 +292,6 @@ async def playwright_get_text(params: PlaywrightGetTextAction, browser_session: 
 	except Exception as e:
 		error_msg = f'❌ Playwright text extraction failed: {str(e)}'
 		return ActionResult(error=error_msg)
-
 
 async def main():
 	"""
@@ -369,7 +359,6 @@ async def main():
 				chrome_process.kill()
 
 		print('✅ Cleanup complete')
-
 
 if __name__ == '__main__':
 	# Run the advanced integration demo

@@ -3,11 +3,7 @@ import os
 import pathlib
 import shutil
 
-from dotenv import load_dotenv
-
 from browser_use import Agent, ChatOpenAI
-
-load_dotenv()
 
 SCRIPT_DIR = pathlib.Path(os.path.dirname(os.path.abspath(__file__)))
 agent_dir = SCRIPT_DIR / 'alphabet_earnings'
@@ -25,13 +21,11 @@ agent = Agent(
 	flash_mode=True,
 )
 
-
 async def main():
 	await agent.run()
 	input(f'Press Enter to clean the file system at {agent_dir}...')
 	# clean the file system
 	shutil.rmtree(str(agent_dir / 'fs'))
-
 
 if __name__ == '__main__':
 	asyncio.run(main())

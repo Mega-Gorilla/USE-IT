@@ -18,7 +18,6 @@ if not logging.getLogger().handlers:
 
 logger = logging.getLogger(__name__)
 
-
 class EmailTools(Tools):
 	def __init__(
 		self,

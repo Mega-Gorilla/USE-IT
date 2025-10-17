@@ -24,7 +24,6 @@ from browser_use.llm.messages import (
 	SystemMessage as BrowserUseSystemMessage,
 )
 
-
 class LangChainMessageSerializer:
 	"""Serializer for converting between browser-use message types and LangChain message types."""
 

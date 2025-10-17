@@ -4,10 +4,6 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 from browser_use import Agent, ChatOpenAI
 
 task = """
@@ -107,14 +103,11 @@ At this stage, check the basket on the top right (indicates the price) and check
 
 **Important:** Ensure efficiency and accuracy throughout the process."""
 
-
 agent = Agent(task=task, llm=ChatOpenAI(model='gpt-4.1-mini'))
-
 
 async def main():
 	await agent.run()
 	input('Press Enter to close the browser...')
-
 
 if __name__ == '__main__':
 	asyncio.run(main())

@@ -15,15 +15,10 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 from browser_use import Agent, ChatOpenAI
 from browser_use.browser import BrowserProfile, BrowserSession
 
 llm = ChatOpenAI(model='gpt-4.1-mini')
-
 
 def load_blocklist_from_url(url: str) -> list[str]:
 	"""Load and parse a blocklist from a URL.
@@ -48,7 +43,6 @@ def load_blocklist_from_url(url: str) -> list[str]:
 
 	print(f'✅ Loaded {len(domains):,} domains')
 	return domains
-
 
 async def main():
 	# Load HaGeZi's Pro++ blocklist (blocks ads, tracking, malware, etc.)
@@ -111,7 +105,6 @@ async def main():
 
 	input('\nPress Enter to close the browser...')
 	await browser_session.kill()
-
 
 if __name__ == '__main__':
 	asyncio.run(main())

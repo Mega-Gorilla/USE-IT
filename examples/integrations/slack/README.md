@@ -30,10 +30,10 @@ Steps to create and configure a Slack bot:
         *   Select your app.
         *   Navigate to the "OAuth & Permissions" tab.
         *   Copy the "Bot User OAuth Token".
-    *   Create a `.env` file in the root directory of your project and add the following lines:
-        ```env
-        SLACK_SIGNING_SECRET=your-signing-secret
-        SLACK_BOT_TOKEN=your-bot-token
+    *   Export the credentials before running the example:
+        ```bash
+        export SLACK_SIGNING_SECRET=your-signing-secret
+        export SLACK_BOT_TOKEN=your-bot-token
         ```
 6. Invite the bot to a channel:
     *   Use the `/invite @your-bot-name` command in the Slack channel where you want the bot to be active.

@@ -4,10 +4,6 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 from browser_use import Agent, Browser, ChatGoogle
 
 # Connect to your existing Chrome browser
@@ -16,7 +12,6 @@ browser = Browser(
 	user_data_dir='~/Library/Application Support/Google/Chrome',
 	profile_directory='Default',
 )
-
 
 async def main():
 	# save storage state
@@ -27,7 +22,6 @@ async def main():
 		browser=browser,
 	)
 	await agent.run()
-
 
 if __name__ == '__main__':
 	asyncio.run(main())

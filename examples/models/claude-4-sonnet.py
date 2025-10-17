@@ -1,17 +1,12 @@
 """
 Simple script that runs the task of opening amazon and searching.
-@dev Ensure we have a `ANTHROPIC_API_KEY` variable in our `.env` file.
+Ensure `ANTHROPIC_API_KEY` is provided via config.yaml or the environment.
 """
 
 import asyncio
-import os
 import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-
-from dotenv import load_dotenv
-
-load_dotenv()
 
 from browser_use import Agent
 from browser_use.llm import ChatAnthropic
@@ -23,9 +18,7 @@ agent = Agent(
 	llm=llm,
 )
 
-
 async def main():
 	await agent.run(max_steps=10)
-
 
 asyncio.run(main())

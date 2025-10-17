@@ -13,10 +13,6 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 from browser_use import Agent
 from browser_use.llm.google import ChatGoogle
 
@@ -30,7 +26,6 @@ MAIN_TASK = 'find age of ronaldo and messi'
 # MAIN_TASK = "find age of elon musk"
 
 # ============================================================================
-
 
 async def create_subtasks(main_task: str, llm) -> list[str]:
 	"""
@@ -120,7 +115,6 @@ async def create_subtasks(main_task: str, llm) -> list[str]:
 		# Fallback to simple split
 		return simple_split_task(main_task)
 
-
 def simple_split_task(main_task: str) -> list[str]:
 	"""Simple fallback: split task by common separators"""
 	task_lower = main_task.lower()
@@ -138,7 +132,6 @@ def simple_split_task(main_task: str) -> list[str]:
 
 	# If no separators found, return the original task
 	return [main_task]
-
 
 async def run_single_agent(task: str, llm, agent_id: int) -> tuple[int, str]:
 	"""Run a single agent and return its result"""
@@ -223,7 +216,6 @@ async def run_single_agent(task: str, llm, agent_id: int) -> tuple[int, str]:
 		print(f'❌ {error_msg}')
 		return agent_id, error_msg
 
-
 def extract_clean_result(agent_result) -> str:
 	"""Extract clean result from agent history"""
 	try:
@@ -237,7 +229,6 @@ def extract_clean_result(agent_result) -> str:
 		return str(agent_result)
 	except Exception:
 		return 'Result extraction failed'
-
 
 async def run_parallel_agents():
 	"""Run multiple agents in parallel on different tasks"""
@@ -281,7 +272,6 @@ async def run_parallel_agents():
 
 	print(f'\n🎉 All {len(subtasks)} parallel agents completed!')
 
-
 def main():
 	"""Main function to run parallel agents"""
 	# Check if Google API key is available
@@ -304,7 +294,6 @@ def main():
 	print('-' * 60)
 
 	asyncio.run(run_parallel_agents())
-
 
 if __name__ == '__main__':
 	main()

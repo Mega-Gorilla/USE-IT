@@ -4,14 +4,9 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 from browser_use import ActionResult, Agent, ChatOpenAI, Tools
 
 tools = Tools()
-
 
 @tools.registry.action('Done with task')
 async def done(text: str):
@@ -30,14 +25,12 @@ async def done(text: str):
 
 	return ActionResult(is_done=True, extracted_content='Email sent!')
 
-
 async def main():
 	task = 'go to brower-use.com and then done'
 	model = ChatOpenAI(model='gpt-4.1-mini')
 	agent = Agent(task=task, llm=model, tools=tools)
 
 	await agent.run()
-
 
 if __name__ == '__main__':
 	asyncio.run(main())

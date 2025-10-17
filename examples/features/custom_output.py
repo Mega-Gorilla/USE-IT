@@ -10,14 +10,9 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 from pydantic import BaseModel
 
 from browser_use import Agent, ChatOpenAI
-
 
 class Post(BaseModel):
 	post_title: str
@@ -25,10 +20,8 @@ class Post(BaseModel):
 	num_comments: int
 	hours_since_post: int
 
-
 class Posts(BaseModel):
 	posts: list[Post]
-
 
 async def main():
 	task = 'Go to hackernews show hn and give me the first  5 posts'
@@ -49,7 +42,6 @@ async def main():
 			print(f'Hours since post: {post.hours_since_post}')
 	else:
 		print('No result')
-
 
 if __name__ == '__main__':
 	asyncio.run(main())

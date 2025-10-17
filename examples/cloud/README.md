@@ -21,10 +21,6 @@ export BROWSER_USE_API_KEY="your_api_key_here"
 export BROWSER_USE_BASE_URL="https://api.browser-use.com/api/v1"  # Optional
 export BROWSER_USE_TIMEOUT="30"  # Optional: request timeout in seconds
 
-# Or use .env file (recommended)
-cp examples/cloud/env.example .env
-# Edit .env with your values
-
 # Run examples from project root
 python examples/cloud/01_basic_task.py
 ```

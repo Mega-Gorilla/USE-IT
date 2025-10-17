@@ -13,7 +13,6 @@ import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
-
 def setup_environment(debug: bool):
 	if not debug:
 		os.environ['BROWSER_USE_SETUP_LOGGING'] = 'false'
@@ -22,7 +21,6 @@ def setup_environment(debug: bool):
 	else:
 		os.environ['BROWSER_USE_SETUP_LOGGING'] = 'true'
 		os.environ['BROWSER_USE_LOGGING_LEVEL'] = 'info'
-
 
 parser = argparse.ArgumentParser(description='WhatsApp Scheduler - Send scheduled messages via WhatsApp Web')
 parser.add_argument('--debug', action='store_true', help='Debug mode: show browser and verbose logs')
@@ -39,7 +37,6 @@ GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY') or os.getenv('GEMINI_API_KEY')
 USER_DATA_DIR = Path.home() / '.config' / 'whatsapp_scheduler' / 'browser_profile'
 USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
 STORAGE_STATE_FILE = USER_DATA_DIR / 'storage_state.json'
-
 
 async def parse_messages():
 	"""Parse messages.txt and extract scheduling info"""
@@ -114,7 +111,6 @@ async def parse_messages():
 			pass
 	return []
 
-
 async def send_message(contact, message):
 	"""Send a WhatsApp message"""
 	print(f'\n📱 Sending to {contact}: {message}')
@@ -140,7 +136,6 @@ async def send_message(contact, message):
 	agent = Agent(task=task, llm=llm, browser_session=browser)
 	await agent.run()
 	print(f'✅ Sent to {contact}')
-
 
 async def auto_respond_to_unread():
 	"""Click unread tab and respond to messages"""
@@ -170,7 +165,6 @@ async def auto_respond_to_unread():
 	result = await agent.run()
 	print('✅ Auto-response complete')
 	return result
-
 
 async def main():
 	if not GOOGLE_API_KEY:
@@ -280,7 +274,6 @@ async def main():
 				await asyncio.sleep(30)  # Check every 30 seconds
 
 	print('\n✅ All messages processed!')
-
 
 if __name__ == '__main__':
 	asyncio.run(main())

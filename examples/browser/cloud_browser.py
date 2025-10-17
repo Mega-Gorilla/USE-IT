@@ -8,13 +8,7 @@ Prerequisites:
 
 import asyncio
 
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
-
 from browser_use import Agent, Browser, ChatOpenAI
-
 
 async def main():
 	"""Basic cloud browser example."""
@@ -37,7 +31,6 @@ async def main():
 			print(
 				'💡 Set BROWSER_USE_API_KEY environment variable. You can also create an API key at https://cloud.browser-use.com'
 			)
-
 
 if __name__ == '__main__':
 	asyncio.run(main())

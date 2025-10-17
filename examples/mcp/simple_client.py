@@ -11,7 +11,6 @@ from browser_use import Agent, Tools
 from browser_use.llm.openai.chat import ChatOpenAI
 from browser_use.mcp.client import MCPClient
 
-
 async def main():
 	# Initialize tools
 	tools = Tools()
@@ -38,7 +37,6 @@ async def main():
 
 	# Disconnect when done
 	await mcp_client.disconnect()
-
 
 if __name__ == '__main__':
 	asyncio.run(main())

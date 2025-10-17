@@ -13,10 +13,6 @@ import anyio
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 from browser_use import ChatOpenAI
 from browser_use.agent.service import Agent, Tools
 from browser_use.agent.views import ActionResult
@@ -27,7 +23,6 @@ logger = logging.getLogger(__name__)
 
 # Initialize tools
 tools = Tools()
-
 
 @tools.action('Upload file to interactive element with file path')
 async def upload_file(index: int, path: str, browser_session: BrowserSession, available_file_paths: list[str]):
@@ -64,7 +59,6 @@ async def upload_file(index: int, path: str, browser_session: BrowserSession, av
 		msg = f'Failed to upload file to index {index}: {str(e)}'
 		logger.info(msg)
 		return ActionResult(error=msg)
-
 
 async def main():
 	"""Main function to run the example"""
@@ -107,7 +101,6 @@ async def main():
 	for file_path in available_file_paths:
 		if os.path.exists(file_path):
 			os.remove(file_path)
-
 
 if __name__ == '__main__':
 	asyncio.run(main())

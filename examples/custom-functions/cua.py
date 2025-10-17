@@ -17,10 +17,6 @@ from PIL import Image
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 
@@ -28,12 +24,10 @@ from browser_use import Agent, ChatOpenAI, Tools
 from browser_use.agent.views import ActionResult
 from browser_use.browser import BrowserSession
 
-
 class OpenAICUAAction(BaseModel):
 	"""Parameters for OpenAI Computer Use Assistant action."""
 
 	description: str = Field(..., description='Description of your next goal')
-
 
 async def handle_model_action(browser_session: BrowserSession, action) -> ActionResult:
 	"""
@@ -169,9 +163,7 @@ async def handle_model_action(browser_session: BrowserSession, action) -> Action
 		print(f'Error handling action {action}: {e}')
 		return ActionResult(error=ERROR_MSG)
 
-
 tools = Tools()
-
 
 @tools.registry.action(
 	'Use OpenAI Computer Use Assistant (CUA) as a fallback when standard browser actions cannot achieve the desired goal. This action sends a screenshot and description to OpenAI CUA and executes the returned computer use actions.',
@@ -268,7 +260,6 @@ async def openai_cua_fallback(params: OpenAICUAAction, browser_session: BrowserS
 		print(f'❌ {msg}')
 		return ActionResult(error=msg)
 
-
 async def main():
 	# Initialize the language model
 	llm = ChatOpenAI(
@@ -311,7 +302,6 @@ async def main():
 		# Clean up browser session
 		await browser_session.kill()
 		print('\n🧹 Browser session closed')
-
 
 if __name__ == '__main__':
 	# Example of different scenarios where CUA might be useful

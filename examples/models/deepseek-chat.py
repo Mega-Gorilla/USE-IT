@@ -16,7 +16,6 @@ if deepseek_api_key is None:
 	print('export DEEPSEEK_API_KEY=your_key')
 	exit(0)
 
-
 async def main():
 	llm = ChatDeepSeek(
 		base_url='https://api.deepseek.com/v1',
@@ -31,6 +30,5 @@ async def main():
 		extend_system_message=extend_system_message,
 	)
 	await agent.run()
-
 
 asyncio.run(main())

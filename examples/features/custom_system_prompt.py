@@ -5,11 +5,6 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
-
 from browser_use import Agent, ChatOpenAI
 
 extend_system_message = (
@@ -17,7 +12,6 @@ extend_system_message = (
 )
 
 # or use override_system_message to completely override the system prompt
-
 
 async def main():
 	task = 'do google search to find images of Elon Musk'
@@ -32,7 +26,6 @@ async def main():
 	)
 
 	await agent.run()
-
 
 if __name__ == '__main__':
 	asyncio.run(main())

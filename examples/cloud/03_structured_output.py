@@ -34,7 +34,6 @@ BASE_URL = os.getenv('BROWSER_USE_BASE_URL', 'https://api.browser-use.com/api/v1
 TIMEOUT = int(os.getenv('BROWSER_USE_TIMEOUT', '30'))
 HEADERS = {'Authorization': f'Bearer {API_KEY}', 'Content-Type': 'application/json'}
 
-
 def _request_with_retry(method: str, url: str, **kwargs) -> requests.Response:
 	"""Make HTTP request with timeout and retry logic."""
 	kwargs.setdefault('timeout', TIMEOUT)
@@ -53,7 +52,6 @@ def _request_with_retry(method: str, url: str, **kwargs) -> requests.Response:
 
 	raise RuntimeError('Unexpected error in retry logic')
 
-
 # Define structured output schemas using Pydantic
 class NewsArticle(BaseModel):
 	"""Schema for a news article."""
@@ -64,14 +62,12 @@ class NewsArticle(BaseModel):
 	published_date: str | None = Field(description='Publication date if available')
 	category: str | None = Field(description='Article category/section')
 
-
 class NewsResponse(BaseModel):
 	"""Schema for multiple news articles."""
 
 	articles: list[NewsArticle] = Field(description='List of news articles')
 	source_website: str = Field(description='The website where articles were found')
 	extracted_at: str = Field(description='When the data was extracted')
-
 
 class ProductInfo(BaseModel):
 	"""Schema for product information."""
@@ -82,7 +78,6 @@ class ProductInfo(BaseModel):
 	availability: str = Field(description='Stock status (in stock, out of stock, etc.)')
 	description: str = Field(description='Product description')
 
-
 class CompanyInfo(BaseModel):
 	"""Schema for company information."""
 
@@ -92,7 +87,6 @@ class CompanyInfo(BaseModel):
 	industry: str = Field(description='Primary industry')
 	headquarters: str = Field(description='Headquarters location')
 	founded_year: int | None = Field(description='Year founded')
-
 
 def create_structured_task(instructions: str, schema_model: type[BaseModel], **kwargs) -> str:
 	"""
@@ -126,7 +120,6 @@ def create_structured_task(instructions: str, schema_model: type[BaseModel], **k
 	task_id = response.json()['id']
 	print(f'✅ Structured task created: {task_id}')
 	return task_id
-
 
 def wait_for_structured_completion(task_id: str, max_wait_time: int = 300) -> dict[str, Any]:
 	"""Wait for task completion and return the result."""
@@ -170,7 +163,6 @@ def wait_for_structured_completion(task_id: str, max_wait_time: int = 300) -> di
 			return details
 
 		time.sleep(3)
-
 
 def validate_and_display_output(output: str, schema_model: type[BaseModel]):
 	"""
@@ -228,7 +220,6 @@ def validate_and_display_output(output: str, schema_model: type[BaseModel]):
 		print(f'\nRaw output: {output[:500]}...')
 		return None
 
-
 def demo_news_extraction():
 	"""Demo: Extract structured news data."""
 	print('\n📰 Demo 1: News Article Extraction')
@@ -258,7 +249,6 @@ def demo_news_extraction():
 	else:
 		print('❌ No structured output received')
 		return None
-
 
 def demo_product_extraction():
 	"""Demo: Extract structured product data."""
@@ -290,7 +280,6 @@ def demo_product_extraction():
 		print('❌ No structured output received')
 		return None
 
-
 def demo_company_extraction():
 	"""Demo: Extract structured company data."""
 	print('\n🏢 Demo 3: Company Information Extraction')
@@ -320,7 +309,6 @@ def demo_company_extraction():
 	else:
 		print('❌ No structured output received')
 		return None
-
 
 def main():
 	"""Demonstrate structured output extraction."""
@@ -356,7 +344,6 @@ def main():
 		print(f'❌ API Error: {e}')
 	except Exception as e:
 		print(f'❌ Error: {e}')
-
 
 if __name__ == '__main__':
 	main()

@@ -13,11 +13,6 @@ import asyncio
 import os
 
 import aiohttp
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
-
 
 async def search_url(url: str, query: str, depth: int = 2):
 	# Validate API key exists
@@ -59,7 +54,6 @@ async def search_url(url: str, query: str, depth: int = 2):
 	except Exception as e:
 		print(f'❌ Exception: {str(e)}')
 		return None
-
 
 if __name__ == '__main__':
 	# Example 1: Extract pricing info

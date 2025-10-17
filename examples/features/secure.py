@@ -31,7 +31,6 @@ Apply for Microsoft's "Limited Access Program":
 For high-scale deployments (500+ agents), consider:
 - Multiple deployments across regions
 
-
 How to Verify This Yourself, that there is no data logging:
 - Network monitoring: Run with network monitoring tools
 - Firewall rules: Block all domains except Azure OpenAI and your target sites
@@ -43,15 +42,9 @@ import asyncio
 import os
 import sys
 
-from dotenv import load_dotenv
-
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-load_dotenv()
-
-
 os.environ['ANONYMIZED_TELEMETRY'] = 'false'
-
 
 from browser_use import Agent, BrowserProfile, ChatAzureOpenAI
 
@@ -71,13 +64,10 @@ browser_profile = BrowserProfile(allowed_domains=['*google.com', 'browser-use.co
 # If you trust your LLM endpoint, you don't need to worry about this.
 sensitive_data = {'company_name': 'browser-use'}
 
-
 # Create Agent
 agent = Agent(task=task, llm=llm, browser_profile=browser_profile, sensitive_data=sensitive_data)  # type: ignore
 
-
 async def main():
 	await agent.run(max_steps=10)
-
 
 asyncio.run(main())

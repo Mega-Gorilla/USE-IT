@@ -5,10 +5,6 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 from onepassword.client import Client  # type: ignore  # pip install onepassword-sdk
 
 from browser_use import ActionResult, Agent, ChatOpenAI, Tools
@@ -20,9 +16,7 @@ logger = logging.getLogger(__name__)
 OP_SERVICE_ACCOUNT_TOKEN = os.getenv('OP_SERVICE_ACCOUNT_TOKEN')
 OP_ITEM_ID = os.getenv('OP_ITEM_ID')  # Go to 1Password, right click on the item, click "Copy Secret Reference"
 
-
 tools = Tools()
-
 
 @tools.registry.action('Get 2FA code from 1Password for Google Account', domains=['*.google.com', 'google.com'])
 async def get_1password_2fa() -> ActionResult:
@@ -40,7 +34,6 @@ async def get_1password_2fa() -> ActionResult:
 
 	return ActionResult(extracted_content=mfa_code)
 
-
 async def main():
 	# Example task using the 1Password 2FA action
 	task = 'Go to account.google.com, enter username and password, then if prompted for 2FA code, get 2FA code from 1Password for and enter it'
@@ -50,7 +43,6 @@ async def main():
 
 	result = await agent.run()
 	print(f'Task completed with result: {result}')
-
 
 if __name__ == '__main__':
 	asyncio.run(main())

@@ -3,11 +3,6 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
-
 from browser_use.browser import BrowserProfile
 from browser_use.llm import ChatGoogle
 from examples.integrations.slack.slack_api import SlackBot, app
@@ -15,17 +10,13 @@ from examples.integrations.slack.slack_api import SlackBot, app
 # load credentials from environment variables
 bot_token = os.getenv('SLACK_BOT_TOKEN')
 if not bot_token:
-	raise ValueError('Slack bot token not found in .env file.')
+	raise ValueError('Set the SLACK_BOT_TOKEN environment variable before running this example.')
 
 signing_secret = os.getenv('SLACK_SIGNING_SECRET')
 if not signing_secret:
-	raise ValueError('Slack signing secret not found in .env file.')
+	raise ValueError('Set the SLACK_SIGNING_SECRET environment variable before running this example.')
 
-api_key = os.getenv('GOOGLE_API_KEY')
-if not api_key:
-	raise ValueError('GOOGLE_API_KEY is not set')
-
-llm = ChatGoogle(model='gemini-2.0-flash-exp', api_key=api_key)
+llm = ChatGoogle(model='gemini-2.0-flash-exp')
 
 slack_bot = SlackBot(
 	llm=llm,  # required; instance of BaseChatModel

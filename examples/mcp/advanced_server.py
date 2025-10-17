@@ -30,7 +30,6 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.types import TextContent, Tool
 
-
 @dataclass
 class TaskResult:
 	"""Result of executing a task."""
@@ -43,7 +42,6 @@ class TaskResult:
 	def __post_init__(self):
 		if self.timestamp is None:
 			self.timestamp = datetime.now()
-
 
 class AIAssistant:
 	"""An AI assistant that uses MCP servers to perform complex tasks."""
@@ -231,7 +229,6 @@ class AIAssistant:
 
 		return TaskResult(True, {'filled_fields': filled_fields, 'form_data': form_data, 'url': form_url})
 
-
 async def main():
 	"""Main demonstration of advanced MCP client usage."""
 	print('Browser-Use MCP Client - Advanced Example')
@@ -318,7 +315,6 @@ async def main():
 		print('\n🧹 Cleaning up...')
 		await assistant.disconnect_all()
 		print('✨ Demo complete!')
-
 
 if __name__ == '__main__':
 	asyncio.run(main())

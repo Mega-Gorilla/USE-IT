@@ -6,10 +6,6 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 from browser_use import Agent, ChatOpenAI
 from browser_use.browser import BrowserProfile, BrowserSession
 
@@ -69,7 +65,6 @@ agent3 = Agent(
 	browser_session=browser_session,
 )
 
-
 async def main():
 	print('Choose which scrolling example to run:')
 	print('1. Basic page scrolling with custom amounts (Wikipedia)')
@@ -90,7 +85,6 @@ async def main():
 	else:
 		print('❌ Invalid choice. Running Example 1 by default...')
 		await agent1.run()
-
 
 if __name__ == '__main__':
 	asyncio.run(main())

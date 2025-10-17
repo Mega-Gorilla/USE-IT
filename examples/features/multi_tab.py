@@ -10,10 +10,6 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 from browser_use import Agent, ChatOpenAI
 
 # video: https://preview.screen.studio/share/clenCmS6
@@ -23,9 +19,7 @@ agent = Agent(
 	llm=llm,
 )
 
-
 async def main():
 	await agent.run()
-
 
 asyncio.run(main())

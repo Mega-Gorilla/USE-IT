@@ -4,10 +4,6 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 from browser_use import Agent, ChatOpenAI
 from browser_use.browser import BrowserProfile, BrowserSession
 
@@ -46,7 +42,6 @@ agent = Agent(
 	browser_session=browser_session,
 )
 
-
 async def main():
 	print('Demo: Blocked Domains Feature - "Lock the F in" Edition')
 	print("We're literally locking the F in Facebook and X!")
@@ -58,7 +53,6 @@ async def main():
 
 	input('Press Enter to close the browser...')
 	await browser_session.kill()
-
 
 if __name__ == '__main__':
 	asyncio.run(main())

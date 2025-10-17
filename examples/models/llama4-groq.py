@@ -4,11 +4,6 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
-
 from browser_use import Agent
 from browser_use.llm import ChatGroq
 
@@ -26,14 +21,12 @@ llm = ChatGroq(
 
 task = 'Go to amazon.com, search for laptop, sort by best rating, and give me the price of the first result'
 
-
 async def main():
 	agent = Agent(
 		task=task,
 		llm=llm,
 	)
 	await agent.run()
-
 
 if __name__ == '__main__':
 	asyncio.run(main())

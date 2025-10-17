@@ -23,10 +23,6 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 from browser_use import ChatOpenAI
 from browser_use.agent.service import Agent, Tools
 from browser_use.browser import BrowserSession
@@ -34,7 +30,6 @@ from browser_use.browser import BrowserSession
 # Initialize tools and registry
 tools = Tools()
 registry = tools.registry
-
 
 # Action will only be available to Agent on Google domains because of the domain filter
 @registry.action(description='Trigger disco mode', domains=['google.com', '*.google.com'])
@@ -55,7 +50,6 @@ async def disco_mode(browser_session: BrowserSession):
 		session_id=cdp_session.session_id,
 	)
 
-
 # Custom filter function that checks URL
 async def is_login_page(browser_session: BrowserSession) -> bool:
 	"""Check if current page is a login page."""
@@ -69,7 +63,6 @@ async def is_login_page(browser_session: BrowserSession) -> bool:
 		return 'login' in url.lower() or 'signin' in url.lower()
 	except Exception:
 		return False
-
 
 # Note: page_filter is not directly supported anymore, so we'll just use domains
 # and check the condition inside the function
@@ -89,7 +82,6 @@ async def use_the_force(browser_session: BrowserSession):
 		},
 		session_id=cdp_session.session_id,
 	)
-
 
 async def main():
 	"""Main function to run the example"""
@@ -114,7 +106,6 @@ async def main():
 
 	# Cleanup
 	await browser_session.kill()
-
 
 if __name__ == '__main__':
 	asyncio.run(main())

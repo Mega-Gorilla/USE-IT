@@ -31,7 +31,6 @@ BASE_URL = os.getenv('BROWSER_USE_BASE_URL', 'https://api.browser-use.com/api/v1
 TIMEOUT = int(os.getenv('BROWSER_USE_TIMEOUT', '30'))
 HEADERS = {'Authorization': f'Bearer {API_KEY}', 'Content-Type': 'application/json'}
 
-
 def _request_with_retry(method: str, url: str, **kwargs) -> requests.Response:
 	"""Make HTTP request with timeout and retry logic."""
 	kwargs.setdefault('timeout', TIMEOUT)
@@ -50,7 +49,6 @@ def _request_with_retry(method: str, url: str, **kwargs) -> requests.Response:
 
 	# This line should never be reached, but satisfies type checker
 	raise RuntimeError('Unexpected error in retry logic')
-
 
 def create_task(instructions: str) -> str:
 	"""
@@ -77,18 +75,15 @@ def create_task(instructions: str) -> str:
 	print(f'✅ Task created with ID: {task_id}')
 	return task_id
 
-
 def get_task_status(task_id: str) -> dict[str, Any]:
 	"""Get the current status of a task."""
 	response = _request_with_retry('get', f'{BASE_URL}/task/{task_id}/status', headers=HEADERS)
 	return response.json()
 
-
 def get_task_details(task_id: str) -> dict[str, Any]:
 	"""Get full task details including steps and output."""
 	response = _request_with_retry('get', f'{BASE_URL}/task/{task_id}', headers=HEADERS)
 	return response.json()
-
 
 def wait_for_completion(task_id: str, poll_interval: int = 3) -> dict[str, Any]:
 	"""
@@ -138,7 +133,6 @@ def wait_for_completion(task_id: str, poll_interval: int = 3) -> dict[str, Any]:
 
 		time.sleep(poll_interval)
 
-
 def main():
 	"""Run a basic cloud automation task."""
 	print('🚀 Browser Use Cloud - Basic Task Example')
@@ -182,7 +176,6 @@ def main():
 		print(f'❌ API Error: {e}')
 	except Exception as e:
 		print(f'❌ Error: {e}')
-
 
 if __name__ == '__main__':
 	main()

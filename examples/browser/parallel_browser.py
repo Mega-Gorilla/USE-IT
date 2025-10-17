@@ -4,7 +4,6 @@ from browser_use import Agent, Browser, ChatOpenAI
 
 # NOTE: This is still experimental, and agents might conflict each other.
 
-
 async def main():
 	# Create 3 separate browser instances
 	browsers = [
@@ -39,7 +38,6 @@ async def main():
 	results = await asyncio.gather(*tasks, return_exceptions=True)
 
 	print('🎉 All agents completed!')
-
 
 if __name__ == '__main__':
 	asyncio.run(main())

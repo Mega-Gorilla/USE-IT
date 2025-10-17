@@ -24,7 +24,6 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.types import TextContent
 
-
 async def run_simple_browser_automation():
 	"""Connect to browser-use MCP server and perform basic browser automation."""
 
@@ -119,7 +118,6 @@ async def run_simple_browser_automation():
 
 			print('\n✨ Simple browser automation demo complete!')
 
-
 async def main():
 	"""Main entry point."""
 	print('Browser-Use MCP Client - Simple Example')
@@ -132,7 +130,6 @@ async def main():
 		print(f'\n❌ Error: {e}')
 		print('\nMake sure the browser-use MCP server is running:')
 		print("  uvx python -m browser_use.mcp.server")
-
 
 if __name__ == '__main__':
 	asyncio.run(main())

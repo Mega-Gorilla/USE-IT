@@ -11,25 +11,18 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 import httpx
 from pydantic import BaseModel
 
 from browser_use import Agent, ChatOpenAI, Tools
 from browser_use.agent.views import ActionResult
 
-
 class Profile(BaseModel):
 	platform: str
 	profile_url: str
 
-
 class Profiles(BaseModel):
 	profiles: list[Profile]
-
 
 tools = Tools(exclude_actions=['search'], output_model=Profiles)
 BEARER_TOKEN = os.getenv('BEARER_TOKEN')
@@ -38,7 +31,6 @@ if not BEARER_TOKEN:
 	# use the api key for ask tessa
 	# you can also use other apis like exa, xAI, perplexity, etc.
 	raise ValueError('BEARER_TOKEN is not set - go to https://www.heytessa.ai/ and create an api key')
-
 
 @tools.registry.action('Search the web for a specific query')
 async def search_web(query: str):
@@ -61,7 +53,6 @@ async def search_web(query: str):
 	print(result_text)
 	return ActionResult(extracted_content=result_text, include_in_memory=True)
 
-
 async def main():
 	task = (
 		'Go to this tiktok video url, open it and extract the @username from the resulting url. Then do a websearch for this username to find all his social media profiles. Return me the links to the social media profiles with the platform name.'
@@ -83,7 +74,6 @@ async def main():
 
 	else:
 		print('No result')
-
 
 if __name__ == '__main__':
 	asyncio.run(main())

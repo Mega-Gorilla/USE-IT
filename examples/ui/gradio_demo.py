@@ -6,16 +6,11 @@ from dataclasses import dataclass
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 # Third-party imports
 import gradio as gr  # type: ignore
 
 # Local module imports
 from browser_use import Agent, ChatOpenAI
-
 
 @dataclass
 class ActionResult:
@@ -24,12 +19,10 @@ class ActionResult:
 	error: str | None
 	include_in_memory: bool
 
-
 @dataclass
 class AgentHistoryList:
 	all_results: list[ActionResult]
 	all_model_outputs: list[dict]
-
 
 async def run_browser_task(
 	task: str,
@@ -52,7 +45,6 @@ async def run_browser_task(
 		return str(result)
 	except Exception as e:
 		return f'Error: {str(e)}'
-
 
 def create_ui():
 	with gr.Blocks(title='Browser Use GUI') as interface:
@@ -80,7 +72,6 @@ def create_ui():
 		)
 
 	return interface
-
 
 if __name__ == '__main__':
 	demo = create_ui()

@@ -5,11 +5,6 @@ import sys
 # Add the parent directory to the path so we can import browser_use
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
-
 from browser_use import Agent, BrowserProfile
 
 # Speed optimization instructions for the model
@@ -19,7 +14,6 @@ Speed optimization instructions:
 - Get to the goal as quickly as possible
 - Use multi-action sequences whenever possible to reduce steps
 """
-
 
 async def main():
 	# 1. Use fast LLM - Llama 4 on Groq for ultra-fast inference
@@ -58,7 +52,6 @@ async def main():
 	)
 
 	await agent.run()
-
 
 if __name__ == '__main__':
 	asyncio.run(main())

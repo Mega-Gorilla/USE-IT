@@ -1,7 +1,6 @@
 """
 Goal: Automates CAPTCHA solving on a demo website.
 
-
 Simple try of the agent.
 @dev You need to add OPENAI_API_KEY to your environment variables.
 NOTE: captchas are hard. For this example it works. But e.g. for iframes it does not.
@@ -14,12 +13,7 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 from browser_use import Agent, ChatOpenAI
-
 
 async def main():
 	llm = ChatOpenAI(model='gpt-4.1-mini')
@@ -29,7 +23,6 @@ async def main():
 	)
 	await agent.run()
 	input('Press Enter to exit')
-
 
 if __name__ == '__main__':
 	asyncio.run(main())

@@ -10,11 +10,6 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
-
 from browser_use import Agent
 from browser_use.llm import ChatAzureOpenAI
 
@@ -36,9 +31,7 @@ agent = Agent(
 	llm=llm,
 )
 
-
 async def main():
 	await agent.run(max_steps=10)
-
 
 asyncio.run(main())

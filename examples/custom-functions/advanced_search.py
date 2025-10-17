@@ -6,10 +6,6 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 import logging
 
 from pydantic import BaseModel
@@ -19,22 +15,18 @@ from browser_use.browser.profile import BrowserProfile
 
 logger = logging.getLogger(__name__)
 
-
 class Person(BaseModel):
 	name: str
 	email: str | None = None
 
-
 class PersonList(BaseModel):
 	people: list[Person]
-
 
 SERP_API_KEY = os.getenv('SERPER_API_KEY')
 if not SERP_API_KEY:
 	raise ValueError('SERPER_API_KEY is not set')
 
 tools = Tools(exclude_actions=['search'], output_model=PersonList)
-
 
 @tools.registry.action('Search the web for a specific query. Returns a short description and links of the results.')
 async def search_web(query: str):
@@ -64,7 +56,6 @@ async def search_web(query: str):
 
 	return ActionResult(extracted_content=organic_str, include_in_memory=False, include_extracted_content_only_once=True)
 
-
 names = [
 	'Ruedi Aebersold',
 	'Bernd Bodenmiller',
@@ -88,7 +79,6 @@ names = [
 	'Michael Bruce Zimmermann',
 ]
 
-
 async def main():
 	task = 'use search_web with "find email address of the following ETH professor:" for each of the following persons in a list of actions. Finally return the list with name and email if provided - do always 5 at once'
 	task += '\n' + '\n'.join(names)
@@ -106,7 +96,6 @@ async def main():
 			print(f'{person.name} - {person.email}')
 	else:
 		print('No result')
-
 
 if __name__ == '__main__':
 	asyncio.run(main())

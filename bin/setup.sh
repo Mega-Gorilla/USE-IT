@@ -38,7 +38,7 @@ echo
 echo "[+] Installing packages in venv"
 uv sync --dev --all-extras
 echo
-echo "[i] Tip: make sure to set BROWSER_USE_LOGGING_LEVEL=debug and your LLM API keys in your .env file"
+echo "[i] Tip: copy config.yaml.example to config.yaml and set your LLM API keys (or export OPENAI_API_KEY, etc.)"
 echo
 uv pip show browser-use
 

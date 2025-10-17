@@ -3,19 +3,13 @@ import os
 import pathlib
 import shutil
 
-from dotenv import load_dotenv
-
 from browser_use import Agent, ChatOpenAI
-
-load_dotenv()
-
 
 SCRIPT_DIR = pathlib.Path(os.path.dirname(os.path.abspath(__file__)))
 agent_dir = SCRIPT_DIR / 'file_system'
 agent_dir.mkdir(exist_ok=True)
 conversation_dir = agent_dir / 'conversations' / 'conversation'
 print(f'Agent logs directory: {agent_dir}')
-
 
 task = """
 Go to https://mertunsall.github.io/posts/post1.html
@@ -36,7 +30,6 @@ agent = Agent(
 	file_system_path=str(agent_dir / 'fs'),
 )
 
-
 async def main():
 	agent_history = await agent.run()
 	print(f'Final result: {agent_history.final_result()}', flush=True)
@@ -44,7 +37,6 @@ async def main():
 	input('Press Enter to clean the file system...')
 	# clean the file system
 	shutil.rmtree(str(agent_dir / 'fs'))
-
 
 if __name__ == '__main__':
 	asyncio.run(main())

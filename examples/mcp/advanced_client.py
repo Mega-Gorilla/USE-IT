@@ -16,7 +16,6 @@ from browser_use import Agent, Tools
 from browser_use.llm.openai.chat import ChatOpenAI
 from browser_use.mcp.client import MCPClient
 
-
 async def main():
 	"""Sign up for account, save details, and verify via Gmail."""
 
@@ -95,7 +94,6 @@ Always wait a few seconds after submitting a form before checking Gmail to allow
 	# Disconnect both MCP clients
 	await gmail_client.disconnect()
 	await filesystem_client.disconnect()
-
 
 if __name__ == '__main__':
 	# Prerequisites:

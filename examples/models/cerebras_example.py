@@ -32,7 +32,6 @@ import os
 
 from browser_use import Agent
 
-
 async def main():
 	# Set your API key (recommended to use environment variable)
 	api_key = os.getenv('CEREBRAS_API_KEY')
@@ -73,7 +72,6 @@ async def main():
 	result = history.final_result()
 
 	print(f'Result: {result}')
-
 
 if __name__ == '__main__':
 	asyncio.run(main())

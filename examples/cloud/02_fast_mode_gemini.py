@@ -35,7 +35,6 @@ BASE_URL = os.getenv('BROWSER_USE_BASE_URL', 'https://api.browser-use.com/api/v1
 TIMEOUT = int(os.getenv('BROWSER_USE_TIMEOUT', '30'))
 HEADERS = {'Authorization': f'Bearer {API_KEY}', 'Content-Type': 'application/json'}
 
-
 def _request_with_retry(method: str, url: str, **kwargs) -> requests.Response:
 	"""Make HTTP request with timeout and retry logic."""
 	kwargs.setdefault('timeout', TIMEOUT)
@@ -53,7 +52,6 @@ def _request_with_retry(method: str, url: str, **kwargs) -> requests.Response:
 			time.sleep(sleep_time)
 
 	raise RuntimeError('Unexpected error in retry logic')
-
 
 def create_fast_task(instructions: str) -> str:
 	"""
@@ -93,7 +91,6 @@ def create_fast_task(instructions: str) -> str:
 	print(f'✅ Fast task created with ID: {task_id}')
 	print('⚡ Configuration: Gemini Flash + No Proxy + No Highlighting')
 	return task_id
-
 
 def monitor_fast_task(task_id: str) -> dict[str, Any]:
 	"""
@@ -154,7 +151,6 @@ def monitor_fast_task(task_id: str) -> dict[str, Any]:
 
 		time.sleep(poll_interval)
 
-
 def run_speed_comparison():
 	"""Run multiple tasks to compare speed vs accuracy."""
 	print('\n🏃‍♂️ Speed Comparison Demo')
@@ -202,7 +198,6 @@ def run_speed_comparison():
 		print(f'💨 Average per step: {total_time / total_steps:.1f}s')
 	else:
 		print('💨 Average per step: N/A (no steps recorded)')
-
 
 def main():
 	"""Demonstrate ultra-fast cloud automation."""
@@ -259,7 +254,6 @@ def main():
 		print(f'❌ API Error: {e}')
 	except Exception as e:
 		print(f'❌ Error: {e}')
-
 
 if __name__ == '__main__':
 	main()

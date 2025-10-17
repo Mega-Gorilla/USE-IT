@@ -7,7 +7,6 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-
 def setup_environment(debug: bool):
 	if not debug:
 		os.environ['BROWSER_USE_SETUP_LOGGING'] = 'false'
@@ -16,7 +15,6 @@ def setup_environment(debug: bool):
 	else:
 		os.environ['BROWSER_USE_SETUP_LOGGING'] = 'true'
 		os.environ['BROWSER_USE_LOGGING_LEVEL'] = 'info'
-
 
 parser = argparse.ArgumentParser(description='Generate ads from landing pages using browser-use + 🍌')
 parser.add_argument('--url', nargs='?', help='Landing page URL to analyze')
@@ -40,7 +38,6 @@ from browser_use import Agent, BrowserSession
 from browser_use.llm.google import ChatGoogle
 
 GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
-
 
 class LandingPageAnalyzer:
 	def __init__(self, debug: bool = False):
@@ -94,7 +91,6 @@ Return ONLY the key brand info, not page structure details.""",
 
 		analysis = history.final_result() or 'No analysis content extracted'
 		return {'url': url, 'analysis': analysis, 'screenshot_path': screenshot_path, 'timestamp': timestamp}
-
 
 class AdGenerator:
 	def __init__(self, api_key: str | None = GOOGLE_API_KEY, mode: str = 'instagram'):
@@ -272,7 +268,6 @@ Style: Modern TikTok advertisement, viral potential, authentic energy, minimal t
 
 		return str(content_path)
 
-
 def open_file(file_path: str):
 	"""Open file with default system viewer"""
 	try:
@@ -284,7 +279,6 @@ def open_file(file_path: str):
 			subprocess.run(['xdg-open', file_path], check=True)
 	except Exception as e:
 		print(f'❌ Could not open file: {e}')
-
 
 async def create_ad_from_landing_page(url: str, debug: bool = False, mode: str = 'instagram', ad_id: int = 1):
 	analyzer = LandingPageAnalyzer(debug=debug)
@@ -327,7 +321,6 @@ async def create_ad_from_landing_page(url: str, debug: bool = False, mode: str =
 		if ad_id == 1 and page_data.get('screenshot_path'):
 			print(f'📸 Page screenshot: {page_data["screenshot_path"]}')
 
-
 async def generate_single_ad(page_data: dict, mode: str, ad_id: int):
 	"""Generate a single ad using pre-analyzed page data"""
 	generator = AdGenerator(mode=mode)
@@ -357,7 +350,6 @@ async def generate_single_ad(page_data: dict, mode: str, ad_id: int):
 	except Exception as e:
 		print(f'❌ Error for ad #{ad_id}: {e}')
 		raise
-
 
 async def create_multiple_ads(url: str, debug: bool = False, mode: str = 'instagram', count: int = 1):
 	"""Generate multiple ads in parallel using asyncio concurrency"""
@@ -398,7 +390,6 @@ async def create_multiple_ads(url: str, debug: bool = False, mode: str = 'instag
 		open_file(ad_path)
 
 	return successful
-
 
 if __name__ == '__main__':
 	url = args.url

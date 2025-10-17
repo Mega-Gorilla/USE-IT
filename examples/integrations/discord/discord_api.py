@@ -3,17 +3,12 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 import discord  # type: ignore
 from discord.ext import commands  # type: ignore
 
 from browser_use.agent.service import Agent
 from browser_use.browser import BrowserProfile, BrowserSession
 from browser_use.llm import BaseChatModel
-
 
 class DiscordBot(commands.Bot):
 	"""Discord bot implementation for Browser-Use tasks.

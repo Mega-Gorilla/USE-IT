@@ -15,7 +15,6 @@ if TYPE_CHECKING:
 
 T = TypeVar('T', bound=BaseModel)
 
-
 @dataclass
 class ChatLangchain(BaseChatModel):
 	"""

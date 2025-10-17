@@ -14,10 +14,6 @@ from pathlib import Path
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 from pydantic import BaseModel
 from PyPDF2 import PdfReader  # type: ignore
 
@@ -41,7 +37,6 @@ with open(CV, 'w') as f:
 
 logger.info(f'Using dummy cv at {CV}')
 
-
 class Job(BaseModel):
 	title: str
 	link: str
@@ -49,7 +44,6 @@ class Job(BaseModel):
 	fit_score: float
 	location: str | None = None
 	salary: str | None = None
-
 
 @tools.action('Save jobs to file - with a score how well it fits to my profile', param_model=Job)
 def save_jobs(job: Job):
@@ -59,12 +53,10 @@ def save_jobs(job: Job):
 
 	return 'Saved job to file'
 
-
 @tools.action('Read jobs from file')
 def read_jobs():
 	with open('jobs.csv') as f:
 		return f.read()
-
 
 @tools.action('Read my cv for context to fill forms')
 def read_cv():
@@ -74,7 +66,6 @@ def read_cv():
 		text += page.extract_text() or ''
 	logger.info(f'Read cv with {len(text)} characters')
 	return ActionResult(extracted_content=text, include_in_memory=True)
-
 
 @tools.action(
 	'Upload cv to element - call this function to upload if element is not found, try with different index of the same upload element',
@@ -108,7 +99,6 @@ async def upload_cv(index: int, browser_session: BrowserSession):
 		logger.debug(f'Error in upload: {str(e)}')
 		return ActionResult(error=f'Failed to upload file to index {index}')
 
-
 browser_session = BrowserSession(
 	browser_profile=BrowserProfile(
 		executable_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
@@ -116,7 +106,6 @@ browser_session = BrowserSession(
 		user_data_dir='~/.config/browseruse/profiles/default',
 	)
 )
-
 
 async def main():
 	# ground_task = (
@@ -151,7 +140,6 @@ async def main():
 		agents.append(agent)
 
 	await asyncio.gather(*[agent.run() for agent in agents])
-
 
 if __name__ == '__main__':
 	asyncio.run(main())

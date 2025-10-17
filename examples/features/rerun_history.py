@@ -21,7 +21,6 @@ from pathlib import Path
 from browser_use import Agent
 from browser_use.llm.openai.chat import ChatOpenAI
 
-
 async def main():
 	# Example task to demonstrate history saving and rerunning
 	history_file = Path('agent_history.json')
@@ -35,7 +34,6 @@ async def main():
 	rerun_agent = Agent(task='', llm=llm)
 
 	await rerun_agent.load_and_rerun(history_file)
-
 
 if __name__ == '__main__':
 	asyncio.run(main())

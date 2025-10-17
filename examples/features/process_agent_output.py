@@ -5,17 +5,12 @@ from pprint import pprint
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 from browser_use import Agent, ChatOpenAI
 from browser_use.agent.views import AgentHistoryList
 from browser_use.browser import BrowserProfile, BrowserSession
 from browser_use.browser.profile import ViewportSize
 
 llm = ChatOpenAI(model='gpt-4.1-mini')
-
 
 async def main():
 	browser_session = BrowserSession(
@@ -49,7 +44,6 @@ async def main():
 		pprint(history.model_thoughts(), indent=4)
 	finally:
 		await browser_session.stop()
-
 
 if __name__ == '__main__':
 	asyncio.run(main())
