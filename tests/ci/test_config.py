@@ -180,6 +180,37 @@ class TestLazyConfig:
 					os.environ[key] = value
 			CONFIG.reload()
 
+	def test_env_file_is_not_auto_loaded(self, tmp_path, monkeypatch):
+		"""Ensure that .env files are ignored unless explicitly loaded by the user."""
+		workspace = tmp_path / 'workspace'
+		workspace.mkdir()
+		(workspace / '.env').write_text('OPENAI_API_KEY=from_env_file\n', encoding='utf-8')
+
+		monkeypatch.chdir(workspace)
+		monkeypatch.delenv('OPENAI_API_KEY', raising=False)
+		CONFIG.reload()
+
+		assert CONFIG.OPENAI_API_KEY == '', 'OPENAI_API_KEY should not be pulled from .env automatically'
+
+	def test_project_level_config_yaml_is_used(self, tmp_path, monkeypatch):
+		"""Project-local config.yaml should be preferred over user config."""
+		user_home = tmp_path / 'home'
+		user_home.mkdir()
+		user_config = user_home / '.config' / 'browseruse'
+		user_config.mkdir(parents=True, exist_ok=True)
+		(user_config / 'config.yaml').write_text('logging:\n  level: warning\n', encoding='utf-8')
+
+		project = tmp_path / 'project'
+		project.mkdir()
+		(project / 'config.yaml').write_text('logging:\n  level: debug\n', encoding='utf-8')
+
+		monkeypatch.setenv('HOME', str(user_home))
+		monkeypatch.setenv('USERPROFILE', str(user_home))
+		monkeypatch.chdir(project)
+		CONFIG.reload()
+
+		assert CONFIG.BROWSER_USE_LOGGING_LEVEL == 'debug'
+
 	def test_config_path_resolution_priority(self, tmp_path, monkeypatch):
 		"""Ensure config resolution prefers explicit path, then cwd, then user config."""
 		workspace = tmp_path / 'workspace'
