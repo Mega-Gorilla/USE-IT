@@ -11,6 +11,7 @@ from openai.types.shared_params.reasoning_effort import ReasoningEffort
 from openai.types.shared_params.response_format_json_schema import JSONSchema, ResponseFormatJSONSchema
 from pydantic import BaseModel
 
+from browser_use.config import CONFIG
 from browser_use.llm.base import BaseChatModel
 from browser_use.llm.exceptions import ModelProviderError
 from browser_use.llm.messages import BaseMessage
@@ -73,6 +74,22 @@ class ChatOpenAI(BaseChatModel):
 	@property
 	def provider(self) -> str:
 		return 'openai'
+
+	def __post_init__(self) -> None:
+		"""Populate API key from config if missing and validate configuration."""
+		if not self.api_key:
+			configured_key = CONFIG.OPENAI_API_KEY
+			if configured_key:
+				self.api_key = configured_key
+
+		if not self.api_key:
+			raise ModelProviderError(
+				message=(
+					'OpenAI API key is missing. Add `llm.api_keys.openai` to config.yaml '
+					'or set the `OPENAI_API_KEY` environment variable.'
+				),
+				model=str(self.model),
+			)
 
 	def _get_client_params(self) -> dict[str, Any]:
 		"""Prepare client parameters dictionary."""

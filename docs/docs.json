@@ -134,7 +134,8 @@
             "pages": [
               "introduction",
               "quickstart",
-              "quickstart_llm"
+              "quickstart_llm",
+              "migration/legacy-to-yaml"
             ]
           },
           {
