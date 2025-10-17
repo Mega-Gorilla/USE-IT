@@ -10,7 +10,6 @@ import tempfile
 from unittest.mock import AsyncMock
 
 import pytest
-from dotenv import load_dotenv
 from pytest_httpserver import HTTPServer
 
 # Fix for httpserver hanging on shutdown - prevent blocking on socket close
@@ -23,10 +22,6 @@ from browser_use.agent.views import AgentOutput
 from browser_use.llm import BaseChatModel
 from browser_use.llm.views import ChatInvokeCompletion
 from browser_use.tools.service import Tools
-
-# Load environment variables before any imports
-load_dotenv()
-
 
 # Skip LLM API key verification for tests
 os.environ['SKIP_LLM_API_KEY_VERIFICATION'] = 'true'

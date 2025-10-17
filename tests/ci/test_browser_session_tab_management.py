@@ -2,10 +2,7 @@ import asyncio
 import logging
 
 import pytest
-from dotenv import load_dotenv
 from pytest_httpserver import HTTPServer
-
-load_dotenv()
 
 from browser_use.agent.views import ActionModel
 from browser_use.browser.events import NavigateToUrlEvent
