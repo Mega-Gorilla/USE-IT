@@ -1,10 +1,8 @@
 import os
 
-from dotenv import load_dotenv
 
 from browser_use import Agent, ChatOpenAI
 
-load_dotenv()
 import asyncio
 
 # get an api key from https://modelstudio.console.alibabacloud.com/?tab=playground#/api-key

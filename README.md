@@ -20,7 +20,7 @@ git clone https://github.com/Mega-Gorilla/USE-IT.git
 cd USE-IT
 uv sync --all-extras --dev  # or: python -m venv .venv && source .venv/bin/activate && pip install -e .
 uvx playwright install chromium
-cp .env.example .env  # add GEMINI_API_KEY / other secrets
+cp config.yaml.example config.yaml  # add your API keys or rely on environment variables
 ```
 
 Run your first agent from the project root:
@@ -28,8 +28,6 @@ Run your first agent from the project root:
 ```python
 from browser_use import Agent, ChatGoogle
 from browser_use.agent.config import AgentConfig
-from dotenv import load_dotenv
-load_dotenv()
 
 config = AgentConfig(
     task="Find the number of stars of the USE-IT repo",
@@ -81,7 +79,7 @@ git clone https://github.com/Mega-Gorilla/USE-IT.git
 cd USE-IT
 uv sync --all-extras --dev  # もしくは: python -m venv .venv && source .venv/bin/activate && pip install -e .
 uvx playwright install chromium
-cp .env.example .env  # GEMINI_API_KEY などを設定
+cp config.yaml.example config.yaml  # APIキーを設定（もしくは環境変数を利用）
 ```
 
 サンプルコード（リポジトリ直下で実行）:
@@ -89,8 +87,6 @@ cp .env.example .env  # GEMINI_API_KEY などを設定
 ```python
 from browser_use import Agent, ChatGoogle
 from browser_use.agent.config import AgentConfig
-from dotenv import load_dotenv
-load_dotenv()
 
 config = AgentConfig(
     task="USE IT レポジトリのスター数を確認する",

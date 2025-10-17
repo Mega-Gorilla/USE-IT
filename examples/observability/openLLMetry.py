@@ -1,7 +1,6 @@
 import asyncio
 import os
 
-from dotenv import load_dotenv
 
 # test if traceloop is installed
 try:
@@ -12,7 +11,6 @@ except ImportError:
 
 from browser_use import Agent
 
-load_dotenv()
 api_key = os.getenv('TRACELOOP_API_KEY')
 Traceloop.init(api_key=api_key, disable_batch=True)
 

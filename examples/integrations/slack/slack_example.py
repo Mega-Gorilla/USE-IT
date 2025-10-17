@@ -3,9 +3,7 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from dotenv import load_dotenv
 
-load_dotenv()
 
 
 from browser_use.browser import BrowserProfile
@@ -15,11 +13,11 @@ from examples.integrations.slack.slack_api import SlackBot, app
 # load credentials from environment variables
 bot_token = os.getenv('SLACK_BOT_TOKEN')
 if not bot_token:
-	raise ValueError('Slack bot token not found in .env file.')
+	raise ValueError('Slack bot token not found in environment variables.')
 
 signing_secret = os.getenv('SLACK_SIGNING_SECRET')
 if not signing_secret:
-	raise ValueError('Slack signing secret not found in .env file.')
+	raise ValueError('Slack signing secret not found in environment variables.')
 
 api_key = os.getenv('GOOGLE_API_KEY')
 if not api_key:

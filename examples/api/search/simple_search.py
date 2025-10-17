@@ -13,10 +13,7 @@ import asyncio
 import os
 
 import aiohttp
-from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
 
 
 async def simple_search(query: str, max_websites: int = 5, depth: int = 2):

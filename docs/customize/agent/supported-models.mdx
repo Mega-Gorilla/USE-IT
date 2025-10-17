@@ -29,10 +29,16 @@ llm = ChatOpenAI(
 agent = Agent(config=AgentConfig(task="...", llm=llm))
 ```
 
-Required environment variables:
+Configure credentials (choose one):
 
-```bash .env
-OPENAI_API_KEY=
+```yaml config.yaml
+llm:
+  api_keys:
+    openai: sk-...
+```
+
+```bash environment variable
+export OPENAI_API_KEY=sk-...
 ```
 
 <Info>
@@ -58,10 +64,16 @@ agent = Agent(
 )
 ```
 
-And add the variable:
+Configure credentials:
 
-```bash .env
-ANTHROPIC_API_KEY=
+```yaml config.yaml
+llm:
+  api_keys:
+    anthropic: sk-ant-...
+```
+
+```bash environment variable
+export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
 ### Azure OpenAI [example](https://github.com/Mega-Gorilla/USE-IT/blob/main/examples/models/azure_openai.py)
@@ -83,11 +95,18 @@ agent = Agent(
 )
 ```
 
-Required environment variables:
+Configure credentials:
 
-```bash .env
-AZURE_OPENAI_ENDPOINT=https://your-endpoint.openai.azure.com/
-AZURE_OPENAI_API_KEY=
+```yaml config.yaml
+llm:
+  azure_endpoint: https://your-endpoint.openai.azure.com/
+  api_keys:
+    azure: sk-azure-...
+```
+
+```bash environment variable
+export AZURE_OPENAI_ENDPOINT=https://your-endpoint.openai.azure.com/
+export AZURE_OPENAI_KEY=sk-azure-...
 ```
 
 ### Gemini [example](https://github.com/Mega-Gorilla/USE-IT/blob/main/examples/models/gemini.py)
@@ -96,10 +115,8 @@ AZURE_OPENAI_API_KEY=
 
 ```python
 from browser_use import Agent, ChatGoogle
-from dotenv import load_dotenv
 
 # Read GOOGLE_API_KEY into env
-load_dotenv()
 
 # Initialize the model
 llm = ChatGoogle(model='gemini-flash-latest')
@@ -111,10 +128,16 @@ agent = Agent(
 )
 ```
 
-Required environment variables:
+Configure credentials:
 
-```bash .env
-GOOGLE_API_KEY=
+```yaml config.yaml
+llm:
+  api_keys:
+    google: AIza...
+```
+
+```bash environment variable
+export GOOGLE_API_KEY=AIza...
 ```
 
 ### AWS Bedrock [example](https://github.com/Mega-Gorilla/USE-IT/blob/main/examples/models/aws.py)
@@ -159,12 +182,12 @@ agent = Agent(
 
 #### AWS Authentication
 
-Required environment variables:
+Set credentials via environment variables (or rely on the standard AWS profile/role chain):
 
-```bash .env
-AWS_ACCESS_KEY_ID=
-AWS_SECRET_ACCESS_KEY=
-AWS_DEFAULT_REGION=us-east-1
+```bash environment variables
+export AWS_ACCESS_KEY_ID=AKIA...
+export AWS_SECRET_ACCESS_KEY=wJal...
+export AWS_DEFAULT_REGION=us-east-1
 ```
 
 You can also use AWS profiles or IAM roles instead of environment variables. The implementation supports:
@@ -188,10 +211,16 @@ agent = Agent(
 )
 ```
 
-Required environment variables:
+Configure credentials:
 
-```bash .env
-GROQ_API_KEY=
+```yaml config.yaml
+llm:
+  api_keys:
+    groq: gsk_...
+```
+
+```bash environment variable
+export GROQ_API_KEY=gsk_...
 ```
 
 ## Ollama
@@ -217,10 +246,8 @@ Smaller Qwen models may return incorrect action schema formats (e.g., `actions: 
 
 ```python
 from browser_use import Agent, ChatOpenAI
-from dotenv import load_dotenv
 import os
 
-load_dotenv()
 
 # Get API key from https://modelstudio.console.alibabacloud.com/?tab=playground#/api-key
 api_key = os.getenv('ALIBABA_CLOUD')
@@ -235,20 +262,18 @@ agent = Agent(
 )
 ```
 
-Required environment variables:
+Set credentials:
 
-```bash .env
-ALIBABA_CLOUD=
+```bash environment variable
+export ALIBABA_CLOUD=sk-...
 ```
 
 ## ModelScope [example](https://github.com/Mega-Gorilla/USE-IT/blob/main/examples/models/modelscope_example.py)
 
 ```python
 from browser_use import Agent, ChatOpenAI
-from dotenv import load_dotenv
 import os
 
-load_dotenv()
 
 # Get API key from https://www.modelscope.cn/docs/model-service/API-Inference/intro
 api_key = os.getenv('MODELSCOPE_API_KEY')
@@ -263,10 +288,10 @@ agent = Agent(
 )
 ```
 
-Required environment variables:
+Set credentials:
 
-```bash .env
-MODELSCOPE_API_KEY=
+```bash environment variable
+export MODELSCOPE_API_KEY=sk-...
 ```
 
 ## Other models (DeepSeek, Novita, X...)
