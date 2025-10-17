@@ -14,7 +14,6 @@ from typing import Any
 
 import anyio
 import httpx
-from dotenv import load_dotenv
 
 from browser_use.llm.base import BaseChatModel
 from browser_use.llm.views import ChatInvokeUsage
@@ -27,8 +26,6 @@ from browser_use.tokens.views import (
 	TokenUsageEntry,
 	UsageSummary,
 )
-
-load_dotenv()
 
 from browser_use.config import CONFIG
 
