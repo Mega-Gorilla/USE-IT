@@ -21,9 +21,10 @@ export BROWSER_USE_API_KEY="your_api_key_here"
 export BROWSER_USE_BASE_URL="https://api.browser-use.com/api/v1"  # Optional
 export BROWSER_USE_TIMEOUT="30"  # Optional: request timeout in seconds
 
-# Or use .env file (recommended)
-cp examples/cloud/env.example .env
-# Edit .env with your values
+# Optional: store values in a local config or env file
+cp config.yaml.example config.yaml            # If you want to keep credentials in config.yaml
+# or track them in a dedicated .env for these cloud scripts:
+# cp examples/cloud/env.example .env && edit with your values
 
 # Run examples from project root
 python examples/cloud/01_basic_task.py
