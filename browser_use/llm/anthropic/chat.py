@@ -19,6 +19,7 @@ from anthropic.types.tool_choice_tool_param import ToolChoiceToolParam
 from httpx import Timeout
 from pydantic import BaseModel
 
+from browser_use.config import CONFIG
 from browser_use.llm.anthropic.serializer import AnthropicMessageSerializer
 from browser_use.llm.base import BaseChatModel
 from browser_use.llm.exceptions import ModelProviderError, ModelRateLimitError
@@ -55,6 +56,21 @@ class ChatAnthropic(BaseChatModel):
 	@property
 	def provider(self) -> str:
 		return 'anthropic'
+
+	def __post_init__(self) -> None:
+		if not self.api_key and not self.auth_token:
+			configured_key = CONFIG.ANTHROPIC_API_KEY
+			if configured_key:
+				self.api_key = configured_key
+
+		if not (self.api_key or self.auth_token):
+			raise ModelProviderError(
+				message=(
+					'Anthropic API key is missing. Add `llm.api_keys.anthropic` to config.yaml '
+					'or set the `ANTHROPIC_API_KEY` environment variable.'
+				),
+				model=str(self.model),
+			)
 
 	def _get_client_params(self) -> dict[str, Any]:
 		"""Prepare client parameters dictionary."""

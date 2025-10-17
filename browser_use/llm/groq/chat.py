@@ -19,6 +19,7 @@ from groq.types.chat.completion_create_params import (
 from httpx import URL
 from pydantic import BaseModel
 
+from browser_use.config import CONFIG
 from browser_use.llm.base import BaseChatModel, ChatInvokeCompletion
 from browser_use.llm.exceptions import ModelProviderError, ModelRateLimitError
 from browser_use.llm.groq.parser import try_parse_groq_failed_generation
@@ -79,6 +80,21 @@ class ChatGroq(BaseChatModel):
 	@property
 	def provider(self) -> str:
 		return 'groq'
+
+	def __post_init__(self) -> None:
+		if not self.api_key:
+			configured_key = CONFIG.GROK_API_KEY
+			if configured_key:
+				self.api_key = configured_key
+
+		if not self.api_key:
+			raise ModelProviderError(
+				message=(
+					'Groq API key is missing. Add `llm.api_keys.groq` to config.yaml '
+					'or set the `GROK_API_KEY` environment variable.'
+				),
+				model=str(self.model),
+			)
 
 	@property
 	def name(self) -> str:

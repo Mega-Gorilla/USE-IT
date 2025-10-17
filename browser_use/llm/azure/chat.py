@@ -6,7 +6,9 @@ import httpx
 from openai import AsyncAzureOpenAI as AsyncAzureOpenAIClient
 from openai.types.shared import ChatModel
 
+from browser_use.config import CONFIG
 from browser_use.llm.openai.like import ChatOpenAILike
+from browser_use.llm.exceptions import ModelProviderError
 
 
 @dataclass
@@ -39,6 +41,29 @@ class ChatAzureOpenAI(ChatOpenAILike):
 	@property
 	def provider(self) -> str:
 		return 'azure'
+
+	def __post_init__(self) -> None:
+		if not self.api_key:
+			self.api_key = (
+				CONFIG.AZURE_OPENAI_KEY
+				or os.getenv('AZURE_OPENAI_KEY')
+				or os.getenv('AZURE_OPENAI_API_KEY')
+			)
+
+		if not self.azure_endpoint:
+			self.azure_endpoint = CONFIG.AZURE_OPENAI_ENDPOINT or os.getenv('AZURE_OPENAI_ENDPOINT')
+
+		missing = []
+		if not self.api_key:
+			missing.append('API key (`llm.api_keys.azure` / AZURE_OPENAI_KEY)')
+		if not self.azure_endpoint:
+			missing.append('endpoint (`llm.azure_endpoint` / AZURE_OPENAI_ENDPOINT)')
+
+		if missing:
+			raise ModelProviderError(
+				message=f"Azure OpenAI configuration missing: {', '.join(missing)}.",
+				model=str(self.model),
+			)
 
 	def _get_client_params(self) -> dict[str, Any]:
 		_client_params: dict[str, Any] = {}
