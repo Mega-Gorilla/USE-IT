@@ -1,8 +1,8 @@
-"""Tests for lazy loading configuration system."""
+"""Tests for the YAML-backed configuration system."""
 
 import os
 
-from browser_use.config import CONFIG
+from browser_use.config import CONFIG, load_config_yaml
 
 
 class TestLazyConfig:
@@ -118,3 +118,23 @@ class TestLazyConfig:
 				os.environ['BROWSER_USE_CLOUD_SYNC'] = sync_original
 			else:
 				os.environ.pop('BROWSER_USE_CLOUD_SYNC', None)
+
+	def test_load_config_yaml_expands_env_vars(self, tmp_path):
+		"""Ensure ${VAR} placeholders inside YAML are expanded using environment variables."""
+		config_path = tmp_path / 'test-config.yaml'
+		config_path.write_text('llm:\n  api_keys:\n    openai: ${TEST_OPENAI_KEY}\n', encoding='utf-8')
+
+		original_config_path = os.environ.get('BROWSER_USE_CONFIG_PATH')
+		try:
+			os.environ['TEST_OPENAI_KEY'] = 'secret-123'
+			os.environ['BROWSER_USE_CONFIG_PATH'] = str(config_path)
+
+			config = load_config_yaml(reload=True)
+			assert config['llm']['api_keys']['openai'] == 'secret-123'
+		finally:
+			os.environ.pop('TEST_OPENAI_KEY', None)
+			if original_config_path is None:
+				os.environ.pop('BROWSER_USE_CONFIG_PATH', None)
+			else:
+				os.environ['BROWSER_USE_CONFIG_PATH'] = original_config_path
+			CONFIG.reload()
