@@ -22,7 +22,6 @@ dependencies = [
 	"pydantic>=2.11.5",
 	"pyyaml>=6.0.2",
 	"pyobjc>=11.0; platform_system == 'darwin'",
-	"python-dotenv>=1.0.1",
 	"requests>=2.32.3",
     "screeninfo>=0.8.1; platform_system != 'darwin'",
     "typing-extensions>=4.12.2",

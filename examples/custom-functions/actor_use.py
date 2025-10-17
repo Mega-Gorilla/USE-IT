@@ -6,9 +6,7 @@ from browser_use.browser.session import BrowserSession
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from dotenv import load_dotenv
 
-load_dotenv()
 
 from browser_use import ActionResult, Agent, ChatOpenAI, Tools
 

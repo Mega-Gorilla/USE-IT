@@ -3,11 +3,9 @@ import os
 import pathlib
 import shutil
 
-from dotenv import load_dotenv
 
 from browser_use import Agent, ChatOpenAI
 
-load_dotenv()
 
 
 SCRIPT_DIR = pathlib.Path(os.path.dirname(os.path.abspath(__file__)))

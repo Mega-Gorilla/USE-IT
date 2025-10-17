@@ -8,10 +8,7 @@ Prerequisites:
 
 import asyncio
 
-from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
 
 from browser_use import Agent, Browser, ChatOpenAI
 

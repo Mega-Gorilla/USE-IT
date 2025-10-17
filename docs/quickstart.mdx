@@ -53,40 +53,34 @@ pip install playwright && playwright install chromium
 </Tip>
 
 ## 2. Choose your favorite LLM
-Create a `.env` file and add your API key. Don't have one? Start with a [free Gemini key](https://aistudio.google.com/app/u/1/apikey?pli=1).
+Copy the sample configuration and add your API key. Don't have one? Start with a [free Gemini key](https://aistudio.google.com/app/u/1/apikey?pli=1).
 
 <Tabs>
 <Tab title="Mac/Linux">
-```bash create .env file
-touch .env
+```bash create config.yaml
+cp config.yaml.example config.yaml
 ```
 </Tab>
-<Tab title="Windows">
-```cmd create .env file
-echo. > .env
-```
-</Tab>
-</Tabs>
-
-<Tabs>
-<Tab title="Google">
-```bash add your key to .env file
-GEMINI_API_KEY=
-```
-</Tab>
-<Tab title="OpenAI">
-```bash add your key to .env file
-OPENAI_API_KEY=
-```
-</Tab>
-<Tab title="Anthropic">
-```bash add your key to .env file
-ANTHROPIC_API_KEY=
+<Tab title="Windows (PowerShell)">
+```powershell create config.yaml
+Copy-Item config.yaml.example config.yaml
 ```
 </Tab>
 </Tabs>
 
-See [Supported Models](/customize/supported-models) for more.
+Open `config.yaml` and either paste your key under `llm.api_keys`, or set it via an environment variable:
+
+```yaml config.yaml snippet
+llm:
+  api_keys:
+    openai: ${OPENAI_API_KEY}  # Resolve from environment
+```
+
+```bash set environment variable
+export OPENAI_API_KEY=sk-...
+```
+
+See [Supported Models](/customize/supported-models) for a full list of providers and configuration options.
 
 ## 3. Run your first agent
 
@@ -94,10 +88,8 @@ See [Supported Models](/customize/supported-models) for more.
 <Tab title="Google">
 ```python agent.py
 from browser_use import Agent, ChatGoogle
-from dotenv import load_dotenv
 import asyncio
 
-load_dotenv()
 
 async def main():
     llm = ChatGoogle(model="gemini-flash-latest")
@@ -113,10 +105,8 @@ if __name__ == "__main__":
 ```python agent.py
 from browser_use import Agent, ChatOpenAI
 from browser_use.agent.config import AgentConfig
-from dotenv import load_dotenv
 import asyncio
 
-load_dotenv()
 
 async def main():
     llm = ChatOpenAI(model="gpt-4.1-mini")
@@ -132,10 +122,8 @@ if __name__ == "__main__":
 <Tab title="Anthropic">
 ```python agent.py
 from browser_use import Agent, ChatAnthropic
-from dotenv import load_dotenv
 import asyncio
 
-load_dotenv()
 
 async def main():
     llm = ChatAnthropic(model='claude-sonnet-4-0', temperature=0.0)
