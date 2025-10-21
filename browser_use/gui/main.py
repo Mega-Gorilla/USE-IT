@@ -5,7 +5,7 @@ import sys
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from browser_use.agent.views import ApprovalResult
+from browser_use.agent.views import ApprovalDecision, ApprovalResult
 from browser_use.gui.worker import AgentWorker, QtLogHandler, UserPreferences
 from browser_use.gui.widgets import (
 	ExecutionTab,
@@ -104,11 +104,11 @@ class MainWindow(QtWidgets.QMainWindow):
 		dialog = ApprovalDialog(payload, parent=self)
 		dialog.exec()
 
-		decision = dialog.decision or 'cancel'
+		decision: ApprovalDecision = dialog.decision
 		result = ApprovalResult(decision=decision, feedback=dialog.feedback)
 		worker.submit_approval_result(result)
 
-		status_map = {
+		status_map: dict[ApprovalDecision, str] = {
 			'approve': '承認しました: アクションを実行します',
 			'retry': '再考を依頼しました',
 			'skip': 'このステップをスキップします',
