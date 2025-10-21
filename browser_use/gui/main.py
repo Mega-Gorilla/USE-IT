@@ -105,8 +105,16 @@ class MainWindow(QtWidgets.QMainWindow):
 		dialog.exec()
 
 		decision = dialog.decision or 'cancel'
-		worker.submit_approval_result(ApprovalResult(decision=decision))
-		self._update_status('承認結果を送信しました')
+		result = ApprovalResult(decision=decision, feedback=dialog.feedback)
+		worker.submit_approval_result(result)
+
+		status_map = {
+			'approve': '承認しました: アクションを実行します',
+			'retry': '再考を依頼しました',
+			'skip': 'このステップをスキップします',
+			'cancel': 'タスクを中止します',
+		}
+		self._update_status(status_map.get(decision, '承認結果を送信しました'))
 
 	def _start_execution(self) -> None:
 		task = self.task_panel.task_text().strip()
