@@ -90,6 +90,22 @@ class ChatOpenRouter(BaseChatModel):
 			self._client = AsyncOpenAI(**client_params)
 		return self._client
 
+	async def aclose(self) -> None:
+		"""Close the cached OpenRouter client and release HTTP resources."""
+		client = getattr(self, '_client', None)
+		if client is None:
+			return
+
+		self._client = None
+
+		try:
+			if hasattr(client, 'aclose'):
+				await client.aclose()
+			elif hasattr(client, 'close'):
+				client.close()
+		finally:
+			self._client = None
+
 	@property
 	def name(self) -> str:
 		return str(self.model)
