@@ -30,7 +30,7 @@ Browser-Use のセキュリティ関連機能のドキュメント集です。
 | **Sensitive Data フィルタリング** | `browser_use/agent/message_manager/service.py` | LLMへの入力前に機密情報を除去 |
 | **Sensitive Data 置換** | `browser_use/tools/registry/service.py` | アクション実行時にプレースホルダーを実際の値に置換 |
 | **ドメインパターンマッチング** | `browser_use/utils.py` | 安全なURLパターンマッチング |
-| **Security Watchdog** | `browser_use/browser/watchdogs/security.py` | ドメイン制限の強制と違反検出 |
+| **Security Watchdog** | `browser_use/browser/watchdogs/security_watchdog.py` | ドメイン制限の強制と違反検出 |
 | **Browser Profile** | `browser_use/browser/profile.py` | allowed_domains などのセキュリティ設定 |
 
 ---
@@ -40,7 +40,9 @@ Browser-Use のセキュリティ関連機能のドキュメント集です。
 | テストファイル | カバー範囲 |
 |-------------|----------|
 | `tests/ci/test_agent_sensitive_data.py` | sensitive_data 機能の全体テスト |
-| `tests/ci/test_security_watchdog.py` | SecurityWatchdog の動作テスト（予定） |
+| `tests/ci/test_browser_watchdog_security2.py` | SecurityWatchdog のドメイン制限テスト |
+| `tests/ci/test_browser_watchdog_security_ip_blocking.py` | SecurityWatchdog のIPブロッキングテスト |
+| `tests/ci/test_browser_profile_disable_security.py` | セキュリティ機能無効化のテスト |
 
 ---
 

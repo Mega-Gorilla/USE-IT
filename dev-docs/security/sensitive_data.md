@@ -483,10 +483,20 @@ def _replace_sensitive_data(
 
 	処理フロー:
 	1. 現在のURLに対して有効な認証情報のみを抽出
-	2. プレースホルダーを検出
-	3. 2FAコードの場合はTOTP生成
-	4. それ以外は対応する値で置換
+	2. 正規表現でプレースホルダーを検出
+	3. 再帰的に辞書/リスト/文字列を処理して置換
+	4. 2FAコードの場合はTOTP生成
+	5. 欠損プレースホルダーを警告
 	"""
+	import re
+	import pyotp
+
+	# 正規表現パターン: <secret>キー名</secret>
+	secret_pattern = re.compile(r'<secret>(.*?)</secret>')
+
+	# 欠損プレースホルダーと置換成功プレースホルダーを追跡
+	all_missing_placeholders = set()
+	replaced_placeholders = set()
 
 	# ステップ1: 現在URLに適用可能な認証情報を収集
 	applicable_secrets = {}
@@ -494,32 +504,60 @@ def _replace_sensitive_data(
 	for domain_or_key, content in sensitive_data.items():
 		if isinstance(content, dict):
 			# ドメイン固有形式
-			if current_url and match_url_with_domain_pattern(current_url, domain_or_key):
-				# URLがパターンにマッチした場合のみ追加
-				applicable_secrets.update(content)
+			if current_url and not is_new_tab_page(current_url):
+				# 実URLの場合、ドメインパターンマッチングを実行
+				if match_url_with_domain_pattern(current_url, domain_or_key):
+					applicable_secrets.update(content)
 		else:
-			# グローバル形式（常に追加）
+			# グローバル形式（レガシー用途のため全ドメインで公開）
 			applicable_secrets[domain_or_key] = content
 
-	# ステップ2: プレースホルダーを置換
-	params_dump = params.model_dump_json()
+	# 空の値をフィルタリング
+	applicable_secrets = {k: v for k, v in applicable_secrets.items() if v}
 
-	for placeholder, value in applicable_secrets.items():
-		# 2FA コードの特殊処理
-		if 'bu_2fa_code' in placeholder:
-			# TOTPコードを生成
-			replacement_value = pyotp.TOTP(value, digits=6).now()
-		else:
-			replacement_value = value
+	# ステップ2: 再帰的な置換関数
+	def recursively_replace_secrets(value: str | dict | list) -> str | dict | list:
+		if isinstance(value, str):
+			matches = secret_pattern.findall(value)
+			for placeholder in matches:
+				if placeholder in applicable_secrets:
+					# 2FA コードの特殊処理
+					if 'bu_2fa_code' in placeholder:
+						totp = pyotp.TOTP(applicable_secrets[placeholder], digits=6)
+						replacement_value = totp.now()
+					else:
+						replacement_value = applicable_secrets[placeholder]
 
-		# プレースホルダーを実際の値に置換
-		params_dump = params_dump.replace(
-			f'<secret>{placeholder}</secret>',
-			replacement_value
+					value = value.replace(f'<secret>{placeholder}</secret>', replacement_value)
+					replaced_placeholders.add(placeholder)
+				else:
+					# 欠損プレースホルダーを記録（置換しない）
+					all_missing_placeholders.add(placeholder)
+
+			return value
+		elif isinstance(value, dict):
+			# 辞書の各値を再帰的に処理
+			return {k: recursively_replace_secrets(v) for k, v in value.items()}
+		elif isinstance(value, list):
+			# リストの各要素を再帰的に処理
+			return [recursively_replace_secrets(v) for v in value]
+		return value
+
+	# ステップ3: params を辞書に変換して再帰的に処理
+	params_dump = params.model_dump()
+	processed_params = recursively_replace_secrets(params_dump)
+
+	# ステップ4: ログ出力
+	self._log_sensitive_data_usage(replaced_placeholders, current_url)
+
+	# ステップ5: 欠損プレースホルダーの警告
+	if all_missing_placeholders:
+		logger.warning(
+			f'Missing or empty keys in sensitive_data dictionary: '
+			f'{", ".join(all_missing_placeholders)}'
 		)
 
-	# JSON から Pydantic モデルに復元
-	processed_params = json.loads(params_dump)
+	# Pydantic モデルに復元
 	return type(params).model_validate(processed_params)
 ```
 
@@ -580,19 +618,33 @@ if self.sensitive_data:
 		]
 
 		for domain_pattern in domain_patterns:
-			is_covered = any(
-				match_url_with_domain_pattern(
-					f'https://{allowed_domain}',
-					domain_pattern
-				)
-				for allowed_domain in self.browser_profile.allowed_domains
-			)
+			is_allowed = False
+			for allowed_domain in self.browser_profile.allowed_domains:
+				# 完全一致チェック または ワイルドカード '*'
+				if domain_pattern == allowed_domain or allowed_domain == '*':
+					is_allowed = True
+					break
 
-			if not is_covered:
-				logger.warning(
+				# プロトコル部分を除去
+				pattern_domain = domain_pattern.split('://')[-1] if '://' in domain_pattern else domain_pattern
+				allowed_domain_part = allowed_domain.split('://')[-1] if '://' in allowed_domain else allowed_domain
+
+				# ワイルドカードパターンマッチング
+				if pattern_domain == allowed_domain_part or (
+					allowed_domain_part.startswith('*.')
+					and (
+						pattern_domain == allowed_domain_part[2:]
+						or pattern_domain.endswith('.' + allowed_domain_part[2:])
+					)
+				):
+					is_allowed = True
+					break
+
+			if not is_allowed:
+				self.logger.warning(
 					f'⚠️ Domain pattern "{domain_pattern}" in sensitive_data '
-					f'is not covered by allowed_domains={self.browser_profile.allowed_domains}. '
-					f'This may indicate a configuration error.'
+					f'is not covered by any pattern in allowed_domains={self.browser_profile.allowed_domains}\n'
+					f'   This may be a security risk as credentials could be used on unintended domains.'
 				)
 ```
 
