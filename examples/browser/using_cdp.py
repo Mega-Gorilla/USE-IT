@@ -34,7 +34,7 @@ tools = Tools()
 async def main():
 	agent = Agent(
 		task='Visit https://duckduckgo.com and search for "browser-use founders"',
-		llm=ChatOpenAI(model='gpt-4.1-mini'),
+		llm=ChatOpenAI(model='gpt-5-mini'),
 		tools=tools,
 		browser_session=browser_session,
 	)

@@ -19,7 +19,7 @@ browser_session = BrowserSession(
 		user_data_dir='~/.config/browseruse/profiles/default',
 	)
 )
-llm = ChatOpenAI(model='gpt-4.1-mini')
+llm = ChatOpenAI(model='gpt-5-mini')
 
 
 # NOTE: This is experimental - you will have multiple agents running in the same browser session

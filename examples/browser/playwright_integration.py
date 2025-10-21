@@ -338,7 +338,7 @@ async def main():
 			
 			This demonstrates how Browser-Use AI can orchestrate tasks while using Playwright's precise capabilities for specific operations.
 			""",
-			llm=ChatOpenAI(model='gpt-4.1-mini'),
+			llm=ChatOpenAI(model='gpt-5-mini'),
 			tools=tools,  # Our custom tools with Playwright actions
 			browser_session=browser_session,
 		)

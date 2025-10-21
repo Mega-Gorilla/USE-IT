@@ -32,7 +32,7 @@ class AgentHistoryList:
 async def run_browser_task(
 	task: str,
 	api_key: str,
-	model: str = 'gpt-4.1',
+	model: str = 'gpt-4o',
 	headless: bool = True,
 ) -> str:
 	if not api_key.strip():
@@ -43,7 +43,7 @@ async def run_browser_task(
 	try:
 		agent = Agent(
 			task=task,
-			llm=ChatOpenAI(model='gpt-4.1-mini'),
+			llm=ChatOpenAI(model='gpt-5-mini'),
 		)
 		result = await agent.run()
 		#  TODO: The result could be parsed better
@@ -64,7 +64,7 @@ def create_ui():
 					placeholder='E.g., Find flights from New York to London for next week',
 					lines=3,
 				)
-				model = gr.Dropdown(choices=['gpt-4.1-mini', 'gpt-5', 'o3', 'gpt-5-mini'], label='Model', value='gpt-4.1-mini')
+				model = gr.Dropdown(choices=['gpt-5-mini', 'gpt-5', 'o3', 'gpt-5-mini'], label='Model', value='gpt-5-mini')
 				headless = gr.Checkbox(label='Run Headless', value=False)
 				submit_btn = gr.Button('Run Task')
 

@@ -106,7 +106,7 @@ At this stage, check the basket on the top right (indicates the price) and check
 **Important:** Ensure efficiency and accuracy throughout the process."""
 
 
-agent = Agent(task=task, llm=ChatOpenAI(model='gpt-4.1-mini'))
+agent = Agent(task=task, llm=ChatOpenAI(model='gpt-5-mini'))
 
 
 async def main():

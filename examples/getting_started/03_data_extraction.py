@@ -24,7 +24,7 @@ from browser_use import Agent, ChatOpenAI
 
 async def main():
 	# Initialize the model
-	llm = ChatOpenAI(model='gpt-4.1-mini')
+	llm = ChatOpenAI(model='gpt-5-mini')
 
 	# Define a data extraction task
 	task = """

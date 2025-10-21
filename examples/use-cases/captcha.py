@@ -20,7 +20,7 @@ from browser_use import Agent, ChatOpenAI
 
 
 async def main():
-	llm = ChatOpenAI(model='gpt-4.1-mini')
+	llm = ChatOpenAI(model='gpt-5-mini')
 	agent = Agent(
 		task='go to https://captcha.com/demos/features/captcha-demo.aspx and solve the captcha',
 		llm=llm,
