@@ -20,6 +20,9 @@ from browser_use.llm.google.chat import ChatGoogle
 from browser_use.llm.openai.chat import ChatOpenAI
 
 
+APPROVAL_TIMEOUT_SECONDS = 300.0  # 5 minutes
+
+
 class LogEmitter(QtCore.QObject):
 	message = QtCore.Signal(str)
 
@@ -288,7 +291,15 @@ class AgentWorker(QtCore.QThread):
 		return summaries
 
 	def submit_approval_result(self, result: ApprovalResult) -> None:
-		"""Receive approval results from the GUI thread safely."""
+		"""Resolve the pending approval future from the GUI thread safely.
+
+		Called by the main window once the user has taken an action on the approval
+		dialog. Bridges the Qt signal back into the worker's asyncio loop by resolving
+		the awaiting Future with the provided result.
+
+		Args:
+			result: The user's decision (approve / retry / skip / cancel).
+		"""
 		self._finish_pending_approval(result)
 
 	async def _approval_callback(
@@ -297,10 +308,13 @@ class AgentWorker(QtCore.QThread):
 		model_output: AgentOutput,
 		browser_state_summary: BrowserStateSummary,
 	) -> ApprovalResult:
+		logger = logging.getLogger(__name__)
+
 		if self._loop is None:
 			raise RuntimeError('イベントループが初期化されていません。')
 
 		if self._cancel_requested:
+			logger.info('⚠️ Approval callback cancelled because stop was requested')
 			return ApprovalResult(decision='cancel')
 
 		payload = self._build_approval_payload(step_info, model_output, browser_state_summary)
@@ -308,11 +322,17 @@ class AgentWorker(QtCore.QThread):
 		self._pending_approval_future = future
 		self.approval_requested.emit(payload)
 
+		timeout = APPROVAL_TIMEOUT_SECONDS
+		logger.debug('🔒 Approval callback awaiting user decision (timeout: %ss)', timeout)
 		try:
-			result = await future
+			result = await asyncio.wait_for(future, timeout=timeout)
+			logger.debug('✅ Approval callback received decision=%s', result.decision)
+			return result
+		except asyncio.TimeoutError:
+			logger.warning('⏱️ Approval callback timed out after %s seconds', timeout)
+			return ApprovalResult(decision='cancel', feedback='Approval timed out after waiting 5 minutes.')
 		finally:
 			self._pending_approval_future = None
-		return result
 
 	def _finish_pending_approval(self, result: ApprovalResult) -> None:
 		loop = self._loop
