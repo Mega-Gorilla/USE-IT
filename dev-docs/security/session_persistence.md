@@ -42,8 +42,7 @@ Browser-Useは相補的な2つのセッション永続化方式を提供して�
 │                                                              │
 │  3. Storage State管理 (StorageStateWatchdog)                 │
 │     ├─ 起動時: storage_state.jsonから自動ロード             │
-│     ├─ 実行中: 30秒ごとに自動保存                          │
-│     ├─ 変更時: Cookie変更を検出して即座に保存              │
+│     ├─ 実行中: 30秒ごとに自動保存（ポーリング）            │
 │     └─ 終了時: 最終状態を永続化                            │
 │                                                              │
 │  4. CDP統合 (BrowserSession)                                 │
@@ -206,9 +205,8 @@ browser = Browser(
 
 # 以下のタイミングで自動保存:
 # 1. ブラウザ起動時: ファイルから自動ロード
-# 2. 実行中: 30秒ごとに自動保存（デフォルト）
-# 3. Cookie変更時: 即座に保存
-# 4. ブラウザ終了時: 最終状態を保存
+# 2. 実行中: 30秒ごとに自動保存（ポーリング方式）
+# 3. ブラウザ終了時: 最終状態を保存
 
 agent = Agent(
 	task='Multiple operations requiring login',
@@ -470,8 +468,7 @@ from browser_use import Browser
 browser = Browser(
 	storage_state='auto_saved.json',
 	# StorageStateWatchdog の設定（内部的に適用）
-	# auto_save_interval=30.0,  # 30秒ごとに自動保存
-	# save_on_change=True,      # Cookie変更時に即座に保存
+	# auto_save_interval=30.0,  # 30秒ごとに自動保存（ポーリング方式）
 )
 ```
 
@@ -1202,8 +1199,8 @@ Browser-Useのセッション永続化機能により、以下が実現できま
 ### ✅ 主要機能
 
 1. **ネイティブプロファイル**: Chromeの標準機能を使用した完全な永続化
-2. **Storage State**: JSON形式でのCookie/storage管理
-3. **自動保存**: 30秒ごと + 変更時の自動保存
+2. **Storage State**: JSON形式でのCookie管理
+3. **自動保存**: 30秒ごとのポーリング方式
 4. **CDP統合**: 暗号化されたCookieの直接取得
 5. **セキュア**: chmod 700による権限保護
 
