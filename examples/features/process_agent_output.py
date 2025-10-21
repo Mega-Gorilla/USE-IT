@@ -12,7 +12,7 @@ from browser_use.agent.views import AgentHistoryList
 from browser_use.browser import BrowserProfile, BrowserSession
 from browser_use.browser.profile import ViewportSize
 
-llm = ChatOpenAI(model='gpt-4.1-mini')
+llm = ChatOpenAI(model='gpt-5-mini')
 
 
 async def main():

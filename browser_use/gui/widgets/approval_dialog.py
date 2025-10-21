@@ -129,24 +129,48 @@ class ApprovalDialog(QtWidgets.QDialog):
 			self._image_label.setPixmap(QtGui.QPixmap())
 			return
 
+		data = encoded
+		if data.startswith('data:image'):
+			data = data.split(',', 1)[-1]
+
 		try:
-			image_bytes = base64.b64decode(encoded)
+			image_bytes = base64.b64decode(data, validate=False)
 		except (ValueError, TypeError):
-			self._image_label.setText('スクリーンショットを表示できません')
-			self._image_label.setPixmap(QtGui.QPixmap())
+			self._show_screenshot_error()
 			return
 
 		pixmap = QtGui.QPixmap()
 		if not pixmap.loadFromData(image_bytes):
-			self._image_label.setText('スクリーンショットを表示できません')
-			self._image_label.setPixmap(QtGui.QPixmap())
-			return
+			# Some environments bundle Qt without JPEG support. Try converting via Pillow.
+			try:
+				from io import BytesIO
+
+				from PIL import Image  # type: ignore
+			except Exception:
+				self._show_screenshot_error()
+				return
+
+			try:
+				with Image.open(BytesIO(image_bytes)) as img:
+					buffer = BytesIO()
+					img.save(buffer, format='PNG')
+					png_bytes = buffer.getvalue()
+				if not pixmap.loadFromData(png_bytes, 'PNG'):
+					self._show_screenshot_error()
+					return
+			except Exception:
+				self._show_screenshot_error()
+				return
 
 		max_width = 520
 		if pixmap.width() > max_width:
 			pixmap = pixmap.scaledToWidth(max_width, QtCore.Qt.TransformationMode.SmoothTransformation)
 		self._image_label.setPixmap(pixmap)
 		self._image_label.setText('')
+
+	def _show_screenshot_error(self) -> None:
+		self._image_label.setText('スクリーンショットを表示できません')
+		self._image_label.setPixmap(QtGui.QPixmap())
 
 	def _on_approve(self) -> None:
 		self._decision = 'approve'

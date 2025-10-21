@@ -141,7 +141,7 @@ async def main():
 		# + 'go to https://nvidia.wd5.myworkdayjobs.com/en-US/NVIDIAExternalCareerSite/job/Taiwan%2C-Remote/Fulfillment-Analyst---New-College-Graduate-2025_JR1988949/apply/autofillWithResume?workerSubType=0c40f6bd1d8f10adf6dae42e46d44a17&workerSubType=ab40a98049581037a3ada55b087049b7 NVIDIA',
 		# ground_task + '\n' + 'Meta',
 	]
-	model = ChatOpenAI(model='gpt-4.1-mini')
+	model = ChatOpenAI(model='gpt-5-mini')
 
 	agents = []
 	for task in tasks:

@@ -8,7 +8,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 
 from browser_use import Agent, ChatOpenAI
 
-llm = ChatOpenAI(model='gpt-4.1-mini')
+llm = ChatOpenAI(model='gpt-5-mini')
 
 initial_actions = [
 	{'navigate': {'url': 'https://www.google.com', 'new_tab': True}},

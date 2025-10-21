@@ -20,17 +20,17 @@ async def main():
 		Agent(
 			task='Search for "browser automation" on Google',
 			browser=browsers[0],
-			llm=ChatOpenAI(model='gpt-4.1-mini'),
+			llm=ChatOpenAI(model='gpt-5-mini'),
 		),
 		Agent(
 			task='Search for "AI agents" on DuckDuckGo',
 			browser=browsers[1],
-			llm=ChatOpenAI(model='gpt-4.1-mini'),
+			llm=ChatOpenAI(model='gpt-5-mini'),
 		),
 		Agent(
 			task='Visit Wikipedia and search for "web scraping"',
 			browser=browsers[2],
-			llm=ChatOpenAI(model='gpt-4.1-mini'),
+			llm=ChatOpenAI(model='gpt-5-mini'),
 		),
 	]
 

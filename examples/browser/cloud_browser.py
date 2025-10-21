@@ -21,7 +21,7 @@ async def main():
 	# Create agent with cloud browser enabled
 	agent = Agent(
 		task='Go to https://github.com/Mega-Gorilla/USE-IT and find the number of stars',
-		llm=ChatOpenAI(model='gpt-4.1-mini'),
+		llm=ChatOpenAI(model='gpt-5-mini'),
 		browser=Browser(use_cloud=True),  # Enable cloud browser
 	)
 

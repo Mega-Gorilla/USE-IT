@@ -69,7 +69,7 @@ def create_task_with_proxy(instructions: str, country_code: str = 'us') -> str:
 
 	payload = {
 		'task': instructions,
-		'llm_model': 'gpt-4.1-mini',
+		'llm_model': 'gpt-5-mini',
 		# Proxy configuration
 		'use_proxy': True,  # Required for captcha solving
 		'proxy_country_code': country_code,  # Choose proxy location

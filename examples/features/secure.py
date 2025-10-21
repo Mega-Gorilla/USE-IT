@@ -56,7 +56,7 @@ from browser_use import Agent, BrowserProfile, ChatAzureOpenAI
 # Configuration LLM
 api_key = os.getenv('AZURE_OPENAI_KEY')
 azure_endpoint = os.getenv('AZURE_OPENAI_ENDPOINT')
-llm = ChatAzureOpenAI(model='gpt-4.1-mini', api_key=api_key, azure_endpoint=azure_endpoint)
+llm = ChatAzureOpenAI(model='gpt-5-mini', api_key=api_key, azure_endpoint=azure_endpoint)
 
 # Configuration Task
 task = 'Find the founders of the sensitive company_name'
