@@ -5,10 +5,12 @@ import sys
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from browser_use.agent.views import ApprovalDecision, ApprovalResult
 from browser_use.gui.worker import AgentWorker, QtLogHandler, UserPreferences
 from browser_use.gui.widgets import (
 	ExecutionTab,
 	HistoryTab,
+	ApprovalDialog,
 	TaskHistoryEntry,
 	TaskInputPanel,
 )
@@ -93,6 +95,27 @@ class MainWindow(QtWidgets.QMainWindow):
 	def _on_log_message(self, message: str) -> None:
 		self.execution_tab.log_panel.append_message(message)
 
+	def _handle_approval_request(self, payload: dict) -> None:
+		worker = self._worker
+		if worker is None:
+			return
+
+		self._update_status('ユーザーの承認を待機しています…')
+		dialog = ApprovalDialog(payload, parent=self)
+		dialog.exec()
+
+		decision: ApprovalDecision = dialog.decision
+		result = ApprovalResult(decision=decision, feedback=dialog.feedback)
+		worker.submit_approval_result(result)
+
+		status_map: dict[ApprovalDecision, str] = {
+			'approve': '承認しました: アクションを実行します',
+			'retry': '再考を依頼しました',
+			'skip': 'このステップをスキップします',
+			'cancel': 'タスクを中止します',
+		}
+		self._update_status(status_map.get(decision, '承認結果を送信しました'))
+
 	def _start_execution(self) -> None:
 		task = self.task_panel.task_text().strip()
 		if not task:
@@ -123,6 +146,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		worker.progress.connect(self._update_progress)
 		worker.finished.connect(self._on_finished)
 		worker.step_update.connect(self.execution_tab.step_panel.update_snapshot)
+		worker.approval_requested.connect(self._handle_approval_request)
 
 	def _stop_execution(self) -> None:
 		if self._worker is None:

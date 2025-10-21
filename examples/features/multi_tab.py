@@ -15,7 +15,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 from browser_use import Agent, ChatOpenAI
 
 # video: https://preview.screen.studio/share/clenCmS6
-llm = ChatOpenAI(model='gpt-4.1-mini')
+llm = ChatOpenAI(model='gpt-5-mini')
 agent = Agent(
 	task='open 3 tabs with elon musk, sam altman, and steve jobs, then go back to the first and stop',
 	llm=llm,

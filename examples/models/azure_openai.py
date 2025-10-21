@@ -20,7 +20,7 @@ from browser_use.llm import ChatAzureOpenAI
 api_key = os.getenv('AZURE_OPENAI_KEY')
 azure_endpoint = os.getenv('AZURE_OPENAI_ENDPOINT')
 llm = ChatAzureOpenAI(
-	model='gpt-4.1-mini',
+	model='gpt-5-mini',
 	api_key=api_key,
 	azure_endpoint=azure_endpoint,
 )

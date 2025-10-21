@@ -91,7 +91,7 @@ async def main() -> None:
 	task_str = 'goto https://www.google.com/ and click image button'
 
 	# Initialize the language model
-	model = ChatOpenAI(model='gpt-4.1')
+	model = ChatOpenAI(model='gpt-4o')
 
 	# Create sample images for context
 	try:

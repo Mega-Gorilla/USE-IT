@@ -115,7 +115,7 @@ def create_structured_task(instructions: str, schema_model: type[BaseModel], **k
 	payload = {
 		'task': instructions,
 		'structured_output_json': json.dumps(json_schema),
-		'llm_model': 'gpt-4.1-mini',
+		'llm_model': 'gpt-5-mini',
 		'max_agent_steps': 15,
 		'enable_public_share': True,  # Enable shareable execution URLs
 		**kwargs,

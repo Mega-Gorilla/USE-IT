@@ -1,5 +1,6 @@
 """Reusable widget components for the Browser Use GUI."""
 
+from .approval_dialog import ApprovalDialog
 from .execution_tab import ExecutionTab
 from .history_list import TaskHistoryEntry, TaskHistoryList
 from .history_tab import HistoryTab
@@ -18,4 +19,5 @@ __all__ = [
 	'StepInfoPanel',
 	'TaskInputPanel',
 	'TaskHistoryEntry',
+	'ApprovalDialog',
 ]

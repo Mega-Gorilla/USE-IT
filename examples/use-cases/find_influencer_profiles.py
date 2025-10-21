@@ -65,7 +65,7 @@ async def main():
 		'Go to this tiktok video url, open it and extract the @username from the resulting url. Then do a websearch for this username to find all his social media profiles. Return me the links to the social media profiles with the platform name.'
 		' https://www.tiktokv.com/share/video/7470981717659110678/  '
 	)
-	model = ChatOpenAI(model='gpt-4.1-mini')
+	model = ChatOpenAI(model='gpt-5-mini')
 	agent = Agent(task=task, llm=model, tools=tools)
 
 	history = await agent.run()

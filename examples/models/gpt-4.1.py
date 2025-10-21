@@ -11,7 +11,7 @@ from browser_use import Agent, ChatOpenAI
 
 
 # All the models are type safe from OpenAI in case you need a list of supported models
-llm = ChatOpenAI(model='gpt-4.1-mini')
+llm = ChatOpenAI(model='gpt-5-mini')
 agent = Agent(
 	task='Go to amazon.com, click on the first link, and give me the title of the page',
 	llm=llm,

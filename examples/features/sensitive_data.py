@@ -10,7 +10,7 @@ from browser_use import Agent, ChatOpenAI
 
 # Initialize the model
 llm = ChatOpenAI(
-	model='gpt-4.1',
+	model='gpt-4o',
 	temperature=0.0,
 )
 # Simple case: the model will see x_name and x_password, but never the actual values.

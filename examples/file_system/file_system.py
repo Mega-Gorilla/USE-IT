@@ -25,7 +25,7 @@ Finally, share the file with me.
 NOTE: DO NOT USE extract action - everything is visible in browser state.
 """.strip('\n')
 
-llm = ChatOpenAI(model='gpt-4.1-mini')
+llm = ChatOpenAI(model='gpt-5-mini')
 
 agent = Agent(
 	task=task,

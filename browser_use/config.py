@@ -71,6 +71,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
 		'max_failures': 3,
 		'use_vision': 'auto',
 		'max_actions_per_step': 10,
+		'interactive_mode': False,
 	},
 }
 
@@ -309,6 +310,7 @@ class Config:
 			'max_failures': agent_settings.get('max_failures', 3),
 			'use_vision': agent_settings.get('use_vision', 'auto'),
 			'max_actions_per_step': agent_settings.get('max_actions_per_step', 10),
+			'interactive_mode': _parse_bool(agent_settings.get('interactive_mode'), default=False),
 		}
 
 		config = {

@@ -20,7 +20,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 from browser_use import Agent, ChatOpenAI
 from browser_use.browser import BrowserProfile, BrowserSession
 
-llm = ChatOpenAI(model='gpt-4.1-mini')
+llm = ChatOpenAI(model='gpt-5-mini')
 
 
 def load_blocklist_from_url(url: str) -> list[str]:

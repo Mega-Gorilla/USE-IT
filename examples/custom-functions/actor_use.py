@@ -12,7 +12,7 @@ from browser_use import ActionResult, Agent, ChatOpenAI, Tools
 
 tools = Tools()
 
-llm = ChatOpenAI(model='gpt-4.1-mini')
+llm = ChatOpenAI(model='gpt-5-mini')
 
 
 @tools.registry.action('Click on submit button')

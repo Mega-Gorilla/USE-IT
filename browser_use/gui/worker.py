@@ -10,7 +10,7 @@ from PySide6 import QtCore
 
 from browser_use import Agent
 from browser_use.agent.config import AgentConfig
-from browser_use.agent.views import AgentOutput
+from browser_use.agent.views import AgentOutput, AgentStepInfo, ApprovalResult
 from browser_use.browser import BrowserProfile
 from browser_use.browser.views import BrowserStateSummary
 from browser_use.config import CONFIG
@@ -18,6 +18,9 @@ from browser_use.llm.anthropic.chat import ChatAnthropic
 from browser_use.llm.base import BaseChatModel
 from browser_use.llm.google.chat import ChatGoogle
 from browser_use.llm.openai.chat import ChatOpenAI
+
+
+APPROVAL_TIMEOUT_SECONDS = 300.0  # 5 minutes
 
 
 class LogEmitter(QtCore.QObject):
@@ -56,6 +59,7 @@ class AgentWorker(QtCore.QThread):
 	progress = QtCore.Signal(int, int)
 	finished = QtCore.Signal(bool, str)
 	step_update = QtCore.Signal(dict)
+	approval_requested = QtCore.Signal(dict)
 
 	def __init__(self, preferences: UserPreferences, parent: QtCore.QObject | None = None) -> None:
 		super().__init__(parent)
@@ -65,6 +69,7 @@ class AgentWorker(QtCore.QThread):
 		self._agent: Agent[Any, Any] | None = None
 		self._raw_config: dict[str, Any] = CONFIG.load_config()
 		self._agent_config: AgentConfig = self._build_agent_config()
+		self._pending_approval_future: asyncio.Future[ApprovalResult] | None = None
 
 	def run(self) -> None:  # noqa: D401
 		"""Qt thread entrypoint."""
@@ -105,6 +110,7 @@ class AgentWorker(QtCore.QThread):
 
 		if agent is not None and loop is not None:
 			loop.call_soon_threadsafe(agent.stop)
+		self._finish_pending_approval(ApprovalResult(decision='cancel'))
 
 	async def _execute(self) -> None:
 		task = self._preferences.task.strip()
@@ -149,6 +155,10 @@ class AgentWorker(QtCore.QThread):
 	def _default_language(self) -> str:
 		agent_cfg = self._raw_config.get('agent', {})
 		return agent_cfg.get('language', 'en')
+
+	def _interactive_mode_enabled(self) -> bool:
+		agent_cfg = self._raw_config.get('agent', {})
+		return bool(agent_cfg.get('interactive_mode', False))
 
 	def _resolve_llm(self) -> BaseChatModel:
 		llm_cfg = self._raw_config.get('llm', {})
@@ -206,11 +216,13 @@ class AgentWorker(QtCore.QThread):
 	def _build_agent_config(self) -> AgentConfig:
 		llm = self._resolve_llm()
 		browser_profile = self._build_browser_profile()
+		interactive_mode = self._interactive_mode_enabled()
 		return AgentConfig(
 			task=self._preferences.task,
 			llm=llm,
 			browser_profile=browser_profile,
-			interactive_mode=False,
+			interactive_mode=interactive_mode,
+			approval_callback=self._approval_callback if interactive_mode else None,
 			language=self._default_language(),
 			register_new_step_callback=self._handle_step_update,
 		)
@@ -262,18 +274,132 @@ class AgentWorker(QtCore.QThread):
 
 	@staticmethod
 	def _summarize_actions(model_output: AgentOutput) -> list[str]:
+		"""Summarize actions in a user-friendly format with Japanese labels.
+
+		Converts technical action names to Japanese and shows only important parameters.
+		"""
+		# Japanese action labels
+		action_labels = {
+			'click': 'クリック',
+			'input_text': 'テキスト入力',
+			'scroll_down': '下にスクロール',
+			'scroll_up': '上にスクロール',
+			'go_to_url': 'URLに移動',
+			'go_back': '戻る',
+			'go_forward': '進む',
+			'done': '完了',
+			'extract_content': 'コンテンツ抽出',
+			'switch_tab': 'タブ切り替え',
+			'open_tab': 'タブを開く',
+			'close_tab': 'タブを閉じる',
+		}
+
 		summaries: list[str] = []
 		for action in model_output.action:
 			data = action.model_dump(exclude_unset=True)
 			if not data:
 				continue
 			action_name, params = next(iter(data.items()))
+
+			# Get Japanese label or use original name
+			label = action_labels.get(action_name, action_name)
+
 			if not params:
-				summaries.append(action_name)
+				summaries.append(label)
 				continue
-			param_pairs = []
-			for key, value in params.items():
-				param_pairs.append(f'{key}={value}')
-			summary = f'{action_name}({", ".join(param_pairs)})'
-			summaries.append(summary)
+
+			# Show only important parameters (hide technical details like index, cnt)
+			important_params = {}
+			if 'text' in params:
+				important_params['テキスト'] = params['text']
+			if 'url' in params:
+				important_params['URL'] = params['url']
+			if 'tab_id' in params:
+				important_params['タブID'] = params['tab_id']
+
+			if important_params:
+				param_str = ', '.join(f'{k}: {v}' for k, v in important_params.items())
+				summaries.append(f'{label} ({param_str})')
+			else:
+				summaries.append(label)
+
 		return summaries
+
+	def submit_approval_result(self, result: ApprovalResult) -> None:
+		"""Resolve the pending approval future from the GUI thread safely.
+
+		Called by the main window once the user has taken an action on the approval
+		dialog. Bridges the Qt signal back into the worker's asyncio loop by resolving
+		the awaiting Future with the provided result.
+
+		Args:
+			result: The user's decision (approve / retry / skip / cancel).
+		"""
+		self._finish_pending_approval(result)
+
+	async def _approval_callback(
+		self,
+		step_info: AgentStepInfo | None,
+		model_output: AgentOutput,
+		browser_state_summary: BrowserStateSummary,
+	) -> ApprovalResult:
+		logger = logging.getLogger(__name__)
+
+		if self._loop is None:
+			raise RuntimeError('イベントループが初期化されていません。')
+
+		if self._cancel_requested:
+			logger.info('⚠️ Approval callback cancelled because stop was requested')
+			return ApprovalResult(decision='cancel')
+
+		payload = self._build_approval_payload(step_info, model_output, browser_state_summary)
+		future: asyncio.Future[ApprovalResult] = self._loop.create_future()
+		self._pending_approval_future = future
+		self.approval_requested.emit(payload)
+
+		timeout = APPROVAL_TIMEOUT_SECONDS
+		logger.debug('🔒 Approval callback awaiting user decision (timeout: %ss)', timeout)
+		try:
+			result = await asyncio.wait_for(future, timeout=timeout)
+			logger.debug('✅ Approval callback received decision=%s', result.decision)
+			return result
+		except asyncio.TimeoutError:
+			logger.warning('⏱️ Approval callback timed out after %s seconds', timeout)
+			return ApprovalResult(decision='cancel', feedback='Approval timed out after waiting 5 minutes.')
+		finally:
+			self._pending_approval_future = None
+
+	def _finish_pending_approval(self, result: ApprovalResult) -> None:
+		loop = self._loop
+		future = self._pending_approval_future
+
+		if loop is None or future is None:
+			return
+
+		def _resolve() -> None:
+			if not future.done():
+				future.set_result(result)
+
+		loop.call_soon_threadsafe(_resolve)
+
+	def _build_approval_payload(
+		self,
+		step_info: AgentStepInfo | None,
+		model_output: AgentOutput,
+		browser_state_summary: BrowserStateSummary,
+	) -> dict[str, Any]:
+		step_number = getattr(step_info, 'step_number', None)
+		max_steps = self._preferences.max_steps
+		if self._agent and getattr(self._agent, 'settings', None):
+			max_steps = getattr(self._agent.settings, 'max_steps', max_steps)
+
+		return {
+			'step_number': step_number,
+			'max_steps': max_steps,
+			'url': browser_state_summary.url,
+			'title': browser_state_summary.title,
+			'screenshot': browser_state_summary.screenshot,
+			'next_goal': model_output.next_goal,
+			'actions': self._summarize_actions(model_output),
+			'thinking': model_output.thinking,
+		}
