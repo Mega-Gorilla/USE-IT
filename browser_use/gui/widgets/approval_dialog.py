@@ -5,6 +5,7 @@ from typing import Any
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from browser_use.agent.views import ApprovalDecision
 
 class ApprovalDialog(QtWidgets.QDialog):
 	"""Modal dialog prompting the user to approve, retry, skip, or cancel agent actions."""
@@ -16,7 +17,7 @@ class ApprovalDialog(QtWidgets.QDialog):
 		self.resize(680, 640)
 
 		self._payload = payload
-		self._decision: str = 'cancel'
+		self._decision: ApprovalDecision = 'cancel'
 		self._feedback: str | None = None
 
 		self._image_label = QtWidgets.QLabel(alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
@@ -80,7 +81,7 @@ class ApprovalDialog(QtWidgets.QDialog):
 		self._populate()
 
 	@property
-	def decision(self) -> str:
+	def decision(self) -> ApprovalDecision:
 		return self._decision
 
 	@property
