@@ -14,8 +14,8 @@ Browser-Useは相補的な2つのセッション永続化方式を提供して�
    - 既存のChromeプロファイルをそのまま利用可能
 
 2. **Storage State エクスポート/インポート方式** (`storage_state`)
-   - JSON形式でCookie/localStorage/sessionStorageを保存
-   - 自動的な定期保存と変更時保存
+   - JSON形式でCookieを保存（localStorage/sessionStorageは自動保存経路でのみ対応）
+   - 30秒ごとの定期自動保存（ポーリング方式）
    - Playwright互換フォーマット
    - 一時的なセッションやクロスブラウザ互換性に最適
 
@@ -173,7 +173,7 @@ agent = Agent(
 
 await agent.run()
 
-# Cookieとstorageを保存
+# Cookieを保存（localStorage/sessionStorageは自動保存のみ対応）
 await browser.export_storage_state('example_session.json')
 ```
 
@@ -233,11 +233,13 @@ browser = Browser(
 async def export_cookies():
 	await browser.start()
 
-	# 現在のCookieとstorageをJSONに保存
+	# 現在のCookieをJSONに保存
+	# 注意: export_storage_state() はCookieのみを保存します
+	# localStorage/sessionStorage は自動保存メカニズム経由でのみ保存されます
 	storage_state = await browser.export_storage_state('my_cookies.json')
 
 	print(f"Exported {len(storage_state['cookies'])} cookies")
-	print(f"Exported {len(storage_state['origins'])} origins")
+	# origins は常に空リスト（localStorage/sessionStorageは含まれない）
 
 await export_cookies()
 ```
@@ -482,14 +484,10 @@ browser = Browser(
    └─ localStorage/sessionStorage を初期化スクリプトで復元
 
 2. 実行中（定期保存）
-   └─ 30秒ごとに現在のCookieを取得
-   └─ 変更があれば storage_state.json に保存
+   └─ 30秒ごとに現在のCookieを取得（ポーリング方式）
+   └─ 前回保存時から変更があれば storage_state.json に保存
 
-3. Cookie変更検出時（即座に保存）
-   └─ CDP Network.cookieChanged イベント監視
-   └─ 変更検出 → 即座に保存
-
-4. ブラウザ終了時
+3. ブラウザ終了時
    └─ 最終的なCookieとstorageを取得
    └─ storage_state.json に保存
 ```
