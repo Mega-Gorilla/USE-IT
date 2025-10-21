@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import base64
-from typing import Any, Optional
+from typing import Any
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
@@ -17,7 +17,7 @@ class ApprovalDialog(QtWidgets.QDialog):
 
 		self._payload = payload
 		self._decision: str = 'cancel'
-		self._feedback: Optional[str] = None
+		self._feedback: str | None = None
 
 		self._image_label = QtWidgets.QLabel(alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
 		self._image_label.setMinimumHeight(240)
@@ -84,7 +84,7 @@ class ApprovalDialog(QtWidgets.QDialog):
 		return self._decision
 
 	@property
-	def feedback(self) -> Optional[str]:
+	def feedback(self) -> str | None:
 		return self._feedback
 
 	def _populate(self) -> None:
