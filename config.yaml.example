@@ -53,3 +53,5 @@ agent:
   max_failures: 3
   use_vision: auto
   max_actions_per_step: 10
+  # Enable human-in-the-loop approvals for each step.
+  interactive_mode: false

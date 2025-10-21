@@ -182,6 +182,25 @@ class TestLazyConfig:
 					os.environ[key] = value
 			CONFIG.reload()
 
+	def test_agent_interactive_mode_flag(self, tmp_path):
+		"""Ensure interactive_mode flag is parsed from YAML into GUI config payload."""
+		config_path = tmp_path / 'interactive-config.yaml'
+		config_path.write_text('agent:\n  interactive_mode: true\n', encoding='utf-8')
+
+		original_config_path = os.environ.get('BROWSER_USE_CONFIG_PATH')
+		try:
+			os.environ['BROWSER_USE_CONFIG_PATH'] = str(config_path)
+			CONFIG.reload()
+
+			loaded = load_browser_use_config(reload=True)
+			assert loaded['agent']['interactive_mode'] is True
+		finally:
+			if original_config_path is None:
+				os.environ.pop('BROWSER_USE_CONFIG_PATH', None)
+			else:
+				os.environ['BROWSER_USE_CONFIG_PATH'] = original_config_path
+			CONFIG.reload()
+
 	def test_env_file_is_not_auto_loaded(self, tmp_path, monkeypatch):
 		"""Ensure that .env files are ignored unless explicitly loaded by the user."""
 		workspace = tmp_path / 'workspace'

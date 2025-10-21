@@ -10,7 +10,7 @@ from PySide6 import QtCore
 
 from browser_use import Agent
 from browser_use.agent.config import AgentConfig
-from browser_use.agent.views import AgentOutput
+from browser_use.agent.views import AgentOutput, AgentStepInfo, ApprovalResult
 from browser_use.browser import BrowserProfile
 from browser_use.browser.views import BrowserStateSummary
 from browser_use.config import CONFIG
@@ -56,6 +56,7 @@ class AgentWorker(QtCore.QThread):
 	progress = QtCore.Signal(int, int)
 	finished = QtCore.Signal(bool, str)
 	step_update = QtCore.Signal(dict)
+	approval_requested = QtCore.Signal(dict)
 
 	def __init__(self, preferences: UserPreferences, parent: QtCore.QObject | None = None) -> None:
 		super().__init__(parent)
@@ -65,6 +66,7 @@ class AgentWorker(QtCore.QThread):
 		self._agent: Agent[Any, Any] | None = None
 		self._raw_config: dict[str, Any] = CONFIG.load_config()
 		self._agent_config: AgentConfig = self._build_agent_config()
+		self._pending_approval_future: asyncio.Future[ApprovalResult] | None = None
 
 	def run(self) -> None:  # noqa: D401
 		"""Qt thread entrypoint."""
@@ -105,6 +107,7 @@ class AgentWorker(QtCore.QThread):
 
 		if agent is not None and loop is not None:
 			loop.call_soon_threadsafe(agent.stop)
+		self._finish_pending_approval(ApprovalResult(decision='cancel'))
 
 	async def _execute(self) -> None:
 		task = self._preferences.task.strip()
@@ -149,6 +152,10 @@ class AgentWorker(QtCore.QThread):
 	def _default_language(self) -> str:
 		agent_cfg = self._raw_config.get('agent', {})
 		return agent_cfg.get('language', 'en')
+
+	def _interactive_mode_enabled(self) -> bool:
+		agent_cfg = self._raw_config.get('agent', {})
+		return bool(agent_cfg.get('interactive_mode', False))
 
 	def _resolve_llm(self) -> BaseChatModel:
 		llm_cfg = self._raw_config.get('llm', {})
@@ -206,11 +213,13 @@ class AgentWorker(QtCore.QThread):
 	def _build_agent_config(self) -> AgentConfig:
 		llm = self._resolve_llm()
 		browser_profile = self._build_browser_profile()
+		interactive_mode = self._interactive_mode_enabled()
 		return AgentConfig(
 			task=self._preferences.task,
 			llm=llm,
 			browser_profile=browser_profile,
-			interactive_mode=False,
+			interactive_mode=interactive_mode,
+			approval_callback=self._approval_callback if interactive_mode else None,
 			language=self._default_language(),
 			register_new_step_callback=self._handle_step_update,
 		)
@@ -277,3 +286,65 @@ class AgentWorker(QtCore.QThread):
 			summary = f'{action_name}({", ".join(param_pairs)})'
 			summaries.append(summary)
 		return summaries
+
+	def submit_approval_result(self, result: ApprovalResult) -> None:
+		"""Receive approval results from the GUI thread safely."""
+		self._finish_pending_approval(result)
+
+	async def _approval_callback(
+		self,
+		step_info: AgentStepInfo | None,
+		model_output: AgentOutput,
+		browser_state_summary: BrowserStateSummary,
+	) -> ApprovalResult:
+		if self._loop is None:
+			raise RuntimeError('イベントループが初期化されていません。')
+
+		if self._cancel_requested:
+			return ApprovalResult(decision='cancel')
+
+		payload = self._build_approval_payload(step_info, model_output, browser_state_summary)
+		future: asyncio.Future[ApprovalResult] = self._loop.create_future()
+		self._pending_approval_future = future
+		self.approval_requested.emit(payload)
+
+		try:
+			result = await future
+		finally:
+			self._pending_approval_future = None
+		return result
+
+	def _finish_pending_approval(self, result: ApprovalResult) -> None:
+		loop = self._loop
+		future = self._pending_approval_future
+
+		if loop is None or future is None:
+			return
+
+		def _resolve() -> None:
+			if not future.done():
+				future.set_result(result)
+
+		loop.call_soon_threadsafe(_resolve)
+
+	def _build_approval_payload(
+		self,
+		step_info: AgentStepInfo | None,
+		model_output: AgentOutput,
+		browser_state_summary: BrowserStateSummary,
+	) -> dict[str, Any]:
+		step_number = getattr(step_info, 'step_number', None)
+		max_steps = self._preferences.max_steps
+		if self._agent and getattr(self._agent, 'settings', None):
+			max_steps = getattr(self._agent.settings, 'max_steps', max_steps)
+
+		return {
+			'step_number': step_number,
+			'max_steps': max_steps,
+			'url': browser_state_summary.url,
+			'title': browser_state_summary.title,
+			'screenshot': browser_state_summary.screenshot,
+			'next_goal': model_output.next_goal,
+			'actions': self._summarize_actions(model_output),
+			'thinking': model_output.thinking,
+		}
