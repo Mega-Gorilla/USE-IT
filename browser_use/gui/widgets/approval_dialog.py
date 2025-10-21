@@ -21,7 +21,7 @@ class ApprovalDialog(QtWidgets.QDialog):
 		self._feedback: str | None = None
 
 		self._image_label = QtWidgets.QLabel(alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
-		self._image_label.setMinimumHeight(240)
+		self._image_label.setMinimumHeight(300)
 		self._image_label.setObjectName('approval-screenshot')
 
 		self._info_label = QtWidgets.QLabel()
@@ -62,15 +62,42 @@ class ApprovalDialog(QtWidgets.QDialog):
 		layout.addWidget(self._feedback_section)
 
 		button_row = QtWidgets.QHBoxLayout()
-		button_row.addStretch(1)
-		self._approve_button = QtWidgets.QPushButton('承認')
-		self._retry_button = QtWidgets.QPushButton('再考')
-		self._skip_button = QtWidgets.QPushButton('スキップ')
-		self._cancel_button = QtWidgets.QPushButton('中止')
-		button_row.addWidget(self._approve_button)
-		button_row.addWidget(self._retry_button)
-		button_row.addWidget(self._skip_button)
+
+		# Cancel button (red, danger)
+		self._cancel_button = QtWidgets.QPushButton('✖️ 中止')
+		self._cancel_button.setStyleSheet(
+			'background-color: #f44336; color: white; font-weight: bold; '
+			'padding: 12px 24px; font-size: 14px; border-radius: 4px;'
+		)
 		button_row.addWidget(self._cancel_button)
+
+		# Skip button (gray, neutral)
+		self._skip_button = QtWidgets.QPushButton('⏭️ スキップ')
+		self._skip_button.setStyleSheet(
+			'background-color: #9e9e9e; color: white; '
+			'padding: 12px 24px; font-size: 14px; border-radius: 4px;'
+		)
+		button_row.addWidget(self._skip_button)
+
+		# Retry button (orange, caution)
+		self._retry_button = QtWidgets.QPushButton('🔄 再考')
+		self._retry_button.setStyleSheet(
+			'background-color: #ff9800; color: white; font-weight: bold; '
+			'padding: 12px 24px; font-size: 14px; border-radius: 4px;'
+		)
+		button_row.addWidget(self._retry_button)
+
+		# Stretch before approve button
+		button_row.addStretch(1)
+
+		# Approve button (green, primary action)
+		self._approve_button = QtWidgets.QPushButton('✅ 承認')
+		self._approve_button.setStyleSheet(
+			'background-color: #4caf50; color: white; font-weight: bold; '
+			'padding: 12px 24px; font-size: 16px; border-radius: 4px;'
+		)
+		button_row.addWidget(self._approve_button)
+
 		layout.addLayout(button_row)
 
 		self._approve_button.clicked.connect(self._on_approve)
@@ -97,14 +124,23 @@ class ApprovalDialog(QtWidgets.QDialog):
 		title = self._payload.get('title') or '—'
 		next_goal = self._payload.get('next_goal') or '—'
 
+		# Create page info (small, less prominent)
 		info_parts: list[str] = []
+		info_parts.append('<b>📍 現在のページ</b>')
 		if step_number is not None and max_steps:
-			info_parts.append(f'ステップ {step_number} / {max_steps}')
-		info_parts.append(f'ページタイトル: {title}')
-		info_parts.append(f'URL: {url}')
-		info_parts.append(f'次のゴール: {next_goal}')
+			info_parts.append(f'ステップ: {step_number} / {max_steps}')
+		info_parts.append(f'タイトル: {title}')
+		info_parts.append(f'<span style="color: #666;">URL: {url}</span>')
 
-		self._info_label.setText('\n'.join(info_parts))
+		# Create next goal (large, prominent)
+		goal_html = f'''
+		<div style="background-color: #e3f2fd; padding: 16px; border-radius: 6px; border: 2px solid #2196f3; margin-top: 12px; margin-bottom: 12px;">
+			<div style="font-size: 11px; color: #1976d2; font-weight: bold; margin-bottom: 8px;">🎯 次のゴール</div>
+			<div style="font-size: 14px; font-weight: bold; color: #000;">{next_goal}</div>
+		</div>
+		'''
+
+		self._info_label.setText('\n'.join(info_parts) + goal_html)
 
 		thinking = self._payload.get('thinking')
 		if thinking:
@@ -163,7 +199,7 @@ class ApprovalDialog(QtWidgets.QDialog):
 				self._show_screenshot_error()
 				return
 
-		max_width = 520
+		max_width = 640
 		if pixmap.width() > max_width:
 			pixmap = pixmap.scaledToWidth(max_width, QtCore.Qt.TransformationMode.SmoothTransformation)
 		self._image_label.setPixmap(pixmap)

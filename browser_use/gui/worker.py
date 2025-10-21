@@ -274,20 +274,55 @@ class AgentWorker(QtCore.QThread):
 
 	@staticmethod
 	def _summarize_actions(model_output: AgentOutput) -> list[str]:
+		"""Summarize actions in a user-friendly format with Japanese labels.
+
+		Converts technical action names to Japanese and shows only important parameters.
+		"""
+		# Japanese action labels
+		action_labels = {
+			'click': 'クリック',
+			'input_text': 'テキスト入力',
+			'scroll_down': '下にスクロール',
+			'scroll_up': '上にスクロール',
+			'go_to_url': 'URLに移動',
+			'go_back': '戻る',
+			'go_forward': '進む',
+			'done': '完了',
+			'extract_content': 'コンテンツ抽出',
+			'switch_tab': 'タブ切り替え',
+			'open_tab': 'タブを開く',
+			'close_tab': 'タブを閉じる',
+		}
+
 		summaries: list[str] = []
 		for action in model_output.action:
 			data = action.model_dump(exclude_unset=True)
 			if not data:
 				continue
 			action_name, params = next(iter(data.items()))
+
+			# Get Japanese label or use original name
+			label = action_labels.get(action_name, action_name)
+
 			if not params:
-				summaries.append(action_name)
+				summaries.append(label)
 				continue
-			param_pairs = []
-			for key, value in params.items():
-				param_pairs.append(f'{key}={value}')
-			summary = f'{action_name}({", ".join(param_pairs)})'
-			summaries.append(summary)
+
+			# Show only important parameters (hide technical details like index, cnt)
+			important_params = {}
+			if 'text' in params:
+				important_params['テキスト'] = params['text']
+			if 'url' in params:
+				important_params['URL'] = params['url']
+			if 'tab_id' in params:
+				important_params['タブID'] = params['tab_id']
+
+			if important_params:
+				param_str = ', '.join(f'{k}: {v}' for k, v in important_params.items())
+				summaries.append(f'{label} ({param_str})')
+			else:
+				summaries.append(label)
+
 		return summaries
 
 	def submit_approval_result(self, result: ApprovalResult) -> None:
