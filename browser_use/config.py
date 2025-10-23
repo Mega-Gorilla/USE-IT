@@ -28,8 +28,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
 	},
 	'logging': {
 		'level': 'info',
-		'debug_log_file': 'logs/debug.log',
-		'info_log_file': 'logs/info.log',
+		'debug_log_file': None,
+		'info_log_file': None,
 		'cdp_level': 'WARNING',
 	},
 	'telemetry': {
