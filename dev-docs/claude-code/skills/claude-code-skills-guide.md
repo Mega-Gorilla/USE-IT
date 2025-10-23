@@ -254,7 +254,7 @@ skill-name/                     # Skillディレクトリ（名前はname フィ
 
 **1. SKILL.md（必須）**
 - Skillのメインファイル
-- YAMLフロントマター（`name`, `description`, `allowed-tools`）を含む
+- YAMLフロントマター（必須: `name`, `description`、オプション: `allowed-tools`）を含む
 - Claudeへの指示を記載
 - 最初に読み込まれるファイル
 
@@ -647,13 +647,11 @@ if __name__ == '__main__':
 
 ## チームでの共有
 
-### 推奨方法: プラグインとして配布
+Project Skillsをgitリポジトリにコミットすることで、チーム全体で共有できます。
 
-マーケットプレイスでの配布が推奨されます。
+### 共有手順
 
-### 代替方法: プロジェクトリポジトリにコミット
-
-1. **Skillを作成**
+1. **Project Skillを作成**
 	```bash
 	mkdir -p .claude/skills/my-skill
 	vim .claude/skills/my-skill/SKILL.md
@@ -671,7 +669,11 @@ if __name__ == '__main__':
 	git pull
 	```
 
-	即座に利用可能になります（Claude Code再起動不要）。
+	チームメンバーがpullすると、Skillsが自動的に利用可能になります。
+
+### その他の配布方法
+
+Skillsをプラグインとしてパッケージ化し、マーケットプレイスで配布することも可能です。
 
 ## 更新と削除
 
@@ -1078,12 +1080,19 @@ See resources/brand_examples.md
 
 ## API要件（プログラマティック使用）
 
-Skillsをプログラムから使用する場合、以下のヘッダーが必要:
+SkillsをAPI経由で管理する場合、以下のヘッダーが必要です:
 
 ```http
 anthropic-version: 2023-06-01
-anthropic-beta: skills-2025-10-02,pdfs-2024-09-25,files-2025-01-23,code-execution-2025-01-23
+anthropic-beta: skills-2025-10-02
 ```
+
+**追加のbetaヘッダー**（使用する機能に応じて）:
+- `pdfs-2024-09-25` - PDF機能を使用する場合
+- `files-2025-01-23` - Files APIを使用する場合
+- `code-execution-2025-01-23` - コード実行機能を使用する場合
+
+詳細は[Skills API Reference](https://docs.anthropic.com/en/api/skills/create-skill)を参照してください。
 
 ## トラブルシューティング FAQ
 
