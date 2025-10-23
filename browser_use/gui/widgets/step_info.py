@@ -16,8 +16,15 @@ class StepInfoPanel(QtWidgets.QWidget):
 		layout.setContentsMargins(0, 0, 0, 0)
 
 		# 1. 最重要: 現在のゴール
-		goal_group = QtWidgets.QGroupBox('🎯 ゴール')
+		goal_group = QtWidgets.QGroupBox()
+		goal_group.setStyleSheet('QGroupBox { border: 1px solid #ccc; border-radius: 4px; margin-top: 10px; padding-top: 10px; }')
 		goal_layout = QtWidgets.QVBoxLayout(goal_group)
+
+		# タイトルラベルを別途追加
+		goal_title = QtWidgets.QLabel('🎯 ゴール')
+		goal_title.setStyleSheet('font-weight: bold; border: none; padding: 0;')
+		goal_layout.addWidget(goal_title)
+
 		self.next_goal_label = QtWidgets.QLabel('タスク実行待機中...')
 		self.next_goal_label.setWordWrap(True)
 		font = self.next_goal_label.font()
@@ -29,8 +36,15 @@ class StepInfoPanel(QtWidgets.QWidget):
 		layout.addWidget(goal_group)
 
 		# 2. 重要: 実行中のアクション
-		actions_group = QtWidgets.QGroupBox('⚡ アクション')
+		actions_group = QtWidgets.QGroupBox()
+		actions_group.setStyleSheet('QGroupBox { border: 1px solid #ccc; border-radius: 4px; margin-top: 10px; padding-top: 10px; }')
 		actions_layout = QtWidgets.QVBoxLayout(actions_group)
+
+		# タイトルラベルを別途追加
+		actions_title = QtWidgets.QLabel('⚡ アクション')
+		actions_title.setStyleSheet('font-weight: bold; border: none; padding: 0;')
+		actions_layout.addWidget(actions_title)
+
 		self.actions_list = QtWidgets.QListWidget()
 		self.actions_list.setMaximumHeight(100)
 		self.actions_list.setStyleSheet('font-family: monospace;')
