@@ -19,14 +19,197 @@ Claude Code Skillsは、Claudeの機能を拡張するモジュラー型の能�
 1. **Personal Skills** (`~/.claude/skills/`)
 	- 全プロジェクトで利用可能
 	- 個人用の設定やツール
+	- ホームディレクトリに配置
 
 2. **Project Skills** (`.claude/skills/`)
 	- gitで共有
 	- チーム全体で利用
+	- プロジェクトルートに配置
 
 3. **Plugin Skills**
 	- Claude Codeプラグインにバンドル
 	- マーケットプレイスから配布
+
+### フォルダー階層の詳細
+
+#### Personal Skills の配置
+
+Personal Skillsは**ホームディレクトリ**の`.claude/skills/`配下に配置します。各Skillは**専用のディレクトリ**を持ち、その中に`SKILL.md`を配置します。
+
+```bash
+~/.claude/skills/
+├── git-commit-helper/          # Skill 1
+│   └── SKILL.md
+├── pdf-processor/              # Skill 2
+│   ├── SKILL.md
+│   ├── examples.md
+│   └── scripts/
+│       └── extract.py
+└── financial-calculator/       # Skill 3
+    ├── SKILL.md
+    ├── reference.md
+    └── resources/
+        └── formulas.json
+```
+
+**重要なポイント**:
+- 各Skillは**独立したディレクトリ**に配置
+- ディレクトリ名は`SKILL.md`内の`name`フィールドと一致させる（推奨）
+- `SKILL.md`は必ず**各Skillディレクトリの直下**に配置
+
+**作成手順**:
+```bash
+# Personal Skillを作成
+mkdir -p ~/.claude/skills/my-skill
+cat > ~/.claude/skills/my-skill/SKILL.md <<'EOF'
+---
+name: my-skill
+description: Description of what this skill does
+---
+
+# My Skill
+
+## Instructions
+...
+EOF
+```
+
+#### Project Skills の配置
+
+Project Skillsは**プロジェクトルート**の`.claude/skills/`配下に配置します。構造はPersonal Skillsと同じです。
+
+```bash
+/path/to/your-project/
+├── .claude/
+│   └── skills/
+│       ├── project-specific-tool/    # プロジェクト固有のSkill 1
+│       │   └── SKILL.md
+│       ├── team-workflow/            # プロジェクト固有のSkill 2
+│       │   ├── SKILL.md
+│       │   └── scripts/
+│       │       └── workflow.sh
+│       └── code-reviewer/            # プロジェクト固有のSkill 3
+│           ├── SKILL.md
+│           └── examples.md
+├── src/
+├── tests/
+└── README.md
+```
+
+**重要なポイント**:
+- `.claude/`ディレクトリはプロジェクトルートに配置
+- gitにコミットして共有
+- チームメンバーが`git pull`すると自動的に利用可能
+
+**作成手順**:
+```bash
+# プロジェクトルートで実行
+cd /path/to/your-project
+
+# Project Skillを作成
+mkdir -p .claude/skills/my-team-skill
+cat > .claude/skills/my-team-skill/SKILL.md <<'EOF'
+---
+name: my-team-skill
+description: Team-specific skill description
+---
+
+# My Team Skill
+
+## Instructions
+...
+EOF
+
+# Gitにコミット
+git add .claude/skills/
+git commit -m "feat(skills): add my-team-skill"
+git push
+```
+
+#### 複数Skillの管理
+
+**シナリオ1: 個人用とプロジェクト用を併用**
+
+```bash
+# 個人用（全プロジェクトで使える汎用的なツール）
+~/.claude/skills/
+├── git-commit-helper/
+├── pdf-processor/
+└── excel-analyzer/
+
+# プロジェクト用（このプロジェクト専用）
+/path/to/project-a/
+└── .claude/skills/
+    ├── project-a-deployment/
+    └── project-a-testing/
+
+/path/to/project-b/
+└── .claude/skills/
+    ├── project-b-api-client/
+    └── project-b-data-migration/
+```
+
+**Claudeの検索順序**:
+1. Project Skills（`.claude/skills/`） - 優先度：高
+2. Personal Skills（`~/.claude/skills/`） - 優先度：中
+3. Plugin Skills - 優先度：低
+
+**シナリオ2: 関連するSkillをグループ化**
+
+同じディレクトリに複数のSkillを配置できますが、**各Skillは独立したディレクトリ**である必要があります。
+
+```bash
+~/.claude/skills/
+├── document-processing/        # ❌ 間違い: これはSkillではない（SKILL.mdがない）
+│   ├── pdf-skill/              # ✅ 正しい: これがSkill
+│   │   └── SKILL.md
+│   └── word-skill/             # ✅ 正しい: これもSkill
+│       └── SKILL.md
+└── data-analysis/
+    ├── excel-skill/
+    │   └── SKILL.md
+    └── csv-skill/
+        └── SKILL.md
+```
+
+**注意**: Claudeは`~/.claude/skills/*/SKILL.md`を検索します。サブディレクトリのネストは**1階層のみ**サポートされます。
+
+**❌ 動作しない例**:
+```bash
+~/.claude/skills/
+└── category/
+    └── subcategory/            # ネストが深すぎる
+        └── my-skill/
+            └── SKILL.md        # 検出されない！
+```
+
+**✅ 正しい例**:
+```bash
+~/.claude/skills/
+└── category-subcategory-skill/ # フラットな構造
+    └── SKILL.md                # 検出される
+```
+
+#### SKILL.mdファイルの配置ルール
+
+**絶対ルール**:
+- `SKILL.md`は必ず**Skillディレクトリの直下**に配置
+- ファイル名は**大文字で`SKILL.md`** （`skill.md`や`Skill.md`は無効）
+- YAMLフロントマターは必須
+
+**検証方法**:
+```bash
+# Personal Skillsを確認
+find ~/.claude/skills -name "SKILL.md" -type f
+
+# Project Skillsを確認
+find .claude/skills -name "SKILL.md" -type f 2>/dev/null
+
+# 期待される出力例:
+# /home/user/.claude/skills/my-skill-1/SKILL.md
+# /home/user/.claude/skills/my-skill-2/SKILL.md
+# ./.claude/skills/project-skill/SKILL.md
+```
 
 ### Progressive Disclosure Architecture
 
@@ -75,19 +258,104 @@ description: What it does and when to use it
 - 具体的な機能を列挙
 - トリガーワード（"PDF files"）が明確
 
-### ディレクトリ構成
+### 単一Skillのディレクトリ構成
+
+各Skill内のファイル構成は以下の通りです：
 
 ```
-skill-name/
-├── SKILL.md           # 必須: メインの指示ファイル
-├── reference.md       # オプション: APIリファレンスなど
-├── examples.md        # オプション: 使用例
-├── scripts/           # オプション: ヘルパースクリプト
-│   ├── helper.py
-│   └── processor.sh
-└── resources/         # オプション: テンプレートやデータ
-    └── template.json
+skill-name/                     # Skillディレクトリ（名前はname フィールドと一致推奨）
+├── SKILL.md                    # ✅ 必須: メインの指示ファイル
+├── reference.md                # ⭕ オプション: APIリファレンス、技術詳細
+├── examples.md                 # ⭕ オプション: 使用例、サンプルコード
+├── scripts/                    # ⭕ オプション: 実行可能スクリプト
+│   ├── helper.py               #    Python スクリプト
+│   ├── processor.sh            #    Shell スクリプト
+│   └── analyzer.js             #    JavaScript スクリプト
+├── resources/                  # ⭕ オプション: テンプレート、設定ファイル
+│   ├── template.json           #    JSON テンプレート
+│   ├── config.yaml             #    設定ファイル
+│   └── data.csv                #    サンプルデータ
+└── requirements.txt            # ⭕ オプション: Python依存関係（推奨）
 ```
+
+#### 各ファイルの役割
+
+**1. SKILL.md（必須）**
+- Skillのメインファイル
+- YAMLフロントマター（`name`, `description`, `allowed-tools`）を含む
+- Claudeへの指示を記載
+- 最初に読み込まれるファイル
+
+**2. reference.md（オプション）**
+- 詳細なAPIドキュメント
+- コマンドラインオプションの説明
+- パラメータの仕様
+- SKILL.mdから`See reference.md for details`のように参照
+
+**3. examples.md（オプション）**
+- 実際の使用例
+- 入出力のサンプル
+- エッジケースの処理方法
+- SKILL.mdから`See examples.md for use cases`のように参照
+
+**4. scripts/（オプション）**
+- 実行可能なヘルパースクリプト
+- Claudeが`Bash`ツールで実行
+- 実行権限を付与: `chmod +x scripts/*.py`
+- Shebang行を必ず含める: `#!/usr/bin/env python3`
+
+**5. resources/（オプション）**
+- テンプレートファイル
+- 設定ファイル
+- サンプルデータ
+- スクリプトから読み込む静的リソース
+
+**6. requirements.txt / package.json（推奨）**
+- Python依存関係: `requirements.txt`
+- Node.js依存関係: `package.json`
+- インストール手順をSKILL.mdに記載
+
+#### Progressive Disclosure の実践例
+
+```
+# 最小構成（シンプルなSkill）
+git-commit-helper/
+└── SKILL.md                    # すべての指示を1ファイルに
+
+# 中規模構成（スクリプト付き）
+pdf-processor/
+├── SKILL.md                    # メインの指示
+├── examples.md                 # 使用例
+└── scripts/
+    └── extract.py              # PDFテキスト抽出スクリプト
+
+# 大規模構成（フル機能）
+financial-calculator/
+├── SKILL.md                    # メインの指示
+├── reference.md                # 財務比率の計算式詳細
+├── examples.md                 # サンプル財務諸表での計算例
+├── scripts/
+│   ├── calculate_ratios.py     # 比率計算スクリプト
+│   └── generate_report.py      # レポート生成スクリプト
+├── resources/
+│   ├── ratio_definitions.json  # 比率の定義データ
+│   └── report_template.html    # HTMLレポートテンプレート
+└── requirements.txt            # pandas, numpy等
+```
+
+#### ファイルの読み込みタイミング
+
+Claudeは**Progressive Disclosure**により段階的にファイルを読み込みます:
+
+1. **起動時**: `SKILL.md`のYAMLフロントマターのみを読み込み、Skillを登録
+2. **Skill起動時**: `SKILL.md`の本文を読み込み、指示を理解
+3. **必要時**:
+   - `reference.md` - SKILL.mdで言及された場合
+   - `examples.md` - SKILL.mdで言及された場合
+   - `scripts/` - Claudeが実行を決定した場合
+   - `resources/` - スクリプトが読み込む場合
+
+この仕組みにより、**トークン使用量を最小化**しながら必要な情報にアクセスできます。
 
 ### SKILL.mdの書き方
 
