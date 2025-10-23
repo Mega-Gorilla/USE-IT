@@ -12,8 +12,10 @@ paths:
 
 logging:
   level: info
-  debug_log_file: null
-  info_log_file: null
+  # Log file paths (relative to project root). Set to null to disable file logging.
+  # Logs are overwritten on each startup (not appended).
+  debug_log_file: logs/debug.log
+  info_log_file: logs/info.log
   cdp_level: WARNING
 
 telemetry:
