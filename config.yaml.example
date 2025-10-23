@@ -12,6 +12,10 @@ paths:
 
 logging:
   level: info
+  # Log file paths. Set to null to disable file logging (default).
+  # When enabled, logs are overwritten on each startup (not appended).
+  # Example: logs/debug.log (relative path) or /tmp/browser_use_debug.log (absolute path)
+  # Note: Ensure the directory is writable to avoid PermissionError.
   debug_log_file: null
   info_log_file: null
   cdp_level: WARNING

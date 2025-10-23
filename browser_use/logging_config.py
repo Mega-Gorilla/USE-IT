@@ -131,25 +131,43 @@ def setup_logging(stream=None, log_level=None, force_setup=False, debug_log_file
 
 	# Add file handlers if specified
 	file_handlers = []
+	debug_file_enabled = False  # Track if debug file handler was successfully created
 
 	# Create debug log file handler
 	if debug_log_file:
-		debug_handler = logging.FileHandler(debug_log_file, encoding='utf-8')
-		debug_handler.setLevel(logging.DEBUG)
-		debug_handler.setFormatter(BrowserUseFormatter('%(asctime)s - %(levelname)-8s [%(name)s] %(message)s', logging.DEBUG))
-		file_handlers.append(debug_handler)
-		root.addHandler(debug_handler)
+		try:
+			# Ensure logs directory exists
+			log_path = Path(debug_log_file)
+			log_path.parent.mkdir(parents=True, exist_ok=True)
+			# Use mode='w' to overwrite on each startup
+			debug_handler = logging.FileHandler(debug_log_file, mode='w', encoding='utf-8')
+			debug_handler.setLevel(logging.DEBUG)
+			debug_handler.setFormatter(BrowserUseFormatter('%(asctime)s - %(levelname)-8s [%(name)s] %(message)s', logging.DEBUG))
+			file_handlers.append(debug_handler)
+			root.addHandler(debug_handler)
+			debug_file_enabled = True  # Successfully created debug file handler
+		except (PermissionError, OSError) as e:
+			# Cannot create log file - continue without file logging
+			logging.getLogger('browser_use').warning(f'Cannot create debug log file {debug_log_file}: {e}. Continuing without file logging.')
 
 	# Create info log file handler
 	if info_log_file:
-		info_handler = logging.FileHandler(info_log_file, encoding='utf-8')
-		info_handler.setLevel(logging.INFO)
-		info_handler.setFormatter(BrowserUseFormatter('%(asctime)s - %(levelname)-8s [%(name)s] %(message)s', logging.INFO))
-		file_handlers.append(info_handler)
-		root.addHandler(info_handler)
+		try:
+			# Ensure logs directory exists
+			log_path = Path(info_log_file)
+			log_path.parent.mkdir(parents=True, exist_ok=True)
+			# Use mode='w' to overwrite on each startup
+			info_handler = logging.FileHandler(info_log_file, mode='w', encoding='utf-8')
+			info_handler.setLevel(logging.INFO)
+			info_handler.setFormatter(BrowserUseFormatter('%(asctime)s - %(levelname)-8s [%(name)s] %(message)s', logging.INFO))
+			file_handlers.append(info_handler)
+			root.addHandler(info_handler)
+		except (PermissionError, OSError) as e:
+			# Cannot create log file - continue without file logging
+			logging.getLogger('browser_use').warning(f'Cannot create info log file {info_log_file}: {e}. Continuing without file logging.')
 
-	# Configure root logger - use DEBUG if debug file logging is enabled
-	effective_log_level = logging.DEBUG if debug_log_file else log_level
+	# Configure root logger - use DEBUG only if debug file handler was successfully created
+	effective_log_level = logging.DEBUG if debug_file_enabled else log_level
 	root.setLevel(effective_log_level)
 
 	# Configure browser_use logger
