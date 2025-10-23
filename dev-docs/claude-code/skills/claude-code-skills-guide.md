@@ -12,6 +12,8 @@ Claude Code Skillsは、Claudeの機能を拡張するモジュラー型の能�
 | 使用タイミング | Claudeが説明文を読んで適切と判断した時 | ユーザーが意図的に実行した時 |
 | 用途 | 専門的な処理の自動化 | 定型作業の実行 |
 
+**重要な制約**: Skillsは**モデル呼び出し**です。Claudeに特定のSkillを強制的に使わせることはできません。Skillの発見は`description`フィールドとユーザーのリクエストとのマッチングに依存します。
+
 ## コアコンセプト
 
 ### Skillの3つの発見メカニズム
@@ -54,8 +56,8 @@ Personal Skillsは**ホームディレクトリ**の`.claude/skills/`配下に�
 
 **重要なポイント**:
 - 各Skillは**独立したディレクトリ**に配置
-- ディレクトリ名は`SKILL.md`内の`name`フィールドと一致させる（推奨）
 - `SKILL.md`は必ず**各Skillディレクトリの直下**に配置
+- ディレクトリ名は`name`フィールドと同じ命名規則（小文字、数字、ハイフン）を使用
 
 **作成手順**:
 ```bash
@@ -128,84 +130,55 @@ git push
 
 #### 複数Skillの管理
 
-**シナリオ1: 個人用とプロジェクト用を併用**
+Personal SkillsとProject Skillsを併用することで、汎用的な個人ツールとプロジェクト固有の機能を使い分けられます。
 
 ```bash
 # 個人用（全プロジェクトで使える汎用的なツール）
 ~/.claude/skills/
 ├── git-commit-helper/
+│   └── SKILL.md
 ├── pdf-processor/
+│   └── SKILL.md
 └── excel-analyzer/
+    └── SKILL.md
 
 # プロジェクト用（このプロジェクト専用）
 /path/to/project-a/
 └── .claude/skills/
     ├── project-a-deployment/
+    │   └── SKILL.md
     └── project-a-testing/
+        └── SKILL.md
 
 /path/to/project-b/
 └── .claude/skills/
     ├── project-b-api-client/
-    └── project-b-data-migration/
-```
-
-**Claudeの検索順序**:
-1. Project Skills（`.claude/skills/`） - 優先度：高
-2. Personal Skills（`~/.claude/skills/`） - 優先度：中
-3. Plugin Skills - 優先度：低
-
-**シナリオ2: 関連するSkillをグループ化**
-
-同じディレクトリに複数のSkillを配置できますが、**各Skillは独立したディレクトリ**である必要があります。
-
-```bash
-~/.claude/skills/
-├── document-processing/        # ❌ 間違い: これはSkillではない（SKILL.mdがない）
-│   ├── pdf-skill/              # ✅ 正しい: これがSkill
-│   │   └── SKILL.md
-│   └── word-skill/             # ✅ 正しい: これもSkill
-│       └── SKILL.md
-└── data-analysis/
-    ├── excel-skill/
     │   └── SKILL.md
-    └── csv-skill/
+    └── project-b-data-migration/
         └── SKILL.md
 ```
 
-**注意**: Claudeは`~/.claude/skills/*/SKILL.md`を検索します。サブディレクトリのネストは**1階層のみ**サポートされます。
-
-**❌ 動作しない例**:
-```bash
-~/.claude/skills/
-└── category/
-    └── subcategory/            # ネストが深すぎる
-        └── my-skill/
-            └── SKILL.md        # 検出されない！
-```
-
-**✅ 正しい例**:
-```bash
-~/.claude/skills/
-└── category-subcategory-skill/ # フラットな構造
-    └── SKILL.md                # 検出される
-```
+**推奨される構造**:
+- 各Skillは**skillsディレクトリの直下**に配置（フラットな構造）
+- Skillディレクトリ名は説明的に（`git-commit-helper`, `pdf-form-filler`など）
+- 関連するSkillは名前のプレフィックスで整理（`project-a-*`, `pdf-*`など）
 
 #### SKILL.mdファイルの配置ルール
 
-**絶対ルール**:
-- `SKILL.md`は必ず**Skillディレクトリの直下**に配置
-- ファイル名は**大文字で`SKILL.md`** （`skill.md`や`Skill.md`は無効）
-- YAMLフロントマターは必須
+**必須要件**:
+- `SKILL.md`ファイルは必ず**Skillディレクトリの直下**に配置
+- ファイル名は**大文字で`SKILL.md`**（公式ドキュメントで一貫して大文字表記）
+- YAMLフロントマターは必須（`name`と`description`フィールド）
 
 **検証方法**:
 ```bash
 # Personal Skillsを確認
-find ~/.claude/skills -name "SKILL.md" -type f
+find ~/.claude/skills -maxdepth 2 -name "SKILL.md" -type f
 
 # Project Skillsを確認
-find .claude/skills -name "SKILL.md" -type f 2>/dev/null
+find .claude/skills -maxdepth 2 -name "SKILL.md" -type f 2>/dev/null
 
-# 期待される出力例:
+# 期待される出力:
 # /home/user/.claude/skills/my-skill-1/SKILL.md
 # /home/user/.claude/skills/my-skill-2/SKILL.md
 # ./.claude/skills/project-skill/SKILL.md
@@ -213,10 +186,9 @@ find .claude/skills -name "SKILL.md" -type f 2>/dev/null
 
 ### Progressive Disclosure Architecture
 
-Skillsは**段階的開示アーキテクチャ**を採用:
-- 起動時にSKILL.mdのみを読み込み
-- 必要に応じてサポートファイル（examples.md、scripts/）を読み込む
-- トークン効率を最適化
+Skillsは**段階的開示アーキテクチャ**を採用しています。Claudeはコンテキスト効率を最適化するため、サポートファイル（reference.md、examples.md、scripts/など）を**必要な時のみ**読み込みます。
+
+この仕組みにより、多数のSkillsを定義してもトークン使用量を最小限に抑えられます。
 
 ## Skillの作成
 
@@ -343,19 +315,26 @@ financial-calculator/
 └── requirements.txt            # pandas, numpy等
 ```
 
-#### ファイルの読み込みタイミング
+#### Progressive Disclosureの実践
 
-Claudeは**Progressive Disclosure**により段階的にファイルを読み込みます:
+`SKILL.md`には、サポートファイルへの参照を含めることができます:
 
-1. **起動時**: `SKILL.md`のYAMLフロントマターのみを読み込み、Skillを登録
-2. **Skill起動時**: `SKILL.md`の本文を読み込み、指示を理解
-3. **必要時**:
-   - `reference.md` - SKILL.mdで言及された場合
-   - `examples.md` - SKILL.mdで言及された場合
-   - `scripts/` - Claudeが実行を決定した場合
-   - `resources/` - スクリプトが読み込む場合
+```markdown
+## Instructions
 
-この仕組みにより、**トークン使用量を最小化**しながら必要な情報にアクセスできます。
+1. Analyze the input data
+2. For detailed API documentation, see reference.md
+3. For usage examples, see examples.md
+4. Use scripts/calculate.py to perform calculations
+```
+
+Claudeは必要に応じてこれらのファイルを読み込むため、SKILL.md本体は簡潔に保つことができます。
+
+**ベストプラクティス**:
+- `SKILL.md`: 基本的な指示と概要（常に簡潔に）
+- `reference.md`: 詳細なAPIやパラメータ仕様
+- `examples.md`: 具体的な使用例やサンプルコード
+- `scripts/`: 実際の処理を行うヘルパースクリプト
 
 ### SKILL.mdの書き方
 
@@ -405,7 +384,7 @@ Now returns default empty object.
 
 ## ツールアクセスの制限
 
-`allowed-tools`フィールドで、Skillが使用できるツールを制限できます:
+`allowed-tools`フィールド（オプション）で、Skillが使用できるツールを制限できます:
 
 ```yaml
 ---
@@ -415,13 +394,20 @@ allowed-tools: Read, Grep, Glob
 ---
 ```
 
+### 動作
+
+- **allowed-tools指定時**: 指定したツールのみ使用可能（**パーミッション要求なし**）
+- **allowed-tools未指定時**: すべてのツールにアクセス可能（通常のパーミッション要求あり）
+
 ### ユースケース
 
-- **セキュリティ**: 読み取り専用操作に制限
-- **プロトコル**: 特定のワークフローに必要なツールのみ許可
-- **防御的プログラミング**: 意図しない変更を防止
+- **セキュリティ**: 読み取り専用操作に制限（Read, Grep, Globのみ）
+- **ワークフロー制御**: 特定の処理に必要なツールのみ許可
+- **意図しない変更の防止**: EditやWriteツールを除外
 
-**注意**: `allowed-tools`を指定しない場合、通常通りパーミッションを要求します。
+**利用可能なツール名**: Read, Write, Edit, Bash, Grep, Glob, WebFetch など（Claude Codeのツール名）
+
+**プラットフォーム制約**: `allowed-tools`フィールドは**Claude Codeでのみ**サポートされています。
 
 ## 設定とベストプラクティス
 
@@ -610,8 +596,9 @@ if __name__ == '__main__':
 
 2. **YAML構文を確認**
 	- 開始/終了の`---`が正しいか
-	- インデントが正しいか（スペースを使用）
+	- インデントは**スペースのみ**使用（タブは使用不可）
 	- フィールド名が正しいか（`name`, `description`）
+	- YAMLが無効だとSkillは読み込まれません
 
 3. **説明文の具体性を確認**
 	- トリガーキーワードが含まれているか
@@ -719,6 +706,8 @@ git push
 ## 組み込みSkills（Cookbook）
 
 Claude Cookbookには以下の組み込みSkillsが含まれています。これらは**専門性の高いドキュメント生成タスク**を自動化するためのものです。
+
+**注**: 以下の詳細なユースケースやトリガーキーワードは、公式Cookbookの例から導き出した推測を含みます。実際の動作はClaudeの判断に依存します。
 
 ### 1. Excel (xlsx)
 
