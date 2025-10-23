@@ -19,7 +19,7 @@ from browser_use.gui.widgets import (
 class MainWindow(QtWidgets.QMainWindow):
 	def __init__(self) -> None:
 		super().__init__()
-		self.setWindowTitle('Browser Use GUI')
+		self.setWindowTitle('use it')
 		self.resize(960, 720)
 
 		self._worker: AgentWorker | None = None
@@ -87,8 +87,8 @@ class MainWindow(QtWidgets.QMainWindow):
 	def _show_about_dialog(self) -> None:
 		QtWidgets.QMessageBox.information(
 			self,
-			'Browser Use GUI',
-			'PySide6で構築された公式GUIです。\n\n'
+			'use it',
+			'PySide6で構築されたブラウザ自動化GUIです。\n\n'
 			'タスクを入力して「実行」を押すと、エージェントがブラウザ操作を開始します。',
 		)
 

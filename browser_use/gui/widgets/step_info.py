@@ -16,7 +16,7 @@ class StepInfoPanel(QtWidgets.QWidget):
 		layout.setContentsMargins(0, 0, 0, 0)
 
 		# 1. 最重要: 現在のゴール
-		goal_group = QtWidgets.QGroupBox('🎯 現在のゴール')
+		goal_group = QtWidgets.QGroupBox('🎯 ゴール')
 		goal_layout = QtWidgets.QVBoxLayout(goal_group)
 		self.next_goal_label = QtWidgets.QLabel('タスク実行待機中...')
 		self.next_goal_label.setWordWrap(True)
@@ -29,7 +29,7 @@ class StepInfoPanel(QtWidgets.QWidget):
 		layout.addWidget(goal_group)
 
 		# 2. 重要: 実行中のアクション
-		actions_group = QtWidgets.QGroupBox('⚡ 実行中のアクション')
+		actions_group = QtWidgets.QGroupBox('⚡ アクション')
 		actions_layout = QtWidgets.QVBoxLayout(actions_group)
 		self.actions_list = QtWidgets.QListWidget()
 		self.actions_list.setMaximumHeight(100)
