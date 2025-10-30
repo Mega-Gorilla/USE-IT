@@ -119,3 +119,23 @@ class ChatAzureOpenAI(ChatOpenAILike):
 		self.client = AsyncAzureOpenAIClient(**_client_params)
 
 		return self.client
+
+	async def aclose(self) -> None:
+		"""Close the cached Azure OpenAI client and its HTTP session."""
+		client = self.client
+		self.client = None
+
+		if client is None:
+			return
+
+		# AsyncAzureOpenAIClient exposes aclose/close mirroring AsyncOpenAI
+		if hasattr(client, 'aclose'):
+			await client.aclose()
+		elif hasattr(client, 'close'):
+			client.close()
+
+		if self.http_client is None and hasattr(client, 'client') and client.client is not None:
+			# When we created an httpx.AsyncClient internally, ensure it is closed
+			http_client = getattr(client, 'client', None)
+			if http_client is not None:
+				await http_client.aclose()
